@@ -581,8 +581,8 @@ pub fn find_color_regions(
 /// Quantize colors in `region` into `(r,g,b)/step` buckets and return the
 /// bucket with the most pixels ("mode color"). Ignores near-transparent
 /// pixels so alpha-blended overlays do not skew the histogram. Shared by
-/// every detector that looks for a solid-color UI panel (dialogs, minimap,
-/// icon-row backgrounds) so they don't each reimplement the same histogram.
+/// every detector that looks for a solid-color UI panel so they don't each
+/// reimplement the same histogram.
 pub fn dominant_color_bucket(image: &RgbaImage, region: Rect, step: u8) -> Option<(u8, u8, u8)> {
     use std::collections::HashMap;
     let mut counts: HashMap<(u8, u8, u8), u32> = HashMap::new();

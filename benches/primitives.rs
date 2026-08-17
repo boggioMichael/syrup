@@ -9,7 +9,7 @@ use framelens::geometry::{self, Rect};
 use framelens::motion::{MotionConfig, MotionDetector};
 
 /// A 1366x768 frame with a 60%-filled red bar in a dark groove near the
-/// bottom — the shape of a real HUD readout at a common game resolution.
+/// bottom — the shape of a status readout at a common screen resolution.
 fn frame_with_bar() -> (RgbaImage, Rect) {
     let mut image = RgbaImage::from_pixel(1366, 768, Rgba([30, 30, 35, 255]));
     let (x0, y0, w, h) = (140u32, 730u32, 220u32, 10u32);
@@ -58,7 +58,7 @@ fn bench_find_color_bar(c: &mut Criterion) {
         w: 1366,
         h: 78,
     };
-    c.bench_function("find_color_bar in HUD band", |b| {
+    c.bench_function("find_color_bar in status band", |b| {
         b.iter(|| geometry::find_color_bar(black_box(&image), region, (340.0, 30.0), 0.35, 0.30))
     });
 }

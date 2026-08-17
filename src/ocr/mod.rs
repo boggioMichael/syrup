@@ -29,8 +29,8 @@ pub struct OcrConfig {
 impl Default for OcrConfig {
     fn default() -> Self {
         Self {
-            // PSM 0 only performs orientation detection and never recognizes HUD text.
-            // Sparse text handles game HUDs where labels and values are separated.
+            // PSM 0 only performs orientation detection and never recognizes text.
+            // Sparse text handles interfaces where labels and values are separated.
             psm: 11,
             whitelist: None,
         }
