@@ -4,9 +4,9 @@
 
 use image::{Rgba, RgbaImage};
 
-use framelens::color::is_color_pixel;
-use framelens::geometry::{Rect, find_color_bar, measure_bar_fill};
-use framelens::motion::{MotionConfig, MotionDetector};
+use syrup::color::is_color_pixel;
+use syrup::geometry::{Rect, find_color_bar, measure_bar_fill};
+use syrup::motion::{MotionConfig, MotionDetector};
 
 /// A synthetic 800x600 "application screen": dark background, a bottom
 /// status band holding a red bar at a known fill ratio in a visible grey

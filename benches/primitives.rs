@@ -4,9 +4,9 @@
 use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
 use image::{Rgba, RgbaImage};
 
-use framelens::color::is_color_pixel;
-use framelens::geometry::{self, Rect};
-use framelens::motion::{MotionConfig, MotionDetector};
+use syrup::color::is_color_pixel;
+use syrup::geometry::{self, Rect};
+use syrup::motion::{MotionConfig, MotionDetector};
 
 /// A 1366x768 frame with a 60%-filled red bar in a dark groove near the
 /// bottom — the shape of a status readout at a common screen resolution.

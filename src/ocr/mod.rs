@@ -242,7 +242,7 @@ fn write_temp_image(image: &DynamicImage) -> Option<TempImage> {
         .duration_since(UNIX_EPOCH)
         .ok()?
         .as_nanos();
-    let path = temp_dir.join(format!("framelens-ocr-{timestamp}.png"));
+    let path = temp_dir.join(format!("syrup-ocr-{timestamp}.png"));
     // Take ownership before writing: a failed save can still leave a partial
     // file on disk, and the guard cleans that up when this returns None.
     let image_file = TempImage { path };

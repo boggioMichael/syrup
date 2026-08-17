@@ -1,4 +1,4 @@
-//! framelens: turn captured frames into structured, confidence-scored
+//! syrup: turn captured frames into structured, confidence-scored
 //! visual observations.
 //!
 //! The library operates on plain [`image::RgbaImage`] buffers, so frames can

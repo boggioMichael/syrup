@@ -1,9 +1,9 @@
-# framelens
+# Syrup
 
 A small Rust toolkit for turning captured frames into structured,
 confidence-scored visual observations.
 
-framelens gives you the pixel-level building blocks for reading a screen the
+Syrup gives you the pixel-level building blocks for reading a screen the
 way a person does — "there is a bar here and it is about 60% full", "that
 region moved left", "this text says 1291/1351" — without pretending to more
 certainty than the pixels support. Every detector result carries a
@@ -43,8 +43,8 @@ found.
 ## Example
 
 ```rust
-use framelens::color::is_color_pixel;
-use framelens::geometry::{Rect, find_color_bar, measure_bar_fill};
+use syrup::color::is_color_pixel;
+use syrup::geometry::{Rect, find_color_bar, measure_bar_fill};
 
 let image: image::RgbaImage = image::open("screen.png")?.to_rgba8();
 
@@ -63,7 +63,7 @@ if let Some(bar) = find_color_bar(&image, band, (340.0, 30.0), 0.35, 0.30) {
 
 Frames are plain `image::RgbaImage` buffers, so they can come from a
 screenshot, frames extracted from a video, a synthetic fixture in a test,
-or `framelens::capture` — every primitive behaves identically regardless of
+or `syrup::capture` — every primitive behaves identically regardless of
 the source.
 
 ## Architecture
@@ -93,7 +93,8 @@ cargo bench         # criterion benchmarks for the per-frame primitives
 
 All tests run against synthetic, in-code fixtures; no external tools,
 assets, or network access are required. OCR tests cover argument
-construction and temp-file hygiene without invoking Tesseract.
+construction and temp-file hygiene without invoking Tesseract. Nothing in
+the suite depends on a domain edition, so this repository stands alone.
 
 ## Limitations
 
@@ -103,12 +104,25 @@ construction and temp-file hygiene without invoking Tesseract.
   `PATH`); without it, OCR reports itself unavailable rather than failing.
 - Live capture is Windows-only. Other platforms consume file-based frames.
 
-## Provenance
+## Syrup and MapleSyrup
 
-Extracted from the perception layer of
-[MapleSyrup](https://github.com/boggioMichael/ms), where these primitives
-were developed against real captures; everything here is domain-neutral,
-and MapleSyrup is now a consumer of this crate.
+Syrup is the generic engine. A domain edition consumes it and adds the
+knowledge Syrup deliberately lacks — what the pixels *mean* in one
+particular application:
+
+```text
+        MapleSyrup            the MapleStory edition
+             │                github.com/boggioMichael/ms
+             │ submodule
+             ▼
+           Syrup              this repository
+```
+
+[MapleSyrup](https://github.com/boggioMichael/ms) is the first such
+edition, and is where these primitives were developed against real
+captures before being generalised. Syrup itself knows nothing about
+MapleStory, or any other application — a second edition for a different
+program would consume it exactly the same way.
 
 ## License
 
