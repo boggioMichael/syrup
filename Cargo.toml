@@ -1,0 +1,31 @@
+[package]
+name = "framelens"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "A small toolkit for turning captured frames into structured, confidence-scored visual observations"
+repository = "https://github.com/boggioMichael/framelens"
+keywords = ["computer-vision", "screen-capture", "ocr", "detection"]
+categories = ["computer-vision", "multimedia::images"]
+
+[dependencies]
+image = "0.24"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_Graphics_Gdi",
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Storage_Xps",
+    "Media_Ocr",
+    "Graphics_Imaging",
+    "Storage_Streams",
+    "Foundation",
+] }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "primitives"
+harness = false
