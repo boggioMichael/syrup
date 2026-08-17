@@ -70,10 +70,6 @@ impl Timestamp {
             .unwrap_or(0);
         Self(millis)
     }
-
-    pub fn elapsed_ms_since(self, earlier: Timestamp) -> u128 {
-        self.0.saturating_sub(earlier.0)
-    }
 }
 
 /// A qualitative estimate of how trustworthy the technique behind a

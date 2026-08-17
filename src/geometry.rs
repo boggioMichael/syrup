@@ -85,7 +85,8 @@ where
     result
 }
 
-pub fn overlap(a: (u32, u32), b: (u32, u32)) -> u32 {
+/// Number of overlapping units between two inclusive 1-D spans.
+fn overlap(a: (u32, u32), b: (u32, u32)) -> u32 {
     if a.1 < b.0 || b.1 < a.0 {
         return 0;
     }
@@ -182,7 +183,7 @@ pub fn group_segments(rows: Vec<(u32, u32, u32)>, min_height: u32, max_gap: u32)
     completed
 }
 
-pub fn find_horizontal_region<F>(
+fn find_horizontal_region<F>(
     image: &RgbaImage,
     region: Rect,
     min_width: u32,
@@ -210,38 +211,43 @@ where
     candidates.into_iter().max_by_key(|rect| rect.area())
 }
 
-pub fn find_text_block(image: &RgbaImage, region: Rect) -> Option<Rect> {
-    let mut min_x = None;
-    let mut max_x = None;
-    let mut min_y = None;
-    let mut max_y = None;
-    let mut count = 0u32;
+/// Fewer text pixels than this in a region is noise, not a line of text.
+const MIN_TEXT_PIXELS: u32 = 6;
 
+/// Padding added around a located text block, so glyph edges are not
+/// clipped by the returned rectangle.
+const TEXT_BLOCK_PADDING: u32 = 2;
+
+/// Find the bounding box of the text-like pixels within `region`, padded
+/// slightly. Returns `None` when the region holds too few to be text.
+pub fn find_text_block(image: &RgbaImage, region: Rect) -> Option<Rect> {
     let x_end = region.x.saturating_add(region.w).min(image.width());
     let y_end = region.y.saturating_add(region.h).min(image.height());
 
+    let mut bounds: Option<(u32, u32, u32, u32)> = None;
+    let mut count = 0u32;
+
     for y in region.y..y_end {
         for x in region.x..x_end {
-            if is_text_pixel(image.get_pixel(x, y)) {
-                count += 1;
-                min_x = Some(min_x.unwrap_or(x).min(x));
-                max_x = Some(max_x.unwrap_or(x).max(x));
-                min_y = Some(min_y.unwrap_or(y).min(y));
-                max_y = Some(max_y.unwrap_or(y).max(y));
+            if !is_text_pixel(image.get_pixel(x, y)) {
+                continue;
             }
+            count += 1;
+            bounds = Some(match bounds {
+                None => (x, x, y, y),
+                Some((min_x, max_x, min_y, max_y)) => {
+                    (min_x.min(x), max_x.max(x), min_y.min(y), max_y.max(y))
+                }
+            });
         }
     }
 
-    if count < 6 {
+    let (min_x, max_x, min_y, max_y) = bounds?;
+    if count < MIN_TEXT_PIXELS {
         return None;
     }
 
-    let min_x = min_x.unwrap();
-    let max_x = max_x.unwrap();
-    let min_y = min_y.unwrap();
-    let max_y = max_y.unwrap();
-    let padding = 2u32;
-
+    let padding = TEXT_BLOCK_PADDING;
     Some(Rect {
         x: min_x.saturating_sub(padding),
         y: min_y.saturating_sub(padding),

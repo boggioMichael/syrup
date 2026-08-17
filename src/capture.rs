@@ -106,10 +106,6 @@ mod windows_capture {
         state.titles
     }
 
-    pub fn capture_window_by_title(search_title: &str) -> Option<RgbaImage> {
-        capture_window_by_title_info(search_title).map(|(_, image)| image)
-    }
-
     /// Capture the first visible window whose title contains `search_title`
     /// (case-insensitive), returning the full title and the client-area
     /// pixels.
@@ -278,15 +274,10 @@ mod windows_capture {
 }
 
 #[cfg(target_os = "windows")]
-pub use windows_capture::{capture_window_by_title, capture_window_by_title_info, list_windows};
+pub use windows_capture::{capture_window_by_title_info, list_windows};
 
 #[cfg(not(target_os = "windows"))]
 use image::RgbaImage;
-
-#[cfg(not(target_os = "windows"))]
-pub fn capture_window_by_title(_: &str) -> Option<RgbaImage> {
-    None
-}
 
 #[cfg(not(target_os = "windows"))]
 pub fn capture_window_by_title_info(_: &str) -> Option<(String, RgbaImage)> {

@@ -29,7 +29,7 @@ pub fn hsv_from_rgb(r: u8, g: u8, b: u8) -> Hsv {
 
 /// Is `hue` within `[min, max]`, where a range with `min > max` wraps
 /// around 360° (e.g. `(340, 30)` covers red)?
-pub fn hue_in_range(hue: f32, min: f32, max: f32) -> bool {
+fn hue_in_range(hue: f32, min: f32, max: f32) -> bool {
     if min <= max {
         hue >= min && hue <= max
     } else {
@@ -68,7 +68,7 @@ pub fn is_text_pixel(pixel: &Rgba<u8>) -> bool {
 }
 
 /// Is this pixel opaque enough to be foreground rather than a blend edge?
-pub fn alpha_is_high(pixel: &Rgba<u8>) -> bool {
+fn alpha_is_high(pixel: &Rgba<u8>) -> bool {
     pixel[3] as f32 / 255.0 >= 0.45
 }
 

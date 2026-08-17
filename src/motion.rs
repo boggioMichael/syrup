@@ -153,7 +153,13 @@ impl MotionDetector {
             detection
         } else {
             let confidence = average_confidence(tracks);
-            let reliability = if tracks.iter().any(|t| t.age_frames > 3) {
+            // Every blob being predicted means nothing was actually
+            // redetected this frame: the positions come from the tracker's
+            // linear extrapolation, not from pixels. Reporting that as
+            // observed evidence would overstate what the frame showed.
+            let reliability = if moving.iter().all(|blob| blob.is_predicted) {
+                Reliability::Predicted
+            } else if tracks.iter().any(|track| track.age_frames > 3) {
                 Reliability::Corroborated
             } else {
                 Reliability::Heuristic
@@ -301,6 +307,25 @@ mod tests {
         let detection = detector.detect(&frame);
         assert!(detection.is_present());
         assert!(detection.value.unwrap().is_empty());
+    }
+
+    /// While an object is occluded its position is extrapolated, not seen.
+    /// The detection must say so rather than presenting a predicted
+    /// position as observed evidence.
+    #[test]
+    fn blobs_carried_through_occlusion_are_reported_as_predicted() {
+        let mut detector = MotionDetector::new(MotionConfig::default());
+        detector.detect(&frame_with_square(80, 80, (10, 10), 10));
+        let observed = detector.detect(&frame_with_square(80, 80, (25, 10), 10));
+        assert_eq!(observed.reliability, Reliability::Heuristic);
+
+        // A frame identical to the previous one produces no new detections,
+        // so every surviving track is coasting on prediction.
+        let predicted = detector.detect(&frame_with_square(80, 80, (25, 10), 10));
+        let blobs = predicted.value.as_ref().expect("tracks survive occlusion");
+        assert!(!blobs.is_empty());
+        assert!(blobs.iter().all(|blob| blob.is_predicted));
+        assert_eq!(predicted.reliability, Reliability::Predicted);
     }
 
     #[test]
