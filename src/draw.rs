@@ -24,7 +24,7 @@ pub fn draw_rect(
     for t in 0..thickness {
         let yy_top = y.saturating_add(t);
         let yy_bottom = y.saturating_add(h.saturating_sub(1)).saturating_sub(t);
-        for px in x..(x + w).min(iw) {
+        for px in x..x.saturating_add(w).min(iw) {
             if yy_top < ih {
                 img.put_pixel(px, yy_top, color);
             }
@@ -34,7 +34,7 @@ pub fn draw_rect(
         }
         let xx_left = x.saturating_add(t);
         let xx_right = x.saturating_add(w.saturating_sub(1)).saturating_sub(t);
-        for py in y..(y + h).min(ih) {
+        for py in y..y.saturating_add(h).min(ih) {
             if xx_left < iw {
                 img.put_pixel(xx_left, py, color);
             }
@@ -184,6 +184,16 @@ mod tests {
         draw_rect(&mut img, 2, 2, 5, 5, red, 1);
         assert_eq!(*img.get_pixel(2, 2), red); // corner
         assert_eq!(*img.get_pixel(4, 4), black); // interior untouched
+    }
+
+    #[test]
+    fn draw_rect_survives_sizes_that_overflow() {
+        let red = Rgba([255, 0, 0, 255]);
+        let mut img = RgbaImage::new(8, 8);
+        draw_rect(&mut img, 3, 3, u32::MAX, u32::MAX, red, 2);
+        assert_eq!(*img.get_pixel(3, 7), red);
+        assert_eq!(*img.get_pixel(7, 3), red);
+        draw_rect(&mut img, u32::MAX, u32::MAX, 5, 5, red, 1);
     }
 
     #[test]
