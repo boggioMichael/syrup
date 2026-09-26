@@ -48,6 +48,7 @@ pub mod glyphs;
 pub mod motion;
 pub mod ocr;
 pub mod quality;
+mod scan;
 pub mod threshold;
 pub mod timing;
 pub mod tracking;
