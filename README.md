@@ -31,6 +31,12 @@ found.
 - **Motion** — single-pass frame differencing plus a tracker that gives
   moving regions stable IDs, velocity, and occlusion grace. Detections are
   matched to tracks optimally, so nearby objects do not swap identities.
+- **Template matching** — finds a known picture (an icon, a UI marker, a
+  status glyph) anywhere in a frame by normalised cross-correlation, so
+  brightness and contrast differences don't affect the score. Large
+  searches use a coarse-to-fine image pyramid instead of scoring every
+  position at full resolution; small searches are scored exhaustively.
+  Returns a sub-pixel centre estimate.
 - **OCR** — text recognition via a Tesseract subprocess, with the crop
   prepared the way Tesseract reads best (dark text on light, levels
   stretched, enlarged, framed by a margin), per-word confidence and boxes,
@@ -105,6 +111,7 @@ RgbaImage (any source)
     ├─ geometry / color / threshold  locate regions by shape, colour and contrast
     ├─ components                    the exact connected regions
     ├─ motion / tracking             what moved, with stable identity
+    ├─ template                      where a known picture is, if it is there at all
     ├─ glyphs / ocr / quality        what text says, and whether it is readable at all
     │
     ▼
@@ -149,6 +156,9 @@ from MapleSyrup.
 | Glyph reading, 9-character value            | —       | 86 µs   |
 | Glyph reading, unreadable 40 px smear       | —       | 0.70 ms |
 | Tracker update, 60 crowded objects          | —       | 38 µs   |
+| Template search, 32 px icon, whole frame    | —       | 15 ms   |
+| Template search, 64 px icon, whole frame    | —       | 7.5 ms  |
+| Template search, 16 px icon, 240×140 region | —       | 1.6 ms  |
 
 Motion is the slowest when the whole view changes, because no row can be
 skipped; even then it stays well inside a 60 fps frame budget.
