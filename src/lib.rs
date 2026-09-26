@@ -20,6 +20,7 @@
 //! - [`geometry`]: rectangles, pixel-run segmentation, region grouping, and
 //!   horizontal-bar fill measurement.
 //! - [`color`]: RGB→HSV conversion and the pixel predicates detectors share.
+//! - [`components`]: connected-component labelling of masks and predicates.
 //! - [`motion`]: frame differencing and a moving-blob detector with stable
 //!   IDs across frames (see [`tracking`]).
 //! - [`tracking`]: a minimal centroid multi-object tracker.
@@ -35,6 +36,7 @@
 
 pub mod capture;
 pub mod color;
+pub mod components;
 pub mod detection;
 pub mod draw;
 pub mod geometry;
