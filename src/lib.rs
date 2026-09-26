@@ -21,6 +21,8 @@
 //!   horizontal-bar fill measurement.
 //! - [`color`]: RGB→HSV conversion and the pixel predicates detectors share.
 //! - [`components`]: connected-component labelling of masks and predicates.
+//! - [`threshold`]: Otsu thresholds, integral images, channel views, and a
+//!   local-contrast "text evidence" map.
 //! - [`motion`]: frame differencing and a moving-blob detector with stable
 //!   IDs across frames (see [`tracking`]).
 //! - [`tracking`]: a minimal centroid multi-object tracker.
@@ -43,6 +45,7 @@ pub mod geometry;
 pub mod motion;
 pub mod ocr;
 pub mod quality;
+pub mod threshold;
 pub mod timing;
 pub mod tracking;
 
