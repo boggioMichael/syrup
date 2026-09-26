@@ -15,9 +15,9 @@
 //!   than the typical pixel of its own row, which lifts glyph strokes off
 //!   bars and gradients whose overall brightness varies.
 
-use image::{GrayImage, Luma, RgbaImage};
+use image::{GrayImage, RgbaImage};
 
-use crate::geometry::{Rect, row_pixels};
+use crate::geometry::Rect;
 
 /// Which single value to read from a colour pixel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,19 +31,6 @@ pub enum Channel {
     Max,
 }
 
-impl Channel {
-    #[inline]
-    fn of(self, p: &image::Rgba<u8>) -> u8 {
-        match self {
-            Channel::Luma => {
-                ((p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114 + 500) / 1000) as u8
-            }
-            Channel::Min => p[0].min(p[1]).min(p[2]),
-            Channel::Max => p[0].max(p[1]).max(p[2]),
-        }
-    }
-}
-
 /// The chosen channel of `region` as a grey image the size of the region
 /// (clipped to the image).
 pub fn channel_image(image: &RgbaImage, region: Rect, channel: Channel) -> GrayImage {
@@ -52,13 +39,46 @@ pub fn channel_image(image: &RgbaImage, region: Rect, channel: Channel) -> GrayI
     if region.x >= x_end || region.y >= y_end {
         return GrayImage::new(0, 0);
     }
-    let mut out = GrayImage::new(x_end - region.x, y_end - region.y);
-    for y in region.y..y_end {
-        for (x, pixel) in row_pixels(image, y, region.x, x_end - 1) {
-            out.put_pixel(x - region.x, y - region.y, Luma([channel.of(pixel)]));
+    let (width, height) = (x_end - region.x, y_end - region.y);
+    let row_len = width as usize;
+    let stride = image.width() as usize * 4;
+    let raw = image.as_raw();
+    let mut out = vec![0u8; row_len * height as usize];
+    for (y, out_row) in (region.y..y_end).zip(out.chunks_exact_mut(row_len)) {
+        let start = y as usize * stride + region.x as usize * 4;
+        // Pixels as arrays rather than slices: no bounds checks, so each
+        // per-channel loop below is a plain map the compiler vectorises.
+        let pixels = raw[start..start + row_len * 4]
+            .chunks_exact(4)
+            .map(|p| -> [u8; 4] { p.try_into().expect("4-byte pixels") });
+        match channel {
+            Channel::Luma => {
+                for (value, p) in out_row.iter_mut().zip(pixels) {
+                    *value = luma(p[0], p[1], p[2]);
+                }
+            }
+            Channel::Min => {
+                for (value, p) in out_row.iter_mut().zip(pixels) {
+                    *value = p[0].min(p[1]).min(p[2]);
+                }
+            }
+            Channel::Max => {
+                for (value, p) in out_row.iter_mut().zip(pixels) {
+                    *value = p[0].max(p[1]).max(p[2]);
+                }
+            }
         }
     }
-    out
+    GrayImage::from_raw(width, height, out).expect("buffer sized to the region")
+}
+
+/// Rec. 601 luma (0.299, 0.587, 0.114) in 16-bit fixed point, rounded to
+/// the nearest level. The weights sum to exactly 65536, so greys map to
+/// themselves, and a shift replaces the division by 1000 that kept the
+/// loop from vectorising.
+#[inline]
+fn luma(r: u8, g: u8, b: u8) -> u8 {
+    ((u32::from(r) * 19595 + u32::from(g) * 38470 + u32::from(b) * 7471 + 32768) >> 16) as u8
 }
 
 /// A 256-bin histogram of a grey image.
@@ -426,5 +446,48 @@ mod tests {
             40,
         );
         assert_eq!(evidence.dimensions(), (0, 0));
+    }
+
+    #[test]
+    fn channel_views_match_their_definitions_in_any_region() {
+        let image = RgbaImage::from_fn(23, 17, |x, y| {
+            Rgba([
+                (x * 11 + y * 3) as u8,
+                ((x * 7) ^ (y * 13)) as u8,
+                (x * y * 5) as u8,
+                255,
+            ])
+        });
+        // Runs off the right edge, so the view is clipped to 18 columns.
+        let region = Rect {
+            x: 5,
+            y: 3,
+            w: 30,
+            h: 9,
+        };
+        for channel in [Channel::Luma, Channel::Min, Channel::Max] {
+            let view = channel_image(&image, region, channel);
+            assert_eq!(view.dimensions(), (18, 9));
+            for (x, y, v) in view.enumerate_pixels() {
+                let p = image.get_pixel(x + 5, y + 3);
+                let want = match channel {
+                    Channel::Luma => {
+                        let exact = 0.299 * p[0] as f64 + 0.587 * p[1] as f64 + 0.114 * p[2] as f64;
+                        assert!((v[0] as f64 - exact).abs() <= 0.5 + 1e-3, "luma {exact}");
+                        v[0]
+                    }
+                    Channel::Min => p[0].min(p[1]).min(p[2]),
+                    Channel::Max => p[0].max(p[1]).max(p[2]),
+                };
+                assert_eq!(v[0], want, "{channel:?} at {x},{y}");
+            }
+        }
+    }
+
+    #[test]
+    fn luma_maps_greys_to_themselves() {
+        for v in 0..=255u8 {
+            assert_eq!(luma(v, v, v), v);
+        }
     }
 }
