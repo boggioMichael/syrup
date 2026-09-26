@@ -192,20 +192,26 @@ pub fn text_evidence(
     let (width, height) = values.dimensions();
     let mut out = GrayImage::new(width, height);
     let span = span.max(1) as f32;
-    let mut row = Vec::with_capacity(width as usize);
-    for y in 0..height {
-        row.clear();
-        row.extend((0..width).map(|x| values.get_pixel(x, y).0[0]));
-        let mut sorted = row.clone();
-        sorted.sort_unstable();
-        let median = sorted[sorted.len() / 2] as f32;
-        for (x, &v) in row.iter().enumerate() {
+    if width == 0 {
+        return out;
+    }
+    let row_len = width as usize;
+    let mut scratch = Vec::with_capacity(row_len);
+    for (row, out_row) in values
+        .as_raw()
+        .chunks_exact(row_len)
+        .zip(out.chunks_exact_mut(row_len))
+    {
+        scratch.clear();
+        scratch.extend_from_slice(row);
+        // The value at the middle rank, without sorting the whole row.
+        let median = *scratch.select_nth_unstable(row_len / 2).1 as f32;
+        for (out, &v) in out_row.iter_mut().zip(row) {
             let away = match polarity {
                 Polarity::LightText => v as f32 - median,
                 Polarity::DarkText => median - v as f32,
             };
-            let lift = (away / span * 255.0).clamp(0.0, 255.0);
-            out.put_pixel(x as u32, y, Luma([lift as u8]));
+            *out = (away / span * 255.0).clamp(0.0, 255.0) as u8;
         }
     }
     out

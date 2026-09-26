@@ -23,6 +23,8 @@
 //! Glyphs are normalised to the line height, so a font learned at one size
 //! also reads the same font rendered at another.
 
+use std::collections::HashMap;
+
 use image::{GrayImage, RgbaImage};
 
 use crate::detection::{Confidence, Detection, Reliability};
@@ -102,6 +104,9 @@ struct Template {
     ch: char,
     /// Running mean of the normalised cells learned for this character.
     cell: Vec<f32>,
+    /// `cell` centred and scaled to unit length, so that matching a glyph
+    /// against it is a single dot product (see [`Standardised`]).
+    unit: Standardised,
     samples: u32,
 }
 
@@ -134,6 +139,12 @@ impl GlyphSet {
     ///
     /// Repeated examples of a character are averaged, so learning from
     /// several captures makes the templates robust to the noise of any one.
+    ///
+    /// Glyphs are measured against the height of their line, which is what
+    /// tells a dash from an underscore. Learn from whole lines as they
+    /// appear on screen: a character that does not reach the full height
+    /// (a slash, a dot, a dash) learned from a crop of its own is measured
+    /// against its own height instead, and will not match in a real line.
     pub fn learn(
         &mut self,
         image: &RgbaImage,
@@ -158,9 +169,11 @@ impl GlyphSet {
                     for (mean, value) in template.cell.iter_mut().zip(&cell) {
                         *mean += (value - *mean) / n;
                     }
+                    template.unit = Standardised::new(&template.cell);
                 }
                 None => self.templates.push(Template {
                     ch,
+                    unit: Standardised::new(&cell),
                     cell,
                     samples: 1,
                 }),
@@ -251,10 +264,11 @@ impl GlyphSet {
 
     /// Best character for a normalised cell: `(char, score, margin)`.
     fn classify(&self, cell: &[f32]) -> (char, f32, f32) {
+        let cell = Standardised::new(cell);
         let mut best = (' ', -1.0f32);
         let mut second = -1.0f32;
         for template in &self.templates {
-            let score = correlation(cell, &template.cell);
+            let score = cell.correlation(&template.unit);
             if score > best.1 {
                 if best.0 != template.ch {
                     second = second.max(best.1);
@@ -274,50 +288,88 @@ impl GlyphSet {
     /// Cut positions are chosen by the templates, not by the ink profile:
     /// where two glyphs touch, the least-inked column is usually *inside* a
     /// glyph (the waist of an 8), and cutting there reads neither half.
+    ///
+    /// The search only considers pieces a glyph could fill — at most
+    /// [`MAX_GLYPH_ASPECT`] times the line height wide — and scores each
+    /// distinct piece once, so a wide smear of unreadable ink costs about as
+    /// much as a few glyphs rather than growing with the square of its width.
     fn best_split(&self, line: &Line, x0: u32, x1: u32) -> Vec<(u32, u32)> {
         let whole = self.classify(&line.cell(x0, x1));
         if whole.1 >= self.options.min_score || x1 - x0 < 4 {
             return vec![(x0, x1)];
         }
-        let score = |a: u32, b: u32| -> Option<((u32, u32), f32)> {
-            let (a, b) = line.trim_columns(a, b)?;
-            Some(((a, b), self.classify(&line.cell(a, b)).1))
+        let widest = ((line.height as f32 * MAX_GLYPH_ASPECT).ceil() as u32).max(2);
+        let mut scores: HashMap<(u32, u32), Option<ScoredPiece>> = HashMap::new();
+        let mut score = |a: u32, b: u32| -> Option<ScoredPiece> {
+            if b - a > widest {
+                return None;
+            }
+            *scores.entry((a, b)).or_insert_with(|| {
+                let (a, b) = line.trim_columns(a, b)?;
+                Some(((a, b), self.classify(&line.cell(a, b)).1))
+            })
         };
         let mut best = (vec![(x0, x1)], whole.1);
 
+        // A split is only believed when its weakest piece beats the best so
+        // far by SPLIT_ADVANTAGE, so any piece scoring below that bar rules
+        // out every split containing it without scoring the rest.
+        let bar = |best: f32| best + SPLIT_ADVANTAGE;
+
         // Two pieces, each at least two columns wide.
-        for cut in x0 + 2..x1 - 1 {
-            if let (Some((p, sp)), Some((q, sq))) = (score(x0, cut), score(cut, x1)) {
-                let weakest = sp.min(sq);
-                if weakest > best.1 + SPLIT_ADVANTAGE {
-                    best = (vec![p, q], weakest);
+        if x1 - x0 <= 2 * widest {
+            for cut in (x0 + 2).max(x1.saturating_sub(widest))..=(x1 - 2).min(x0 + widest) {
+                let Some((p, sp)) = score(x0, cut) else {
+                    continue;
+                };
+                if sp <= bar(best.1) {
+                    continue;
+                }
+                if let Some((q, sq)) = score(cut, x1)
+                    && sp.min(sq) > bar(best.1)
+                {
+                    best = (vec![p, q], sp.min(sq));
                 }
             }
         }
-        if best.1 >= self.options.min_score || x1 - x0 < 6 {
+        if best.1 >= self.options.min_score || x1 - x0 < 6 || x1 - x0 > 3 * widest {
             return best.0;
         }
 
         // Three pieces, only when two did not already explain the run.
-        for first in x0 + 2..x1 - 3 {
+        for first in x0 + 2..=(x1 - 4).min(x0 + widest) {
             let Some((p, sp)) = score(x0, first) else {
                 continue;
             };
-            if sp <= best.1 {
-                continue;
-            }
-            for second in first + 2..x1 - 1 {
-                if let (Some((q, sq)), Some((r, sr))) = (score(first, second), score(second, x1)) {
-                    let weakest = sp.min(sq).min(sr);
-                    if weakest > best.1 + SPLIT_ADVANTAGE {
-                        best = (vec![p, q, r], weakest);
-                    }
+            for second in (first + 2).max(x1.saturating_sub(widest))..=(x1 - 2).min(first + widest)
+            {
+                if sp <= bar(best.1) {
+                    break;
+                }
+                let Some((q, sq)) = score(first, second) else {
+                    continue;
+                };
+                if sq <= bar(best.1) {
+                    continue;
+                }
+                if let Some((r, sr)) = score(second, x1)
+                    && sp.min(sq).min(sr) > bar(best.1)
+                {
+                    best = (vec![p, q, r], sp.min(sq).min(sr));
                 }
             }
         }
         best.0
     }
 }
+
+/// A candidate glyph after trimming — its columns `(x0, x1)` — and how well
+/// it matches its best character.
+type ScoredPiece = ((u32, u32), f32);
+
+/// Widest glyph a split may produce, as a multiple of the line height.
+/// Glyph cells are square, so wider pieces would be squeezed to fit anyway.
+const MAX_GLYPH_ASPECT: f32 = 1.5;
 
 /// A gap of at least this fraction of the line height reads as a space.
 const SPACE_GAP_FRACTION: f32 = 0.5;
@@ -461,48 +513,99 @@ impl Line {
 
     /// The glyph in columns `x0..x1`, scaled so the band fills the cell's
     /// height (keeping its aspect), centred horizontally. Values are the
-    /// evidence in `[0, 1]`, sampled with box filtering.
+    /// evidence in `[0, 1]`, sampled with box filtering: each cell pixel is
+    /// the area-weighted mean of the source pixels it covers.
+    ///
+    /// The box filter is separable, so it runs as a horizontal pass over
+    /// the band's rows and then a vertical pass over the result.
     fn cell(&self, x0: u32, x1: u32) -> Vec<f32> {
         let mut cell = vec![0.0f32; CELL_W * CELL_H];
-        let glyph_w = (x1 - x0) as f32;
-        let glyph_h = self.height as f32;
-        let scale = CELL_H as f32 / glyph_h;
-        let out_w = (glyph_w * scale).round().clamp(1.0, CELL_W as f32) as usize;
+        let glyph_w = x1 - x0;
+        let scale = CELL_H as f32 / self.height as f32;
+        let out_w = (glyph_w as f32 * scale).round().clamp(1.0, CELL_W as f32) as usize;
         let left = (CELL_W - out_w) / 2;
-        for cy in 0..CELL_H {
-            let sy0 = cy as f32 / scale;
-            let sy1 = (cy + 1) as f32 / scale;
+        let available = self.evidence.width().saturating_sub(x0);
+        let columns = BoxTaps::new(glyph_w, out_w, available);
+        let rows = BoxTaps::new(self.height, CELL_H, self.height);
+
+        let evidence = self.evidence.as_raw();
+        let stride = self.evidence.width() as usize;
+        let mut horizontal = vec![0.0f32; self.height as usize * out_w];
+        for sy in 0..self.height as usize {
+            let row = (self.top as usize + sy) * stride + x0 as usize;
             for cx in 0..out_w {
-                let sx0 = cx as f32 * glyph_w / out_w as f32;
-                let sx1 = (cx + 1) as f32 * glyph_w / out_w as f32;
-                cell[cy * CELL_W + left + cx] = self.box_mean(x0, sx0, sx1, sy0, sy1);
+                horizontal[sy * out_w + cx] = columns
+                    .of(cx)
+                    .iter()
+                    .map(|&(sx, w)| w * f32::from(evidence[row + sx]))
+                    .sum();
+            }
+        }
+        for cy in 0..CELL_H {
+            for cx in 0..out_w {
+                let weight = rows.weight(cy) * columns.weight(cx);
+                if weight <= 0.0 {
+                    continue;
+                }
+                let total: f32 = rows
+                    .of(cy)
+                    .iter()
+                    .map(|&(sy, w)| w * horizontal[sy * out_w + cx])
+                    .sum();
+                cell[cy * CELL_W + left + cx] = total / weight / 255.0;
             }
         }
         cell
     }
+}
 
-    /// Area-weighted mean evidence over a fractional source box (relative to
-    /// column `x0` and the band top).
-    fn box_mean(&self, x0: u32, sx0: f32, sx1: f32, sy0: f32, sy1: f32) -> f32 {
-        let mut total = 0.0;
-        let mut weight = 0.0;
-        let mut y = sy0.floor() as u32;
-        while (y as f32) < sy1 && y < self.height {
-            let wy = (sy1.min(y as f32 + 1.0) - sy0.max(y as f32)).max(0.0);
-            let mut x = sx0.floor() as u32;
-            while (x as f32) < sx1 {
-                let wx = (sx1.min(x as f32 + 1.0) - sx0.max(x as f32)).max(0.0);
-                let px = x0 + x;
-                if px < self.evidence.width() {
-                    let v = self.evidence.get_pixel(px, self.top + y).0[0] as f32 / 255.0;
-                    total += v * wx * wy;
-                    weight += wx * wy;
+/// Box-filter taps resampling `len` source pixels to `out` pixels: for each
+/// output pixel, the source pixels its span covers and how much of each,
+/// skipping source pixels at or beyond `limit`. Stored flat, one
+/// allocation for all output pixels.
+struct BoxTaps {
+    /// `taps[starts[i]..starts[i + 1]]` belong to output pixel `i`.
+    starts: Vec<usize>,
+    taps: Vec<(usize, f32)>,
+    weights: Vec<f32>,
+}
+
+impl BoxTaps {
+    fn new(len: u32, out: usize, limit: u32) -> Self {
+        let step = len as f32 / out as f32;
+        let mut starts = Vec::with_capacity(out + 1);
+        let mut taps = Vec::with_capacity(out * (step.ceil() as usize + 1));
+        let mut weights = Vec::with_capacity(out);
+        for i in 0..out {
+            starts.push(taps.len());
+            let (start, end) = (i as f32 * step, (i + 1) as f32 * step);
+            let mut total = 0.0;
+            let mut source = start.floor() as u32;
+            while (source as f32) < end && source < limit {
+                let weight = end.min(source as f32 + 1.0) - start.max(source as f32);
+                if weight > 0.0 {
+                    taps.push((source as usize, weight));
+                    total += weight;
                 }
-                x += 1;
+                source += 1;
             }
-            y += 1;
+            weights.push(total);
         }
-        if weight > 0.0 { total / weight } else { 0.0 }
+        starts.push(taps.len());
+        Self {
+            starts,
+            taps,
+            weights,
+        }
+    }
+
+    fn of(&self, i: usize) -> &[(usize, f32)] {
+        &self.taps[self.starts[i]..self.starts[i + 1]]
+    }
+
+    /// Total weight of output pixel `i`'s taps.
+    fn weight(&self, i: usize) -> f32 {
+        self.weights[i]
     }
 }
 
@@ -550,19 +653,32 @@ fn fit_span_count(line: &Line, mut spans: Vec<(u32, u32)>, count: usize) -> Vec<
     spans
 }
 
-/// Pearson correlation of two equally sized cells; 0 when either is flat.
-fn correlation(a: &[f32], b: &[f32]) -> f32 {
-    let n = a.len() as f32;
-    let (mean_a, mean_b) = (a.iter().sum::<f32>() / n, b.iter().sum::<f32>() / n);
-    let (mut cov, mut var_a, mut var_b) = (0.0, 0.0, 0.0);
-    for (x, y) in a.iter().zip(b) {
-        let (dx, dy) = (x - mean_a, y - mean_b);
-        cov += dx * dy;
-        var_a += dx * dx;
-        var_b += dy * dy;
+/// A cell centred on its mean and scaled to unit length. The Pearson
+/// correlation of two cells is then the dot product of their standardised
+/// forms, so each template is standardised once when learned and each
+/// glyph once when read, instead of for every comparison.
+#[derive(Debug, Clone)]
+struct Standardised(Vec<f32>);
+
+impl Standardised {
+    fn new(cell: &[f32]) -> Self {
+        let n = cell.len().max(1) as f32;
+        let mean = cell.iter().sum::<f32>() / n;
+        let norm = cell
+            .iter()
+            .map(|v| (v - mean) * (v - mean))
+            .sum::<f32>()
+            .sqrt();
+        // A flat cell has no shape to correlate; all zeros makes every
+        // correlation with it 0.
+        let scale = if norm > 1e-6 { 1.0 / norm } else { 0.0 };
+        Self(cell.iter().map(|v| (v - mean) * scale).collect())
     }
-    let denom = (var_a * var_b).sqrt();
-    if denom > 1e-9 { cov / denom } else { 0.0 }
+
+    /// Pearson correlation with another standardised cell of the same size.
+    fn correlation(&self, other: &Standardised) -> f32 {
+        self.0.iter().zip(&other.0).map(|(a, b)| a * b).sum()
+    }
 }
 
 #[cfg(test)]
