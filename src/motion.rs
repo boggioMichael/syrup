@@ -26,13 +26,95 @@ pub fn motion_mask(a: &RgbaImage, b: &RgbaImage, threshold: u8) -> Option<GrayIm
     let (w, h) = a.dimensions();
     let mut out = GrayImage::new(w, h);
     for (mask, (pa, pb)) in out.pixels_mut().zip(a.pixels().zip(b.pixels())) {
-        let dr = pa[0].abs_diff(pb[0]) as f32;
-        let dg = pa[1].abs_diff(pb[1]) as f32;
-        let db = pa[2].abs_diff(pb[2]) as f32;
-        let lum = (0.2126 * dr + 0.7152 * dg + 0.0722 * db) as u8;
-        *mask = Luma([if lum >= threshold { 255 } else { 0 }]);
+        *mask = Luma([if moved(&pa.0, &pb.0, threshold) {
+            255
+        } else {
+            0
+        }]);
     }
     Some(out)
+}
+
+/// Whether one pixel changed enough to count as motion: the luminance of
+/// the per-channel absolute difference, truncated to a byte, reaches
+/// `threshold`. The single definition shared by [`motion_mask`] and the
+/// detector's fused scan, so the two cannot drift apart.
+#[inline]
+fn moved(a: &[u8], b: &[u8], threshold: u8) -> bool {
+    let (dr, dg, db) = (
+        a[0].abs_diff(b[0]),
+        a[1].abs_diff(b[1]),
+        a[2].abs_diff(b[2]),
+    );
+    // The weights sum to 1, so the weighted luminance never exceeds the
+    // largest channel difference. Most pixels of consecutive frames barely
+    // change, and this rejects them without any floating-point work.
+    if dr.max(dg).max(db) < threshold {
+        return false;
+    }
+    (0.2126 * dr as f32 + 0.7152 * dg as f32 + 0.0722 * db as f32) as u8 >= threshold
+}
+
+/// Horizontal runs of moved pixels, and how many pixels moved in total,
+/// computed in one pass over the two frames.
+///
+/// Equivalent to building [`motion_mask`] and then scanning it for runs,
+/// without allocating the mask or reading it back: at 1366x768 that is a
+/// megabyte written and read again every frame for nothing. Returns
+/// `(y, start_x, end_x)` runs of at least `min_run_width`, in scan order.
+fn motion_runs(
+    a: &RgbaImage,
+    b: &RgbaImage,
+    threshold: u8,
+    min_run_width: u32,
+) -> (Vec<(u32, u32, u32)>, u64) {
+    let (width, _) = a.dimensions();
+    let row_bytes = width as usize * 4;
+    let mut runs = Vec::new();
+    let mut moved_pixels = 0u64;
+    if row_bytes == 0 {
+        return (runs, 0);
+    }
+    for (y, (row_a, row_b)) in a
+        .as_raw()
+        .chunks_exact(row_bytes)
+        .zip(b.as_raw().chunks_exact(row_bytes))
+        .enumerate()
+    {
+        let y = y as u32;
+        // A row in which no byte changed by `threshold` holds no motion (the
+        // luminance of a difference never exceeds its largest channel).
+        // This reduction has no branches, so it compiles to wide SIMD and
+        // lets the static parts of a frame cost almost nothing.
+        let largest_change = row_a
+            .iter()
+            .zip(row_b)
+            .map(|(pa, pb)| pa.abs_diff(*pb))
+            .fold(0u8, u8::max);
+        if largest_change < threshold {
+            continue;
+        }
+        let mut start: Option<u32> = None;
+        for (x, (pa, pb)) in row_a.chunks_exact(4).zip(row_b.chunks_exact(4)).enumerate() {
+            let x = x as u32;
+            if moved(pa, pb, threshold) {
+                moved_pixels += 1;
+                if start.is_none() {
+                    start = Some(x);
+                }
+            } else if let Some(begin) = start.take()
+                && x - begin >= min_run_width
+            {
+                runs.push((y, begin, x - 1));
+            }
+        }
+        if let Some(begin) = start
+            && width - begin >= min_run_width
+        {
+            runs.push((y, begin, width - 1));
+        }
+    }
+    (runs, moved_pixels)
 }
 
 /// Configuration for the motion detector; exposed so callers can retune it
@@ -113,22 +195,34 @@ impl MotionDetector {
             );
         };
 
-        let blobs = match motion_mask(previous, image, self.config.diff_threshold) {
-            Some(mask) => {
-                self.last_diff_magnitude = changed_fraction(&mask);
-                extract_blobs(&mask, &self.config)
-            }
-            None => {
-                // Capture resolution changed between frames (e.g. window
-                // resize); restart the baseline rather than reporting stale
-                // motion computed against mismatched dimensions.
-                self.previous_frame = Some(image.clone());
-                self.last_diff_magnitude = 0.0;
-                return Detection::missing("motion", "frame size changed since previous frame");
-            }
-        };
+        if previous.dimensions() != image.dimensions() {
+            // Capture resolution changed between frames (e.g. window
+            // resize); restart the baseline rather than reporting stale
+            // motion computed against mismatched dimensions.
+            self.previous_frame = Some(image.clone());
+            self.last_diff_magnitude = 0.0;
+            return Detection::missing("motion", "frame size changed since previous frame");
+        }
 
-        self.previous_frame = Some(image.clone());
+        let (runs, moved_pixels) = motion_runs(
+            previous,
+            image,
+            self.config.diff_threshold,
+            self.config.min_run_width,
+        );
+        let total_pixels = image.width() as u64 * image.height() as u64;
+        self.last_diff_magnitude = if total_pixels == 0 {
+            0.0
+        } else {
+            moved_pixels as f32 / total_pixels as f32
+        };
+        let blobs = blobs_from_runs(runs, &self.config);
+
+        // Keep this frame as the next baseline by copying into the buffer
+        // already held: same size, so no allocation per frame.
+        if let Some(previous) = self.previous_frame.as_mut() {
+            previous.copy_from_slice(image.as_raw());
+        }
 
         let detections: Vec<(f32, f32, f32, f32)> = blobs
             .iter()
@@ -201,42 +295,8 @@ fn average_confidence(tracks: &[Track]) -> Confidence {
     Confidence::new(total / tracks.len() as f32)
 }
 
-fn changed_fraction(mask: &GrayImage) -> f32 {
-    let (width, height) = mask.dimensions();
-    if width == 0 || height == 0 {
-        return 0.0;
-    }
-    let total_pixels = width as f32 * height as f32;
-    let moved_pixels: u32 = mask.iter().map(|&v| if v > 0 { 1 } else { 0 }).sum();
-    moved_pixels as f32 / total_pixels
-}
-
-fn extract_blobs(mask: &GrayImage, config: &MotionConfig) -> Vec<Rect> {
-    let (width, height) = mask.dimensions();
-    let mut rows = Vec::new();
-    for y in 0..height {
-        let mut start: Option<u32> = None;
-        for x in 0..width {
-            let moved = mask.get_pixel(x, y).0[0] > 0;
-            if moved {
-                if start.is_none() {
-                    start = Some(x);
-                }
-            } else if let Some(begin) = start {
-                if x - begin >= config.min_run_width {
-                    rows.push((y, begin, x - 1));
-                }
-                start = None;
-            }
-        }
-        if let Some(begin) = start
-            && width - begin >= config.min_run_width
-        {
-            rows.push((y, begin, width - 1));
-        }
-    }
-
-    group_segments(rows, config.min_blob_height, 1)
+fn blobs_from_runs(runs: Vec<(u32, u32, u32)>, config: &MotionConfig) -> Vec<Rect> {
+    group_segments(runs, config.min_blob_height, 1)
         .into_iter()
         .filter(|rect| rect.area() >= config.min_blob_area)
         .collect()
@@ -265,6 +325,76 @@ mod tests {
         assert!(mask.get_pixel(5, 5).0[0] > 0, "vacated pixels are motion");
         assert!(mask.get_pixel(21, 5).0[0] > 0, "entered pixels are motion");
         assert_eq!(mask.get_pixel(15, 15).0[0], 0, "unchanged pixel is still");
+    }
+
+    /// The early rejection must never change a verdict of the plain formula.
+    #[test]
+    fn early_rejection_agrees_with_the_luminance_formula() {
+        let reference = |d: [u8; 3], t: u8| {
+            (0.2126 * d[0] as f32 + 0.7152 * d[1] as f32 + 0.0722 * d[2] as f32) as u8 >= t
+        };
+        let levels: Vec<u8> = (0..=70u8).chain((71..=255u8).step_by(7)).collect();
+        for &threshold in &[1u8, 2, 28, 29, 100, 254, 255] {
+            for &r in &levels {
+                for &g in &levels {
+                    for &b in &levels {
+                        let base = [0u8, 0, 0, 255];
+                        let other = [r, g, b, 255];
+                        assert_eq!(
+                            moved(&base, &other, threshold),
+                            reference([r, g, b], threshold),
+                            "diff {r},{g},{b} at threshold {threshold}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The fused scan must find exactly the runs (and moved-pixel count)
+    /// that scanning the explicit mask finds.
+    #[test]
+    fn fused_runs_match_scanning_the_mask() {
+        let mut a = RgbaImage::from_pixel(97, 61, Rgba([20, 20, 20, 255]));
+        let mut b = a.clone();
+        // A pseudo-random speckle of changes, plus runs touching both edges.
+        let mut state = 12345u32;
+        for y in 0..61 {
+            for x in 0..97 {
+                state = state.wrapping_mul(1_103_515_245).wrapping_add(12345);
+                let v = (state >> 16) as u8;
+                if v > 170 {
+                    b.put_pixel(x, y, Rgba([v, v / 2, 255 - v, 255]));
+                }
+            }
+        }
+        for x in 0..97 {
+            a.put_pixel(x, 30, Rgba([250, 250, 250, 255]));
+        }
+        let mask = motion_mask(&a, &b, 28).unwrap();
+        let mut expected = Vec::new();
+        let mut expected_moved = 0u64;
+        for y in 0..61u32 {
+            let mut start = None;
+            for x in 0..97u32 {
+                if mask.get_pixel(x, y).0[0] > 0 {
+                    expected_moved += 1;
+                    start.get_or_insert(x);
+                } else if let Some(begin) = start.take()
+                    && x - begin >= 3
+                {
+                    expected.push((y, begin, x - 1));
+                }
+            }
+            if let Some(begin) = start
+                && 97 - begin >= 3
+            {
+                expected.push((y, begin, 96));
+            }
+        }
+        let (runs, moved) = motion_runs(&a, &b, 28, 3);
+        assert_eq!(runs, expected);
+        assert_eq!(moved, expected_moved);
     }
 
     #[test]
