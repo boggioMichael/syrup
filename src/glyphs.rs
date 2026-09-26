@@ -99,6 +99,20 @@ pub enum LearnError {
     GlyphCountMismatch { expected: usize, found: usize },
 }
 
+impl std::fmt::Display for LearnError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LearnError::NoText => write!(f, "no text found in the region"),
+            LearnError::GlyphCountMismatch { expected, found } => write!(
+                f,
+                "the label has {expected} characters but the region splits into {found} glyphs"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for LearnError {}
+
 #[derive(Debug, Clone)]
 struct Template {
     ch: char,
@@ -111,6 +125,38 @@ struct Template {
 }
 
 /// A font learned from labelled examples.
+///
+/// ```
+/// use image::{Rgba, RgbaImage};
+/// use syrup::draw;
+/// use syrup::geometry::Rect;
+/// use syrup::glyphs::{GlyphOptions, GlyphSet};
+///
+/// // A value drawn in a pixel font, light on a coloured bar.
+/// fn crop(text: &str) -> (RgbaImage, Rect) {
+///     let (w, h) = (draw::text_width(text, 2) + 16, draw::text_height(2) + 8);
+///     let mut image = RgbaImage::from_pixel(w, h, Rgba([40, 90, 200, 255]));
+///     draw::draw_text(text, 8, 4, 2, |x, y| {
+///         image.put_pixel(x as u32, y as u32, Rgba([245, 245, 245, 255]))
+///     });
+///     (image, Rect { x: 0, y: 0, w, h })
+/// }
+///
+/// // Teach it the font from a crop whose text is known...
+/// let mut font = GlyphSet::new(GlyphOptions::default());
+/// let (example, region) = crop("0123456789/");
+/// font.learn(&example, region, "0123456789/")?;
+///
+/// // ...then read new crops. `read` abstains rather than guess.
+/// let (frame, region) = crop("1291/1351");
+/// let reading = font.read(&frame, region);
+/// assert_eq!(reading.value.map(|r| r.text).as_deref(), Some("1291/1351"));
+///
+/// // A character it never learned makes the whole reading unknown.
+/// let (frame, region) = crop("12%");
+/// assert!(!font.read(&frame, region).is_present());
+/// # Ok::<(), syrup::glyphs::LearnError>(())
+/// ```
 #[derive(Debug, Clone)]
 pub struct GlyphSet {
     options: GlyphOptions,
@@ -825,6 +871,20 @@ mod tests {
             all.glyphs[2].score < set.options().min_score
                 || all.glyphs[2].margin < set.options().min_margin
         );
+    }
+
+    #[test]
+    fn learn_errors_explain_themselves() {
+        let error = LearnError::GlyphCountMismatch {
+            expected: 4,
+            found: 3,
+        };
+        assert_eq!(
+            error.to_string(),
+            "the label has 4 characters but the region splits into 3 glyphs"
+        );
+        let boxed: Box<dyn std::error::Error> = Box::new(LearnError::NoText);
+        assert_eq!(boxed.to_string(), "no text found in the region");
     }
 
     #[test]
