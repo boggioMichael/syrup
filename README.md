@@ -17,12 +17,26 @@ found.
   color from the frame instead of assuming it.
 - **Color** — RGB→HSV conversion and the shared pixel predicates (hue-range
   match, "looks like UI text", opacity).
-- **Motion** — single-pass frame differencing plus a centroid tracker that
-  gives moving regions stable IDs, velocity, and occlusion grace.
-- **OCR** — text recognition of small on-screen UI text via a Tesseract
-  subprocess, with automatic crop upscaling (small pixel fonts are
-  otherwise unreadable to it); on Windows, the OS's built-in OCR engine is
-  also exposed, which is trained on screen content.
+- **Components** — connected-component labelling of masks or pixel
+  predicates: the exact regions, each with bounds, area and centroid, not
+  just the rectangles around them.
+- **Thresholds** — Otsu thresholds, integral images, channel views, and a
+  "text evidence" map that lifts glyph strokes off bars and gradients by
+  comparing each pixel with its own row's background.
+- **Glyph reading** — reads counters and HUD values drawn in a fixed pixel
+  font by matching each glyph against a font learned from a few labelled
+  crops. It is fast, needs no external tools, and refuses to answer when
+  any glyph is ambiguous: an unreadable value comes back as *unknown*,
+  never as a wrong number.
+- **Motion** — single-pass frame differencing plus a tracker that gives
+  moving regions stable IDs, velocity, and occlusion grace. Detections are
+  matched to tracks optimally, so nearby objects do not swap identities.
+- **OCR** — text recognition via a Tesseract subprocess, with the crop
+  prepared the way Tesseract reads best (dark text on light, levels
+  stretched, enlarged, framed by a margin), per-word confidence and boxes,
+  and a configurable page mode and character whitelist; on Windows, the
+  OS's built-in OCR engine is also exposed, which is trained on screen
+  content.
 - **Quality** — a sharpness metric that predicts whether OCR on a region
   can succeed at all, so blurred input is reported as *blurred* rather than
   silently producing wrong text.
@@ -30,6 +44,7 @@ found.
   window is occluded); portable stubs elsewhere.
 - **Debug drawing** — rectangles and a dependency-free 5×7 bitmap font for
   annotating frames with what a detector saw.
+- **Timing** — FPS and moving-average measurement.
 
 ## What it deliberately does not do
 
@@ -61,6 +76,22 @@ if let Some(bar) = find_color_bar(&image, band, (340.0, 30.0), 0.35, 0.30) {
 # Ok::<(), image::ImageError>(())
 ```
 
+Reading a value drawn in a known pixel font — learn the font once from a
+crop whose text you know, then read new frames:
+
+```rust
+use syrup::glyphs::{GlyphOptions, GlyphSet};
+
+let mut font = GlyphSet::new(GlyphOptions::default());
+font.learn(&labelled_frame, value_region, "1291/1351")?;
+
+let reading = font.read(&frame, value_region);
+match reading.value {
+    Some(text) => println!("{} ({})", text.text, reading.confidence),
+    None => println!("unreadable: {}", reading.failure_reason.unwrap_or_default()),
+}
+```
+
 Frames are plain `image::RgbaImage` buffers, so they can come from a
 screenshot, frames extracted from a video, a synthetic fixture in a test,
 or `syrup::capture` — every primitive behaves identically regardless of
@@ -71,9 +102,10 @@ the source.
 ```text
 RgbaImage (any source)
     │
-    ├─ geometry / color   locate regions by shape and color
-    ├─ motion / tracking  what moved, with stable identity
-    ├─ ocr / quality      what text says, and whether it is readable at all
+    ├─ geometry / color / threshold  locate regions by shape, colour and contrast
+    ├─ components                    the exact connected regions
+    ├─ motion / tracking             what moved, with stable identity
+    ├─ glyphs / ocr / quality        what text says, and whether it is readable at all
     │
     ▼
 Detection<T> — value + confidence + reliability + failure reason
@@ -86,22 +118,53 @@ value without saying *how sure* it is.
 ## Testing
 
 ```sh
-cargo test          # unit + synthetic-screen integration tests
+cargo test          # unit, integration and doc tests
+cargo test -- --ignored   # also run OCR against a real Tesseract install
 cargo clippy --all-targets -- -D warnings
 cargo bench         # criterion benchmarks for the per-frame primitives
 ```
 
 All tests run against synthetic, in-code fixtures; no external tools,
 assets, or network access are required. OCR tests cover argument
-construction and temp-file hygiene without invoking Tesseract. Nothing in
-the suite depends on a domain edition, so this repository stands alone.
+construction, TSV parsing, box mapping, preprocessing and temp-file hygiene
+without invoking Tesseract; one opt-in test runs the real engine end to
+end. Nothing in the suite depends on a domain edition, so this repository
+stands alone.
+
+## Performance
+
+Criterion benchmarks on one 1366×768 frame (`cargo bench`; one x86-64
+core, default target features). "Before" is the code as it was extracted
+from MapleSyrup.
+
+| Benchmark                                   | Before  | Now     |
+|---------------------------------------------|--------:|--------:|
+| Motion detection, one moving object         | 6.25 ms | 0.66 ms |
+| Motion detection, whole view panning        | 7.57 ms | 2.12 ms |
+| Colour-bar search in a status band          | 1.18 ms | 0.52 ms |
+| Dominant colour + uniform-panel search      | 3.37 ms | 1.42 ms |
+| Bar-fill measurement                        | 14 µs   | 14 µs   |
+| Connected components, 400 blobs             | —       | 0.72 ms |
+| Text evidence, 124×22 crop                  | —       | 14 µs   |
+| Glyph reading, 9-character value            | —       | 86 µs   |
+| Glyph reading, unreadable 40 px smear       | —       | 0.70 ms |
+| Tracker update, 60 crowded objects          | —       | 38 µs   |
+
+Motion is the slowest when the whole view changes, because no row can be
+skipped; even then it stays well inside a 60 fps frame budget.
 
 ## Limitations
 
 - The primitives are tuned for rendered UI content (flat colors, pixel
   fonts, hard edges), not for photographs or video of natural scenes.
-- Tesseract must be installed separately for OCR (`TESSERACT_BIN` or
-  `PATH`); without it, OCR reports itself unavailable rather than failing.
+- Tesseract must be installed separately for OCR (`TESSERACT_BIN`, `PATH`,
+  or the standard Windows install locations); without it, OCR reports
+  itself unavailable rather than failing. Even on clean text it misreads
+  some pixel fonts — prefer the glyph reader wherever the font is fixed.
+- The glyph reader reads one line per region, in fonts it was shown.
+  Learn from whole lines as they appear on screen: glyphs are measured
+  against their line's height, so a slash or a dot learned on its own will
+  not match.
 - Live capture is Windows-only. Other platforms consume file-based frames.
 
 ## Syrup and MapleSyrup
