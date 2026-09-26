@@ -11,6 +11,7 @@ use syrup::draw;
 use syrup::geometry::{self, Rect};
 use syrup::glyphs::{GlyphOptions, GlyphSet};
 use syrup::motion::{MotionConfig, MotionDetector};
+use syrup::template::{self, Template};
 use syrup::threshold::{self, Channel, Polarity};
 use syrup::tracking::ObjectTracker;
 
@@ -227,6 +228,56 @@ fn bench_components(c: &mut Criterion) {
     });
 }
 
+/// A 1366x768 textured frame with an icon planted in it, and the icon.
+fn frame_with_icon(size: u32) -> (RgbaImage, RgbaImage) {
+    let frame = RgbaImage::from_fn(1366, 768, |x, y| {
+        let v = ((x / 9 + y / 7) % 11) * 17 + ((x * 31 + y * 17) % 13) * 4;
+        Rgba([v as u8, (v / 2 + 30) as u8, (240 - v.min(240)) as u8, 255])
+    });
+    let icon = RgbaImage::from_fn(size, size, |x, y| {
+        let (cx, cy) = (size as f32 * 0.4, size as f32 * 0.45);
+        let d = ((x as f32 - cx).powi(2) + (y as f32 - cy).powi(2)).sqrt();
+        let v = if d < size as f32 * 0.3 {
+            210
+        } else if x > size * 3 / 4 {
+            20
+        } else {
+            90
+        };
+        Rgba([v, 255 - v / 2, v / 3, 255])
+    });
+    let mut frame = frame;
+    image::imageops::replace(&mut frame, &icon, 901, 333);
+    (frame, icon)
+}
+
+fn bench_template(c: &mut Criterion) {
+    for size in [32u32, 64] {
+        let (frame, icon) = frame_with_icon(size);
+        let template = Template::from_image(&icon, Channel::Luma).expect("icon has structure");
+        let whole = Rect {
+            x: 0,
+            y: 0,
+            w: 1366,
+            h: 768,
+        };
+        c.bench_function(&format!("template {size}px, whole 1366x768 frame"), |b| {
+            b.iter(|| template::find_best(black_box(&frame), whole, &template))
+        });
+    }
+    let (frame, icon) = frame_with_icon(16);
+    let template = Template::from_image(&icon, Channel::Luma).expect("icon has structure");
+    let near = Rect {
+        x: 800,
+        y: 280,
+        w: 240,
+        h: 140,
+    };
+    c.bench_function("template 16px, 240x140 region", |b| {
+        b.iter(|| template::find_best(black_box(&frame), near, &template))
+    });
+}
+
 /// Tracker update with 60 objects close enough to all compete for each
 /// other's detections: one big assignment problem, the worst case.
 fn bench_tracker_dense(c: &mut Criterion) {
@@ -254,6 +305,7 @@ fn bench_tracker_dense(c: &mut Criterion) {
 
 criterion_group!(
     benches,
+    bench_template,
     bench_motion_detect_busy,
     bench_text_evidence,
     bench_glyph_read,

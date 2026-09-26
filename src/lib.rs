@@ -28,6 +28,8 @@
 //! - [`tracking`]: a minimal centroid multi-object tracker.
 //! - [`glyphs`]: reading pixel-font text (counters, HUD values) by template
 //!   matching against glyphs learned from labelled examples.
+//! - [`template`]: finding a known picture (an icon, a marker) anywhere in a
+//!   frame by normalised cross-correlation, coarse to fine.
 //! - [`ocr`]: text recognition via a Tesseract subprocess, or the OCR engine
 //!   built into Windows.
 //! - [`quality`]: is a region sharp enough for OCR to stand a chance?
@@ -49,6 +51,7 @@ pub mod motion;
 pub mod ocr;
 pub mod quality;
 mod scan;
+pub mod template;
 pub mod threshold;
 pub mod timing;
 pub mod tracking;
