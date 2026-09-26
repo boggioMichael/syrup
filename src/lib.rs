@@ -26,6 +26,8 @@
 //! - [`motion`]: frame differencing and a moving-blob detector with stable
 //!   IDs across frames (see [`tracking`]).
 //! - [`tracking`]: a minimal centroid multi-object tracker.
+//! - [`glyphs`]: reading pixel-font text (counters, HUD values) by template
+//!   matching against glyphs learned from labelled examples.
 //! - [`ocr`]: text recognition via a Tesseract subprocess, or the OCR engine
 //!   built into Windows.
 //! - [`quality`]: is a region sharp enough for OCR to stand a chance?
@@ -42,6 +44,7 @@ pub mod components;
 pub mod detection;
 pub mod draw;
 pub mod geometry;
+pub mod glyphs;
 pub mod motion;
 pub mod ocr;
 pub mod quality;
