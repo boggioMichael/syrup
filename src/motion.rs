@@ -14,6 +14,7 @@ use image::{GrayImage, Luma, RgbaImage};
 
 use crate::detection::{Confidence, Detection, Reliability};
 use crate::geometry::{Rect, group_segments};
+use crate::scan::for_each_run;
 use crate::tracking::{ObjectTracker, Track};
 
 /// Compute a binary motion mask between two same-sized frames in one pass:
@@ -26,33 +27,42 @@ pub fn motion_mask(a: &RgbaImage, b: &RgbaImage, threshold: u8) -> Option<GrayIm
     let (w, h) = a.dimensions();
     let mut out = GrayImage::new(w, h);
     for (mask, (pa, pb)) in out.pixels_mut().zip(a.pixels().zip(b.pixels())) {
-        *mask = Luma([if moved(&pa.0, &pb.0, threshold) {
-            255
-        } else {
-            0
-        }]);
+        *mask = Luma([if moved(pa.0, pb.0, threshold) { 255 } else { 0 }]);
     }
     Some(out)
 }
 
-/// Whether one pixel changed enough to count as motion: the luminance of
-/// the per-channel absolute difference, truncated to a byte, reaches
-/// `threshold`. The single definition shared by [`motion_mask`] and the
-/// detector's fused scan, so the two cannot drift apart.
+/// Rec. 709 luma weights in 16-bit fixed point (0.2126, 0.7152, 0.0722).
+/// They sum to exactly 65536, so a grey change of `d` levels weighs exactly
+/// `d`; floating-point weights can fall a hair short and miss a change of
+/// exactly the threshold.
+const LUMA_WEIGHTS: [u32; 3] = [13933, 46871, 4732];
+
+/// The luminance of the per-channel absolute difference of two pixels, in
+/// 16-bit fixed point (`256 << 16` would be a change of 256 levels).
+///
+/// Taking the pixels as arrays rather than slices lets the compiler drop
+/// every bounds check, which is what allows the row loop to vectorise.
 #[inline]
-fn moved(a: &[u8], b: &[u8], threshold: u8) -> bool {
-    let (dr, dg, db) = (
-        a[0].abs_diff(b[0]),
-        a[1].abs_diff(b[1]),
-        a[2].abs_diff(b[2]),
-    );
-    // The weights sum to 1, so the weighted luminance never exceeds the
-    // largest channel difference. Most pixels of consecutive frames barely
-    // change, and this rejects them without any floating-point work.
-    if dr.max(dg).max(db) < threshold {
-        return false;
-    }
-    (0.2126 * dr as f32 + 0.7152 * dg as f32 + 0.0722 * db as f32) as u8 >= threshold
+fn weighted_difference(a: [u8; 4], b: [u8; 4]) -> u32 {
+    LUMA_WEIGHTS[0] * u32::from(a[0].abs_diff(b[0]))
+        + LUMA_WEIGHTS[1] * u32::from(a[1].abs_diff(b[1]))
+        + LUMA_WEIGHTS[2] * u32::from(a[2].abs_diff(b[2]))
+}
+
+/// Whether one pixel changed enough to count as motion: the luminance of
+/// the per-channel absolute difference reaches `threshold`. The single
+/// definition shared by [`motion_mask`] and the detector's fused scan, so
+/// the two cannot drift apart.
+#[inline]
+fn moved(a: [u8; 4], b: [u8; 4], threshold: u8) -> bool {
+    weighted_difference(a, b) >= u32::from(threshold) << 16
+}
+
+/// A four-byte chunk of a row as one pixel.
+#[inline]
+fn as_pixel(chunk: &[u8]) -> [u8; 4] {
+    chunk.try_into().expect("rows are split into 4-byte pixels")
 }
 
 /// Horizontal runs of moved pixels, and how many pixels moved in total,
@@ -75,13 +85,15 @@ fn motion_runs(
     if row_bytes == 0 {
         return (runs, 0);
     }
+    let limit = u32::from(threshold) << 16;
+    let min_run = (min_run_width as usize).max(1);
+    let mut verdicts = vec![0u8; width as usize];
     for (y, (row_a, row_b)) in a
         .as_raw()
         .chunks_exact(row_bytes)
         .zip(b.as_raw().chunks_exact(row_bytes))
         .enumerate()
     {
-        let y = y as u32;
         // A row in which no byte changed by `threshold` holds no motion (the
         // luminance of a difference never exceeds its largest channel).
         // This reduction has no branches, so it compiles to wide SIMD and
@@ -94,25 +106,29 @@ fn motion_runs(
         if largest_change < threshold {
             continue;
         }
-        let mut start: Option<u32> = None;
-        for (x, (pa, pb)) in row_a.chunks_exact(4).zip(row_b.chunks_exact(4)).enumerate() {
-            let x = x as u32;
-            if moved(pa, pb, threshold) {
-                moved_pixels += 1;
-                if start.is_none() {
-                    start = Some(x);
-                }
-            } else if let Some(begin) = start.take()
-                && x - begin >= min_run_width
-            {
-                runs.push((y, begin, x - 1));
-            }
-        }
-        if let Some(begin) = start
-            && width - begin >= min_run_width
+        // One verdict byte per pixel, computed without branches so the loop
+        // vectorises; runs are then read off the verdicts.
+        let mut moved_in_row = 0u32;
+        for (verdict, (pa, pb)) in verdicts
+            .iter_mut()
+            .zip(row_a.chunks_exact(4).zip(row_b.chunks_exact(4)))
         {
-            runs.push((y, begin, width - 1));
+            let (pa, pb) = (as_pixel(pa), as_pixel(pb));
+            let moved = u8::from(weighted_difference(pa, pb) >= limit);
+            *verdict = moved;
+            moved_in_row += u32::from(moved);
         }
+        moved_pixels += u64::from(moved_in_row);
+        // Too few moved pixels for any run to be long enough.
+        if (moved_in_row as usize) < min_run {
+            continue;
+        }
+        let y = y as u32;
+        for_each_run(&verdicts, |start, end| {
+            if end - start >= min_run {
+                runs.push((y, start as u32, end as u32 - 1));
+            }
+        });
     }
     (runs, moved_pixels)
 }
@@ -327,22 +343,37 @@ mod tests {
         assert_eq!(mask.get_pixel(15, 15).0[0], 0, "unchanged pixel is still");
     }
 
-    /// The early rejection must never change a verdict of the plain formula.
+    /// A grey change of exactly the threshold counts; one level less does
+    /// not. (Floating-point weights summing to a hair under 1 got this
+    /// wrong for some levels.)
     #[test]
-    fn early_rejection_agrees_with_the_luminance_formula() {
-        let reference = |d: [u8; 3], t: u8| {
-            (0.2126 * d[0] as f32 + 0.7152 * d[1] as f32 + 0.0722 * d[2] as f32) as u8 >= t
-        };
+    fn grey_changes_are_measured_exactly() {
+        let base = [0u8, 0, 0, 255];
+        for threshold in 1..=255u8 {
+            let at = [threshold, threshold, threshold, 255];
+            let below = [threshold - 1, threshold - 1, threshold - 1, 255];
+            assert!(moved(base, at, threshold), "grey {threshold}");
+            assert!(!moved(base, below, threshold), "grey {}", threshold - 1);
+        }
+        assert!(moved(base, base, 0), "threshold 0 counts every pixel");
+    }
+
+    /// The fixed-point verdict agrees with Rec. 709 luminance everywhere
+    /// except within rounding distance of the threshold.
+    #[test]
+    fn verdict_follows_rec709_luminance() {
         let levels: Vec<u8> = (0..=70u8).chain((71..=255u8).step_by(7)).collect();
         for &threshold in &[1u8, 2, 28, 29, 100, 254, 255] {
             for &r in &levels {
                 for &g in &levels {
                     for &b in &levels {
-                        let base = [0u8, 0, 0, 255];
-                        let other = [r, g, b, 255];
+                        let luminance = 0.2126 * r as f64 + 0.7152 * g as f64 + 0.0722 * b as f64;
+                        if (luminance - threshold as f64).abs() < 0.01 {
+                            continue;
+                        }
                         assert_eq!(
-                            moved(&base, &other, threshold),
-                            reference([r, g, b], threshold),
+                            moved([0, 0, 0, 255], [r, g, b, 255], threshold),
+                            luminance >= threshold as f64,
                             "diff {r},{g},{b} at threshold {threshold}"
                         );
                     }
