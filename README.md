@@ -1,14 +1,64 @@
 # Syrup
 
-A small Rust toolkit for turning captured frames into structured,
-confidence-scored visual observations.
+A Rust computer-vision library where you name the function you need and
+the library builds it.
 
-Syrup gives you the pixel-level building blocks for reading a screen the
-way a person does — "there is a bar here and it is about 60% full", "that
-region moved left", "this text says 1291/1351" — without pretending to more
-certainty than the pixels support. Every detector result carries a
-confidence score, a reliability grade, and a failure reason when nothing was
-found.
+```rust
+use syrup::prelude::*;
+
+syrup::intent!(fn find_face(image: &RgbaImage) -> Detection<Vec<Match>>);
+syrup::intent!(fn measure_red_bar(image: &RgbaImage) -> Detection<f32>);
+
+let frame: RgbaImage = image::open("frame.png")?.to_rgba8();
+for face in find_face(&frame).value.unwrap_or_default() {
+    println!("face at {:?}, score {:.2}", face.bounds, face.score);
+}
+println!("HP: {:?}%", measure_red_bar(&frame).value);
+```
+
+`find_face` does not exist until that line. The name is parsed against a
+small vocabulary — a verb, optional qualifiers, a noun — and turned into a
+plan over the library's primitives (here: the bundled Viola–Jones
+frontal-face cascade). The plan runs in-process on the first call, or is
+written out as Rust, compiled with cargo into a `.so`/`.dll`/`.dylib`, and
+loaded back, so the function you invented is also a native library any
+process can call (`intent::resolve("find_face")?.compile()`, or
+`SYRUP_INTENT_MODE=native`). The generated source is kept next to the
+build, so you can read what was invented, copy it, or edit it.
+
+Syrup reads a screen the way a person does — "there is a bar here and it is
+about 60% full", "that region moved left", "this text says 1291/1351" —
+without pretending to more certainty than the pixels support. Every result
+carries a confidence, a reliability grade, and a failure reason when nothing
+was found.
+
+## The convention
+
+| Name          | Returns             | Meaning                                   |
+|---------------|---------------------|-------------------------------------------|
+| `find_*`      | `Detection<Vec<Match>>` | zero or more places, strongest first   |
+| `measure_*`   | `Detection<f32>`    | a percentage or distance                  |
+| `read_*`      | `Detection<String>` | text                                      |
+
+An empty `find_*` result (`value: Some(vec![])`) means the search ran and
+found nothing. A missing one (`value: None` + `failure_reason`) means it
+could not run. The two are never conflated, and a low-confidence answer is
+reported as missing with its reason rather than as an answer.
+
+It refuses instead of guessing. Resolution fails, typed and early, when the
+name is outside the vocabulary (`Unparsed`, with the vocabulary as a hint),
+when the meaning is clear but nothing here can carry it out yet
+(`Unsupported`, saying what is missing — a picture of the icon, state for
+tracking), when the declared return type does not fit the verb
+(`WrongShape`), or when a native build or load fails (`BuildFailed` with
+the compiler's log, `LoadFailed`). `syrup::intent::resolve("find_x")` gives
+the typed error up front; a declared function that cannot be resolved
+returns `Detection::missing` with the same reason on every call.
+
+Vocabulary today: `find_face(s)`, `find_<colour>_bar(s)` / `blob(s)`,
+`find_text`, `measure_<colour>_bar`, `read_text`; colours `red orange
+yellow green cyan blue purple magenta pink`. Everything below is what the
+plans are made of, and is available directly.
 
 ## What it does
 
@@ -37,6 +87,10 @@ found.
   searches use a coarse-to-fine image pyramid instead of scoring every
   position at full resolution; small searches are scored exhaustively.
   Returns a sub-pixel centre estimate.
+- **Cascades** — Viola–Jones boosted cascades of Haar features, evaluated
+  exactly as OpenCV evaluates its cascades, with OpenCV's frontal-face
+  detector bundled (86 KB, its licence alongside). Cross-checked against
+  OpenCV on the same photograph.
 - **OCR** — text recognition via a Tesseract subprocess, with the crop
   prepared the way Tesseract reads best (dark text on light, levels
   stretched, enlarged, framed by a margin), per-word confidence and boxes,
@@ -106,17 +160,29 @@ the source.
 ## Architecture
 
 ```text
-RgbaImage (any source)
+syrup::intent!(fn find_red_bar(image: &RgbaImage) -> Detection<Vec<Match>>)
     │
+    │  intent      parse the name → Intent { Find, [Red], Bar }
+    │              plan            → Plan::ColorBars { Red }
+    │              run             → in-process, or
+    │              compile         → source → cargo (cdylib) → libloading   ─┐
+    ▼                                                                       │ C ABI
+RgbaImage (any source)                                                      │ (abi)
+    │                                                                       │
     ├─ geometry / color / threshold  locate regions by shape, colour and contrast
     ├─ components                    the exact connected regions
     ├─ motion / tracking             what moved, with stable identity
-    ├─ template                      where a known picture is, if it is there at all
+    ├─ template / cascade            where a known picture, or a face, is
     ├─ glyphs / ocr / quality        what text says, and whether it is readable at all
     │
     ▼
 Detection<T> — value + confidence + reliability + failure reason
 ```
+
+The primitives are the vocabulary; a plan is a sentence in it. The same
+plan runs in-process or compiled, through the same functions
+(`intent::plans`), so the two can never disagree — the native test checks
+that they don't.
 
 The `Detection<T>` vocabulary is the library's one contract: a detector
 never returns a bare "not found" — it says *why* not, and never returns a
@@ -129,10 +195,14 @@ cargo test          # unit, integration and doc tests
 cargo test -- --ignored   # also run OCR against a real Tesseract install
 cargo clippy --all-targets -- -D warnings
 cargo bench         # criterion benchmarks for the per-frame primitives
+cargo run --release --example intents   # declare, run, and compile an intent
 ```
 
-All tests run against synthetic, in-code fixtures; no external tools,
-assets, or network access are required. OCR tests cover argument
+Tests run against synthetic, in-code fixtures plus one public-domain
+photograph (`tests/fixtures`); no network access is required. The native
+intent tests (`tests/intent_native.rs`) build a crate with cargo, which
+takes about a minute the first time and is cached after; set
+`SYRUP_SKIP_NATIVE_TESTS=1` to leave them out. OCR tests cover argument
 construction, TSV parsing, box mapping, preprocessing and temp-file hygiene
 without invoking Tesseract; one opt-in test runs the real engine end to
 end. Nothing in the suite depends on a domain edition, so this repository
@@ -159,6 +229,7 @@ from MapleSyrup.
 | Template search, 32 px icon, whole frame    | —       | 15 ms   |
 | Template search, 64 px icon, whole frame    | —       | 7.5 ms  |
 | Template search, 16 px icon, 240×140 region | —       | 1.6 ms  |
+| Face cascade, 320×320 photograph (OpenCV: 91 ms) | —  | 130 ms  |
 
 Motion is the slowest when the whole view changes, because no row can be
 skipped; even then it stays well inside a 60 fps frame budget.
@@ -175,6 +246,12 @@ skipped; even then it stays well inside a 60 fps frame budget.
   Learn from whole lines as they appear on screen: glyphs are measured
   against their line's height, so a slash or a dot learned on its own will
   not match.
+- The face detector is OpenCV's frontal cascade: roughly upright, roughly
+  front-on faces of 20 px or more. Profiles, heavy tilt and tiny faces are
+  not found. A learned detector behind the same plan is the natural next
+  step.
+- Compiling an intent to a shared library needs `cargo` on the machine at
+  run time; running it in-process (the default) does not.
 - Live capture is Windows-only. Other platforms consume file-based frames.
 
 ## Syrup and MapleSyrup

@@ -75,3 +75,12 @@ pub use geometry::Rect;
 /// The image crate this library is built on, so callers and generated
 /// code use the same version without naming it.
 pub use image;
+
+/// Everything a program that declares intents needs, in one import:
+/// `use syrup::prelude::*;`.
+pub mod prelude {
+    pub use crate::detection::{Confidence, Detection, Reliability};
+    pub use crate::geometry::Rect;
+    pub use crate::image::RgbaImage;
+    pub use crate::intent::{self, IntentError, Match};
+}
