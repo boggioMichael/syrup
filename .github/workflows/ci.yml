@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +26,17 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
+        # Includes tests/intent_native.rs, which builds an intent into a
+        # shared library with cargo and loads it back.
         run: cargo test --workspace
       - name: Build
-        run: cargo build --workspace --all-targets
+        run: cargo build --workspace --all-targets --release
+      - name: Examples
+        run: cargo run --release --example demo && cargo run --release --example intents
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python package
+        run: |
+          python -m pip install --quiet numpy pillow
+          python python/test_syrup.py
