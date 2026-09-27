@@ -41,7 +41,10 @@
 //! - [`template`]: finding a known picture (an icon, a marker) anywhere in a
 //!   frame by normalised cross-correlation, coarse to fine.
 //! - [`cascade`]: boosted cascades of Haar features (Viola–Jones), with the
-//!   bundled frontal-face detector.
+//!   bundled frontal-face, profile-face and eye detectors.
+//! - [`face`]: a found face's parts — eyes, mouth — and how open they are.
+//! - [`sequence`]: dynamic time warping and a nearest-example matcher, for
+//!   things that unfold over frames (a mouthed word, a gesture).
 //! - [`ocr`]: text recognition via a Tesseract subprocess, or the OCR engine
 //!   built into Windows.
 //! - [`quality`]: is a region sharp enough for OCR to stand a chance?
@@ -60,6 +63,7 @@ pub mod color;
 pub mod components;
 pub mod detection;
 pub mod draw;
+pub mod face;
 pub mod geometry;
 pub mod glyphs;
 pub mod intent;
@@ -67,6 +71,7 @@ pub mod motion;
 pub mod ocr;
 pub mod quality;
 mod scan;
+pub mod sequence;
 pub mod template;
 pub mod threshold;
 pub mod timing;
