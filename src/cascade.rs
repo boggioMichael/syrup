@@ -30,9 +30,11 @@ use image::{GrayImage, RgbaImage, imageops};
 use crate::geometry::Rect;
 use crate::threshold::{Channel, channel_image};
 
-/// OpenCV's `haarcascade_frontalface_alt2` (20x20, 20 stages), converted
-/// by `tools/cascade2bin.py`. See `assets/cascades/LICENSE-opencv-cascades.txt`.
+/// OpenCV's cascades, converted by `tools/cascade2bin.py`. See
+/// `assets/cascades/LICENSE-opencv-cascades.txt` for their notices.
 const FRONTAL_FACE: &[u8] = include_bytes!("../assets/cascades/frontalface_alt2.bin");
+const EYE: &[u8] = include_bytes!("../assets/cascades/eye.bin");
+const PROFILE_FACE: &[u8] = include_bytes!("../assets/cascades/profileface.bin");
 
 /// Why a cascade file could not be loaded.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,10 +155,24 @@ impl<'a> Reader<'a> {
 }
 
 impl Cascade {
-    /// The bundled frontal-face detector.
+    /// The bundled frontal-face detector (`haarcascade_frontalface_alt2`).
     pub fn frontal_face() -> &'static Cascade {
         static CASCADE: OnceLock<Cascade> = OnceLock::new();
         CASCADE.get_or_init(|| Cascade::from_bytes(FRONTAL_FACE).expect("bundled cascade is valid"))
+    }
+
+    /// The bundled eye detector (`haarcascade_eye`), meant to run inside a
+    /// face rather than over a whole frame.
+    pub fn eye() -> &'static Cascade {
+        static CASCADE: OnceLock<Cascade> = OnceLock::new();
+        CASCADE.get_or_init(|| Cascade::from_bytes(EYE).expect("bundled cascade is valid"))
+    }
+
+    /// The bundled profile-face detector (`haarcascade_profileface`): faces
+    /// turned to the side, one direction only, as OpenCV ships it.
+    pub fn profile_face() -> &'static Cascade {
+        static CASCADE: OnceLock<Cascade> = OnceLock::new();
+        CASCADE.get_or_init(|| Cascade::from_bytes(PROFILE_FACE).expect("bundled cascade is valid"))
     }
 
     /// Load a cascade in syrup's binary form (see `tools/cascade2bin.py`).
@@ -658,6 +674,53 @@ mod tests {
         assert_eq!(cascade.window(), (20, 20));
         assert_eq!(cascade.stage_count(), 20);
         assert_eq!(cascade.features.len(), 2094);
+    }
+
+    #[test]
+    fn every_bundled_cascade_loads() {
+        assert_eq!(Cascade::eye().window(), (20, 20));
+        assert_eq!(Cascade::eye().stage_count(), 24);
+        assert_eq!(Cascade::profile_face().window(), (20, 20));
+        assert_eq!(Cascade::profile_face().stage_count(), 26);
+    }
+
+    /// OpenCV 4.13 on the astronaut's face crop finds two eyes,
+    /// (115, 51, 23x23) and (142, 53, 22x22) in image coordinates, with
+    /// 28 and 16 supporting windows.
+    #[test]
+    fn finds_both_eyes_inside_the_astronauts_face() {
+        let image = astronaut();
+        let face = Rect {
+            x: 109,
+            y: 40,
+            w: 62,
+            h: 62,
+        };
+        let mut eyes = Cascade::eye().detect_in(&image, face, &CascadeOptions::default());
+        eyes.sort_by_key(|e| e.bounds.x);
+        assert_eq!(eyes.len(), 2, "{eyes:?}");
+        let left = intersection_over_union(
+            eyes[0].bounds,
+            Rect {
+                x: 115,
+                y: 51,
+                w: 23,
+                h: 23,
+            },
+        );
+        let right = intersection_over_union(
+            eyes[1].bounds,
+            Rect {
+                x: 142,
+                y: 53,
+                w: 22,
+                h: 22,
+            },
+        );
+        assert!(
+            left > 0.6 && right > 0.6,
+            "{eyes:?}: IoU {left:.2} / {right:.2}"
+        );
     }
 
     #[test]

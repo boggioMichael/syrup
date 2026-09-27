@@ -170,6 +170,15 @@ fn artifact_path(target_dir: &Path, name: &str) -> PathBuf {
     ))
 }
 
+fn fingerprint_bytes(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for &byte in bytes {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    hash
+}
+
 fn write_if_changed(path: &Path, content: &str) -> std::io::Result<()> {
     if std::fs::read_to_string(path).ok().as_deref() == Some(content) {
         return Ok(());
@@ -177,12 +186,23 @@ fn write_if_changed(path: &Path, content: &str) -> std::io::Result<()> {
     std::fs::write(path, content)
 }
 
-/// Write the crate for `name` (with `source` as its `src/lib.rs`) into the
-/// cache, build it, and load it.
-pub fn build_and_load(name: &str, source: &str) -> Result<Library, IntentError> {
+/// Write the crate for `name` into the cache, build it, and load it.
+pub fn build_and_load(name: &str, generated: &codegen::Generated) -> Result<Library, IntentError> {
     let syrup_dir = syrup_source_dir();
     let manifest = codegen::manifest(name, &syrup_dir);
-    let stamp = fingerprint(&[source, &manifest, abi::ABI_VERSION.to_string().as_str()]);
+    let source = &generated.source;
+    let extra_stamp: String = generated
+        .extra_files
+        .iter()
+        .map(|(file, bytes)| format!("{file}:{:016x}", fingerprint_bytes(bytes)))
+        .collect::<Vec<_>>()
+        .join(",");
+    let stamp = fingerprint(&[
+        source,
+        &manifest,
+        &extra_stamp,
+        abi::ABI_VERSION.to_string().as_str(),
+    ]);
     let cache = cache_dir();
     let crate_dir = cache.join(format!("{name}-{stamp:016x}"));
     let target_dir = cache.join("target");
@@ -197,6 +217,13 @@ pub fn build_and_load(name: &str, source: &str) -> Result<Library, IntentError> 
         .map_err(|e| failed(e.to_string()))?;
     write_if_changed(&crate_dir.join("src").join("lib.rs"), source)
         .map_err(|e| failed(e.to_string()))?;
+    for (file, bytes) in &generated.extra_files {
+        let path = crate_dir.join("src").join(file);
+        if std::fs::read(&path).ok().as_deref() != Some(bytes.as_slice()) {
+            std::fs::write(&path, bytes)
+                .map_err(|e| failed(format!("cannot write {}: {e}", path.display())))?;
+        }
+    }
     // Pin the same dependency versions as the library itself, so an
     // offline machine (or a sandbox) resolves without the network.
     if let Ok(lock) = std::fs::read_to_string(syrup_dir.join("Cargo.lock")) {

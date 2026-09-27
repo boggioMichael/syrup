@@ -8,10 +8,12 @@ use syrup::prelude::*;
 
 // Basic: say what you need. Each line is a real function after this.
 syrup::intent!(fn find_face(image: &RgbaImage) -> Detection<Vec<Match>>);
+syrup::intent!(fn find_eyes(image: &RgbaImage) -> Detection<Vec<Match>>);
 syrup::intent!(fn find_red_bar(image: &RgbaImage, region: Rect) -> Detection<Vec<Match>>);
 syrup::intent!(fn measure_red_bar(image: &RgbaImage) -> Detection<f32>);
+syrup::intent!(fn count_red_blobs_left(image: &RgbaImage) -> Detection<f32>);
 // Understood, but this build cannot do it yet: every call explains why.
-syrup::intent!(fn track_face(image: &RgbaImage) -> Detection<Vec<Match>>);
+syrup::intent!(fn find_boss_icon(image: &RgbaImage) -> Detection<Vec<Match>>);
 // Not in the vocabulary: every call says so, with the vocabulary.
 syrup::intent!(fn find_unicorn(image: &RgbaImage) -> Detection<Vec<Match>>);
 
@@ -64,10 +66,21 @@ fn main() {
         fill.failure_reason.unwrap_or_else(|| "measured".into())
     );
 
-    let tracked = track_face(&photo);
+    let eyes = find_eyes(&photo);
     println!(
-        "track_face     -> {}",
-        tracked.failure_reason.unwrap_or_default()
+        "find_eyes      -> {:?}",
+        eyes.value
+            .as_ref()
+            .map(|e| e.iter().map(|m| m.bounds).collect::<Vec<_>>())
+    );
+    println!(
+        "count_red_blobs_left -> {:?}",
+        count_red_blobs_left(&hud).value
+    );
+    let icon = find_boss_icon(&photo);
+    println!(
+        "find_boss_icon -> {}",
+        icon.failure_reason.unwrap_or_default()
     );
     let unicorn = find_unicorn(&photo);
     println!(

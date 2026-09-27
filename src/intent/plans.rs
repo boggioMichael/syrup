@@ -5,12 +5,17 @@
 
 use image::{Rgba, RgbaImage};
 
-use crate::cascade::{Cascade, CascadeOptions};
+use crate::cascade::{Cascade, CascadeMatch, CascadeOptions};
 use crate::color::is_color_pixel;
+use crate::components::{Connectivity, label_pixels};
 use crate::detection::{Confidence, Detection, Reliability};
-use crate::geometry::{Rect, find_color_regions, find_text_block, measure_bar_fill};
-use crate::intent::{Match, Outcome};
+use crate::geometry::{Rect, find_text_block, measure_bar_fill};
+use crate::intent::{Match, Outcome, Pick, State};
+use crate::motion::{MotionConfig, MotionDetector};
 use crate::ocr::{OcrConfig, is_ocr_available, ocr_region_with};
+use crate::template::{self, Template};
+use crate::threshold::Channel;
+use crate::tracking::ObjectTracker;
 
 /// Saturation and value below which a pixel is not "coloured" for the
 /// colour plans: greys, shadows and near-black are never a red bar.
@@ -31,71 +36,305 @@ fn clip(image: &RgbaImage, region: Rect) -> Option<Rect> {
     })
 }
 
-fn centre(r: Rect) -> (f32, f32) {
-    r.center()
+/// A found-nothing result: the search ran, the list is empty, and the
+/// reason says what would have counted.
+fn nothing(source: &'static str, reason: &str) -> Detection<Outcome> {
+    let mut detection = Detection::found(
+        Outcome::Matches(Vec::new()),
+        Confidence::new(0.6),
+        source,
+        Reliability::Heuristic,
+    );
+    detection.failure_reason = Some(reason.to_string());
+    detection
 }
 
-/// Faces in `region`, largest support first.
-pub fn find_faces(image: &RgbaImage, region: Rect, options: &CascadeOptions) -> Detection<Outcome> {
-    let Some(region) = clip(image, region) else {
-        return Detection::missing("find_face", "the region lies outside the image");
-    };
-    let found = Cascade::frontal_face().detect_in(image, region, options);
-    let matches: Vec<Match> = found
+/// Cascade matches as intent matches. Support saturates: 3 agreeing
+/// windows is weak evidence, 30 is as sure as a cascade gets.
+fn cascade_matches(found: &[CascadeMatch]) -> Vec<Match> {
+    found
         .iter()
-        .map(|m| Match {
-            bounds: m.bounds,
-            // Support saturates: 3 agreeing windows is weak evidence, 30 is
-            // as sure as this detector gets.
-            score: 1.0 - (-(m.neighbors as f32) / 10.0).exp(),
-            centre: centre(m.bounds),
-        })
-        .collect();
-    let best = matches.first().map(|m| m.score).unwrap_or(0.0);
+        .map(|m| Match::new(m.bounds, 1.0 - (-(m.neighbors as f32) / 10.0).exp()))
+        .collect()
+}
+
+fn cascade_detection(
+    source: &'static str,
+    found: &[CascadeMatch],
+    none: &str,
+) -> Detection<Outcome> {
+    if found.is_empty() {
+        return nothing(source, none);
+    }
+    let matches = cascade_matches(found);
+    let best = matches[0].score;
     let reliability = if found.iter().any(|m| m.neighbors >= 10) {
         Reliability::Corroborated
     } else {
         Reliability::Heuristic
     };
-    let mut detection = Detection::found(
+    Detection::found(
         Outcome::Matches(matches),
-        Confidence::new(if found.is_empty() { 0.6 } else { best }),
-        "find_face",
+        Confidence::new(best),
+        source,
         reliability,
-    );
-    if found.is_empty() {
-        detection.failure_reason = Some("no frontal face; the cascade sees roughly upright, roughly front-on faces of 20px or more".into());
-    }
-    detection
+    )
 }
 
-/// Regions of one colour, largest first.
+/// Faces in `region`, best-supported first: frontal, or turned to the side
+/// with `profile`.
+pub fn find_faces(
+    image: &RgbaImage,
+    region: Rect,
+    profile: bool,
+    options: &CascadeOptions,
+) -> Detection<Outcome> {
+    let Some(region) = clip(image, region) else {
+        return Detection::missing("find_face", "the region lies outside the image");
+    };
+    let cascade = if profile {
+        Cascade::profile_face()
+    } else {
+        Cascade::frontal_face()
+    };
+    let found = cascade.detect_in(image, region, options);
+    cascade_detection(
+        "find_face",
+        &found,
+        if profile {
+            "no profile face; the cascade sees faces turned to one side, 20px or more"
+        } else {
+            "no frontal face; the cascade sees roughly upright, roughly front-on faces of 20px or more"
+        },
+    )
+}
+
+/// Eyes in `region`: the eye cascade run inside each frontal face, so
+/// eye-shaped texture elsewhere does not count. Best-supported first.
+pub fn find_eyes(image: &RgbaImage, region: Rect, options: &CascadeOptions) -> Detection<Outcome> {
+    let Some(region) = clip(image, region) else {
+        return Detection::missing("find_eye", "the region lies outside the image");
+    };
+    let faces = Cascade::frontal_face().detect_in(image, region, options);
+    if faces.is_empty() {
+        return nothing("find_eye", "no frontal face to look for eyes in");
+    }
+    let mut found: Vec<CascadeMatch> = Vec::new();
+    for face in &faces {
+        // Eyes sit in the upper half of a face; searching only there halves
+        // the work and the false positives.
+        let upper = Rect {
+            h: face.bounds.h / 2 + face.bounds.h / 8,
+            ..face.bounds
+        };
+        found.extend(Cascade::eye().detect_in(image, upper, options));
+    }
+    found.sort_by_key(|m| std::cmp::Reverse(m.neighbors));
+    cascade_detection(
+        "find_eye",
+        &found,
+        "faces were found but no eyes inside them",
+    )
+}
+
+/// Every place `template` appears in `region`, strongest first.
+pub fn find_icon(image: &RgbaImage, region: Rect, template: &RgbaImage) -> Detection<Outcome> {
+    let Some(region) = clip(image, region) else {
+        return Detection::missing("find_icon", "the region lies outside the image");
+    };
+    let Some(template) = Template::from_image(template, Channel::Luma) else {
+        return Detection::missing(
+            "find_icon",
+            "the picture has no structure to match (uniform or empty)",
+        );
+    };
+    let found = template::find_all(image, region, &template, ICON_MIN_SCORE);
+    if found.is_empty() {
+        return nothing(
+            "find_icon",
+            "nothing correlated with the picture strongly enough",
+        );
+    }
+    let matches: Vec<Match> = found
+        .iter()
+        .map(|m| Match {
+            bounds: m.bounds,
+            score: m.score,
+            centre: m.centre,
+            id: None,
+        })
+        .collect();
+    let best = matches[0].score;
+    Detection::found(
+        Outcome::Matches(matches),
+        Confidence::new(best),
+        "find_icon",
+        if best > 0.9 {
+            Reliability::Corroborated
+        } else {
+            Reliability::Heuristic
+        },
+    )
+}
+
+/// Normalised correlation below which a template match is noise.
+const ICON_MIN_SCORE: f32 = 0.7;
+
+/// Regions that changed since the previous call, with the motion
+/// detector's stable ids. The first call only records the frame.
+pub fn find_motion(state: &mut State, image: &RgbaImage, region: Rect) -> Detection<Outcome> {
+    let Some(region) = clip(image, region) else {
+        return Detection::missing("find_motion", "the region lies outside the image");
+    };
+    let detector = state
+        .motion
+        .get_or_insert_with(|| MotionDetector::new(MotionConfig::default()));
+    let view = image::imageops::crop_imm(image, region.x, region.y, region.w, region.h).to_image();
+    let detection = detector.detect(&view);
+    let Some(blobs) = detection.value else {
+        return Detection::missing("find_motion", detection.failure_reason.unwrap_or_default());
+    };
+    let matches: Vec<Match> = blobs
+        .iter()
+        .map(|b| {
+            let bounds = Rect {
+                x: b.bounds.x + region.x,
+                y: b.bounds.y + region.y,
+                ..b.bounds
+            };
+            Match {
+                id: Some(b.id),
+                ..Match::new(bounds, if b.is_predicted { 0.4 } else { 0.8 })
+            }
+        })
+        .collect();
+    let mut result = Detection::found(
+        Outcome::Matches(matches),
+        detection.confidence,
+        "find_motion",
+        detection.reliability,
+    );
+    result.failure_reason = detection.failure_reason;
+    result
+}
+
+/// The matches of `found` with a stable id per object across calls.
+pub fn track(state: &mut State, found: Detection<Outcome>) -> Detection<Outcome> {
+    let Some(Outcome::Matches(matches)) = &found.value else {
+        return found;
+    };
+    let tracker = state
+        .tracker
+        .get_or_insert_with(|| ObjectTracker::new(TRACK_REACH, TRACK_GRACE));
+    let detections: Vec<(f32, f32, f32, f32)> = matches
+        .iter()
+        .map(|m| (m.centre.0, m.centre.1, m.bounds.w as f32, m.bounds.h as f32))
+        .collect();
+    let tracks = tracker.update(&detections);
+    let tracked: Vec<Match> = tracks
+        .iter()
+        .map(|t| {
+            let bounds = Rect {
+                x: (t.position.x - t.width / 2.0).max(0.0).round() as u32,
+                y: (t.position.y - t.height / 2.0).max(0.0).round() as u32,
+                w: t.width.max(1.0).round() as u32,
+                h: t.height.max(1.0).round() as u32,
+            };
+            Match {
+                bounds,
+                score: t.confidence.value(),
+                centre: (t.position.x, t.position.y),
+                id: Some(t.id),
+            }
+        })
+        .collect();
+    let mut result = Detection::found(
+        Outcome::Matches(tracked),
+        found.confidence,
+        found.source,
+        found.reliability,
+    );
+    result.failure_reason = found.failure_reason;
+    result
+}
+
+/// Pixels a tracked object may move between calls and still be itself,
+/// and calls it may go unseen before its id is retired.
+const TRACK_REACH: f32 = 64.0;
+const TRACK_GRACE: u32 = 5;
+
+/// Keep only the largest or smallest match.
+pub fn keep(pick: Pick, mut found: Detection<Outcome>) -> Detection<Outcome> {
+    if let Some(Outcome::Matches(matches)) = &mut found.value {
+        let chosen = match pick {
+            Pick::Largest => matches.iter().max_by_key(|m| m.bounds.area()),
+            Pick::Smallest => matches.iter().min_by_key(|m| m.bounds.area()),
+        }
+        .cloned();
+        *matches = chosen.into_iter().collect();
+    }
+    found
+}
+
+/// How many matches `found` holds, as a number.
+pub fn count(found: Detection<Outcome>) -> Detection<Outcome> {
+    let Detection {
+        value,
+        confidence,
+        timestamp,
+        source,
+        reliability,
+        failure_reason,
+    } = found;
+    Detection {
+        value: value.map(|o| match o {
+            Outcome::Matches(m) => Outcome::Scalar(m.len() as f32),
+            other => other,
+        }),
+        confidence,
+        timestamp,
+        source,
+        reliability,
+        failure_reason,
+    }
+}
+
+/// Connected regions of one colour, largest first. Each match's score is
+/// its area relative to the largest, and its centre is the region's
+/// centroid rather than the middle of its box.
 pub fn find_blobs(image: &RgbaImage, region: Rect, hue: (f32, f32)) -> Detection<Outcome> {
     let Some(region) = clip(image, region) else {
         return Detection::missing("find_blob", "the region lies outside the image");
     };
-    let mut rects = find_color_regions(image, region, hue, COLOR_SATURATION, COLOR_VALUE);
-    rects.sort_by_key(|r| std::cmp::Reverse(r.area()));
-    let largest = rects.first().map(|r| r.area()).unwrap_or(1).max(1) as f32;
-    let matches: Vec<Match> = rects
+    let (_, components) = label_pixels(image, region, Connectivity::Eight, |p| {
+        is_color_pixel(p, hue, COLOR_SATURATION, COLOR_VALUE)
+    });
+    let mut components: Vec<_> = components
+        .into_iter()
+        .filter(|c| c.area >= MIN_BLOB_AREA)
+        .collect();
+    components.sort_by_key(|c| std::cmp::Reverse(c.area));
+    let largest = components.first().map(|c| c.area).unwrap_or(1).max(1) as f32;
+    let matches: Vec<Match> = components
         .iter()
-        .map(|&r| Match {
-            bounds: r,
-            score: r.area() as f32 / largest,
-            centre: centre(r),
+        .map(|c| Match {
+            centre: c.centroid,
+            ..Match::new(c.bounds, c.area as f32 / largest)
         })
         .collect();
-    let mut detection = Detection::found(
+    if matches.is_empty() {
+        return nothing("find_blob", "no region of that colour");
+    }
+    Detection::found(
         Outcome::Matches(matches),
-        Confidence::new(if rects.is_empty() { 0.6 } else { 0.8 }),
+        Confidence::new(0.8),
         "find_blob",
         Reliability::Heuristic,
-    );
-    if rects.is_empty() {
-        detection.failure_reason = Some("no region of that colour".into());
-    }
-    detection
+    )
 }
+
+/// Fewer pixels than this is speckle, not a region.
+const MIN_BLOB_AREA: u32 = 16;
 
 /// Horizontal bars of one colour: coloured regions much wider than tall.
 pub fn find_bars(image: &RgbaImage, region: Rect, hue: (f32, f32)) -> Detection<Outcome> {
@@ -117,11 +356,7 @@ pub fn find_text(image: &RgbaImage, region: Rect) -> Detection<Outcome> {
     };
     match find_text_block(image, region) {
         Some(block) => Detection::found(
-            Outcome::Matches(vec![Match {
-                bounds: block,
-                score: 0.7,
-                centre: centre(block),
-            }]),
+            Outcome::Matches(vec![Match::new(block, 0.7)]),
             Confidence::new(0.7),
             "find_text",
             Reliability::Heuristic,
@@ -218,7 +453,7 @@ mod tests {
             w: 320,
             h: 320,
         };
-        let detection = find_faces(&image, whole, &CascadeOptions::default());
+        let detection = find_faces(&image, whole, false, &CascadeOptions::default());
         let Some(Outcome::Matches(faces)) = detection.value else {
             panic!("expected matches, got {detection:?}");
         };
@@ -238,7 +473,7 @@ mod tests {
             h: 10,
         };
         for detection in [
-            find_faces(&image, outside, &CascadeOptions::default()),
+            find_faces(&image, outside, false, &CascadeOptions::default()),
             find_blobs(&image, outside, (0.0, 30.0)),
             measure_bar(&image, outside, (0.0, 30.0)),
             find_text(&image, outside),

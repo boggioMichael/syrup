@@ -83,6 +83,84 @@ fn find_face_runs_as_a_shared_library_and_agrees_with_in_process() {
     assert_eq!(whole.value, from_library.value);
 }
 
+/// A plan with a picture and with state: the picture is embedded in the
+/// library, the state lives inside it, and identities survive across calls.
+#[test]
+fn a_tracked_icon_keeps_its_picture_and_its_memory_inside_the_library() {
+    if skipped() {
+        return;
+    }
+    let _guard = ENV.lock().unwrap_or_else(|e| e.into_inner());
+    // A distinctive 12x12 picture, planted twice in a frame.
+    let icon = image::RgbaImage::from_fn(12, 12, |x, y| {
+        let v = ((x * 37 + y * 91) % 200) as u8 + 30;
+        image::Rgba([v, 255 - v, (x * y) as u8, 255])
+    });
+    let mut frame = image::RgbaImage::from_pixel(160, 90, image::Rgba([90, 90, 90, 255]));
+    image::imageops::replace(&mut frame, &icon, 20, 30);
+    image::imageops::replace(&mut frame, &icon, 120, 50);
+    intent::register_template("nativetesticon", &icon);
+
+    let native = intent::resolve_native("track_nativetesticon_icon")
+        .expect("builds with the picture embedded");
+    let first = native.run(&frame, None);
+    let Some(Outcome::Matches(first)) = first.value else {
+        panic!("expected matches, got {first:?}");
+    };
+    assert_eq!(first.len(), 2, "{first:?}");
+    // A tracked match's score is the track's confidence, which starts low
+    // and grows while the object keeps being seen.
+    assert!(
+        first
+            .iter()
+            .all(|m| m.id.is_some() && m.score > 0.0 && m.score < 1.0),
+        "{first:?}"
+    );
+    let mut positions: Vec<(u32, u32)> = first.iter().map(|m| (m.bounds.x, m.bounds.y)).collect();
+    positions.sort();
+    assert_eq!(positions, vec![(20, 30), (120, 50)]);
+
+    // Same frame again: the same two identities, remembered by the library.
+    let second = native.run(&frame, None);
+    let Some(Outcome::Matches(second)) = second.value else {
+        panic!()
+    };
+    let ids = |m: &[Match]| {
+        let mut ids: Vec<u64> = m.iter().filter_map(|m| m.id).collect();
+        ids.sort();
+        ids
+    };
+    assert_eq!(ids(&first), ids(&second));
+    assert!(
+        second[0].score >= first[0].score,
+        "confidence grows: {first:?} -> {second:?}"
+    );
+
+    // The picture was written next to the generated source.
+    let crate_dir = native.library_path().unwrap();
+    let cache = crate_dir
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+    let embedded = std::fs::read_dir(cache)
+        .unwrap()
+        .flatten()
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("track_nativetesticon_icon-")
+        })
+        .any(|e| e.path().join("src").join("nativetesticon.png").is_file());
+    assert!(
+        embedded,
+        "nativetesticon.png should sit in the generated crate under {}",
+        cache.display()
+    );
+}
+
 #[test]
 fn a_build_that_cannot_find_the_library_fails_with_the_compiler_log() {
     if skipped() {
@@ -119,7 +197,7 @@ fn names_outside_the_vocabulary_never_reach_the_compiler() {
         Err(IntentError::Unparsed { .. }) => {}
         other => panic!("expected Unparsed, got {other:?}"),
     }
-    match intent::resolve_native("track_face") {
+    match intent::resolve_native("find_icon") {
         Err(IntentError::Unsupported { .. }) => {}
         other => panic!("expected Unsupported, got {other:?}"),
     }

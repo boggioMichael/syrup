@@ -28,7 +28,7 @@ use crate::intent::{Match, Outcome};
 
 /// Bumped whenever the layout of any view or the meaning of a field
 /// changes. The host refuses libraries built against another version.
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 
 pub const SYMBOL_VERSION: &[u8] = b"syrup_abi_version\0";
 pub const SYMBOL_NAME: &[u8] = b"syrup_intent_name\0";
@@ -122,6 +122,8 @@ pub struct MatchView {
     pub score: f32,
     pub cx: f32,
     pub cy: f32,
+    /// A tracked object's identity, or 0 when the match has none.
+    pub id: u64,
 }
 
 /// `ResultView::status`.
@@ -196,6 +198,7 @@ impl ResultView {
                                 score: m.score,
                                 cx: m.centre.0,
                                 cy: m.centre.1,
+                                id: m.id.unwrap_or(0),
                             })
                             .collect();
                         view.match_count = boxed.len();
@@ -269,6 +272,7 @@ impl ResultView {
                                 },
                                 score: m.score,
                                 centre: (m.cx, m.cy),
+                                id: (m.id != 0).then_some(m.id),
                             })
                             .collect(),
                     )
@@ -427,6 +431,7 @@ mod tests {
                 },
                 score: 0.5,
                 centre: (2.5, 4.0),
+                id: None,
             },
             Match {
                 bounds: Rect {
@@ -437,6 +442,7 @@ mod tests {
                 },
                 score: 1.0,
                 centre: (9.5, 9.5),
+                id: Some(7),
             },
         ];
         let detection = Detection::found(

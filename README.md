@@ -37,6 +37,8 @@ was found.
 | Name          | Returns             | Meaning                                   |
 |---------------|---------------------|-------------------------------------------|
 | `find_*`      | `Detection<Vec<Match>>` | zero or more places, strongest first   |
+| `track_*`     | `Detection<Vec<Match>>` | the same, with a stable `id` per object across calls |
+| `count_*`     | `Detection<f32>`    | how many `find_*` would return            |
 | `measure_*`   | `Detection<f32>`    | a percentage or distance                  |
 | `read_*`      | `Detection<String>` | text                                      |
 
@@ -55,10 +57,17 @@ the compiler's log, `LoadFailed`). `syrup::intent::resolve("find_x")` gives
 the typed error up front; a declared function that cannot be resolved
 returns `Detection::missing` with the same reason on every call.
 
-Vocabulary today: `find_face(s)`, `find_<colour>_bar(s)` / `blob(s)`,
-`find_text`, `measure_<colour>_bar`, `read_text`; colours `red orange
-yellow green cyan blue purple magenta pink`. Everything below is what the
-plans are made of, and is available directly.
+Vocabulary today — nouns: `face` (frontal, or `profile_face`), `eye`
+(inside faces), `<colour>_bar`, `<colour>_blob`, `text`, `<name>_icon`
+(a picture you register: `intent::register_template("boss", &image)`, or
+`boss.png` in `$SYRUP_TEMPLATES`), `motion`. Verbs: `find`, `track`,
+`count`, `measure` (bars), `read` (text). Qualifiers: colours `red orange
+yellow green cyan blue purple magenta pink`; a position `top bottom left
+right` (that half of the region, before or after the noun); `largest` /
+`smallest` (just that one). So `count_largest_red_blobs_bottom`,
+`track_boss_icon`, `find_eyes` and `measure_green_bar` are all functions
+waiting to be declared. Everything below is what the plans are made of,
+and is available directly.
 
 ## What it does
 
@@ -88,9 +97,10 @@ plans are made of, and is available directly.
   position at full resolution; small searches are scored exhaustively.
   Returns a sub-pixel centre estimate.
 - **Cascades** — Viola–Jones boosted cascades of Haar features, evaluated
-  exactly as OpenCV evaluates its cascades, with OpenCV's frontal-face
-  detector bundled (86 KB, its licence alongside). Cross-checked against
-  OpenCV on the same photograph.
+  exactly as OpenCV evaluates its cascades, with OpenCV's frontal-face,
+  profile-face and eye detectors bundled (245 KB in all, their licences
+  alongside). Cross-checked against OpenCV on the same photograph: the
+  same face, the same two eyes.
 - **OCR** — text recognition via a Tesseract subprocess, with the crop
   prepared the way Tesseract reads best (dark text on light, levels
   stretched, enlarged, framed by a margin), per-word confidence and boxes,
