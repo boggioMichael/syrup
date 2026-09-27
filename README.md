@@ -26,6 +26,15 @@ process can call (`intent::resolve("find_face")?.compile()`, or
 `SYRUP_INTENT_MODE=native`). The generated source is kept next to the
 build, so you can read what was invented, copy it, or edit it.
 
+The same from Python, over the library's C API — `import syrup` and any
+attribute named like an intent is a function:
+
+```python
+import syrup
+faces = syrup.find_face(image)      # PIL image or numpy uint8 array
+print([f.bounds for f in faces.value], faces.confidence)
+```
+
 Syrup reads a screen the way a person does — "there is a bar here and it is
 about 60% full", "that region moved left", "this text says 1291/1351" —
 without pretending to more certainty than the pixels support. Every result
@@ -189,6 +198,10 @@ RgbaImage (any source)                                                      │ 
 Detection<T> — value + confidence + reliability + failure reason
 ```
 
+`capi` exposes the same resolve/run/free cycle as plain C functions when
+the crate is built as a shared library, which is what `python/syrup` calls
+through `ctypes` — and what any other language would.
+
 The primitives are the vocabulary; a plan is a sentence in it. The same
 plan runs in-process or compiled, through the same functions
 (`intent::plans`), so the two can never disagree — the native test checks
@@ -206,6 +219,7 @@ cargo test -- --ignored   # also run OCR against a real Tesseract install
 cargo clippy --all-targets -- -D warnings
 cargo bench         # criterion benchmarks for the per-frame primitives
 cargo run --release --example intents   # declare, run, and compile an intent
+cd python && python3 test_syrup.py      # the Python package against the built library
 ```
 
 Tests run against synthetic, in-code fixtures plus one public-domain

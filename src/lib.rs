@@ -24,6 +24,7 @@
 //!   primitives, run it, or write it out and compile it.
 //! - [`abi`]: the C contract between the library and the implementations
 //!   it loads.
+//! - [`capi`]: the library's own C API, for Python and other hosts.
 //! - [`detection`]: the result vocabulary — [`detection::Detection`],
 //!   [`detection::Confidence`], [`detection::Reliability`].
 //! - [`geometry`]: rectangles, pixel-run segmentation, region grouping, and
@@ -52,6 +53,7 @@
 //! observation *means* — and what to do about it — belongs to the consumer.
 
 pub mod abi;
+pub mod capi;
 pub mod capture;
 pub mod cascade;
 pub mod color;
