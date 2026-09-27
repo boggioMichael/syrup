@@ -212,9 +212,10 @@ pub fn build_and_load(name: &str, source: &str) -> Result<Library, IntentError> 
         .arg("--quiet")
         .current_dir(&crate_dir)
         .env("CARGO_TARGET_DIR", &target_dir)
-        // The intent crate must not inherit a workspace from the cache path.
+        // Cargo variables inherited from a `cargo test` or `cargo run` parent
+        // must not leak into the nested build.
         .env_remove("CARGO_MANIFEST_DIR")
-        .env_remove("RUSTFLAGS_INTENT");
+        .env_remove("CARGO_PKG_NAME");
     if std::env::var_os("SYRUP_OFFLINE").is_some()
         || std::env::var_os("CARGO_NET_OFFLINE").is_some_and(|v| v == "true")
     {

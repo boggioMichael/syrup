@@ -56,7 +56,7 @@ pub mod native;
 pub mod plans;
 
 use std::fmt;
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 use image::RgbaImage;
 
@@ -408,7 +408,9 @@ pub fn execute(plan: &Plan, image: &RgbaImage, region: Rect) -> Detection<Outcom
 pub struct Resolved {
     intent: Intent,
     plan: Plan,
-    native: Mutex<Option<native::Library>>,
+    /// Read-locked for the duration of a call, so calls run concurrently
+    /// and only [`Resolved::compile`] waits for them.
+    native: RwLock<Option<native::Library>>,
 }
 
 impl fmt::Debug for Resolved {
@@ -441,14 +443,14 @@ impl Resolved {
     pub fn compile(&self) -> Result<std::path::PathBuf, IntentError> {
         let library = native::build_and_load(&self.intent.name, &self.source())?;
         let path = library.path().to_path_buf();
-        *self.native.lock().unwrap_or_else(|e| e.into_inner()) = Some(library);
+        *self.native.write().unwrap_or_else(|e| e.into_inner()) = Some(library);
         Ok(path)
     }
 
     /// Whether calls go through a loaded shared library.
     pub fn is_native(&self) -> bool {
         self.native
-            .lock()
+            .read()
             .unwrap_or_else(|e| e.into_inner())
             .is_some()
     }
@@ -456,7 +458,7 @@ impl Resolved {
     /// Where the loaded shared library lives, if any.
     pub fn library_path(&self) -> Option<std::path::PathBuf> {
         self.native
-            .lock()
+            .read()
             .unwrap_or_else(|e| e.into_inner())
             .as_ref()
             .map(|l| l.path().to_path_buf())
@@ -470,7 +472,7 @@ impl Resolved {
             w: image.width(),
             h: image.height(),
         });
-        let native = self.native.lock().unwrap_or_else(|e| e.into_inner());
+        let native = self.native.read().unwrap_or_else(|e| e.into_inner());
         match native.as_ref() {
             Some(library) => library.run(image, region),
             None => execute(&self.plan, image, region),
@@ -485,7 +487,7 @@ pub fn resolve(name: &str) -> Result<Resolved, IntentError> {
     Ok(Resolved {
         intent,
         plan,
-        native: Mutex::new(None),
+        native: RwLock::new(None),
     })
 }
 
@@ -586,6 +588,10 @@ impl FromOutcome for String {
 /// [`resolve`](crate::intent::resolve) gives the typed error up front. Set
 /// `SYRUP_INTENT_MODE=native` to have the first call compile and load the
 /// implementation as a shared library instead of running it in-process.
+///
+/// The parameter types are spelled exactly `&RgbaImage` and `Rect` (the
+/// macro matches them by name and resolves them to the library's types),
+/// and the return type is one of `Vec<Match>`, `f32` or `String`.
 #[macro_export]
 macro_rules! intent {
     ($(#[$meta:meta])* $vis:vis fn $name:ident ($image:ident : &RgbaImage) -> Detection<$ret:ty>) => {
