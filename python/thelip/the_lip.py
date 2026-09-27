@@ -19,6 +19,7 @@ The LipNet checkout (weights, dictionary, sample clips) is `--lipnet`,
     git clone --depth 1 https://github.com/rizkiarm/LipNet
 """
 import argparse
+import glob
 import json
 import os
 import subprocess
@@ -36,8 +37,25 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LIPNET_DIR = os.environ.get("LIPNET_DIR", os.path.join(HERE, "LipNet"))
 WEIGHTS = "evaluation/models/overlapped-weights368.h5"
 DICTIONARY = "common/dictionaries/grid.txt"
-FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+# A sans-serif font wherever this runs; PIL's built-in font if none of them.
+FONTS = {
+    False: ["DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "arial.ttf", "segoeui.ttf",
+            "/System/Library/Fonts/Supplemental/Arial.ttf", "/Library/Fonts/Arial.ttf"],
+    True: ["DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "arialbd.ttf", "segoeuib.ttf",
+           "/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/Library/Fonts/Arial Bold.ttf"],
+}
+
+
+def load_font(size, bold=False):
+    for name in FONTS[bold]:
+        try:
+            return ImageFont.truetype(name, size)
+        except OSError:
+            continue
+    try:
+        return ImageFont.load_default(size)
+    except TypeError:  # Pillow < 10.1: one size only
+        return ImageFont.load_default()
 
 
 # Characters the model emits in the last frames of a prefix are its guess at
@@ -139,7 +157,7 @@ def encode(frames, path, fps):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("videos", nargs="+")
+    ap.add_argument("videos", nargs="+", help="clips, or glob patterns (expanded here, for shells that do not)")
     ap.add_argument("--out", default="the-lip.mp4")
     ap.add_argument("--lipnet", default=LIPNET_DIR, help="checkout of github.com/rizkiarm/LipNet")
     ap.add_argument("--weights", default=None, help=f"default: <lipnet>/{WEIGHTS}")
@@ -154,11 +172,14 @@ def main():
         sys.exit(f"no weights at {weights}: clone https://github.com/rizkiarm/LipNet as {args.lipnet} or pass --lipnet")
     net = LipNet(weights)
     spell = Spell(dictionary)
-    fonts = (ImageFont.truetype(FONT, 22), ImageFont.truetype(FONT_BOLD, 34), ImageFont.truetype(FONT, 18))
+    fonts = (load_font(22), load_font(34, bold=True), load_font(18))
+    videos = [path for pattern in args.videos for path in (sorted(glob.glob(pattern)) or [pattern])]
+    if not videos:
+        sys.exit("no videos")
     all_frames = []
     fps = 25.0
     results = []
-    for k, path in enumerate(args.videos):
+    for k, path in enumerate(videos):
         code = os.path.splitext(os.path.basename(path))[0]
         frames, fps = read_frames(path)
         crops, boxes, ratio = mouth_crops(frames)
@@ -169,7 +190,7 @@ def main():
         spoken = grid_sentence(code) if args.truth else None
         results.append((code, final, spoken))
         print(f"{code}: read {final!r}" + (f" spoken {spoken!r}" if spoken else ""), file=sys.stderr)
-        badge = f"THE LIP  -  muted clip {k + 1}/{len(args.videos)}"
+        badge = f"THE LIP  -  muted clip {k + 1}/{len(videos)}"
         all_frames.extend(render(frames, boxes, crops, decodes, final, spoken, args.scale, fonts, badge))
     encode(all_frames, args.out, fps)
     if args.truth:

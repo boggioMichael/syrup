@@ -60,6 +60,8 @@ python3 test_thelip.py                                    # no weights needed
 ```
 
 Set `LIPNET_DIR` (or pass `--lipnet`) if the checkout lives elsewhere.
+Clip arguments may be glob patterns; `the_lip.py` expands them itself,
+so the same command works from `cmd.exe`.
 
 ## What it reads, honestly
 

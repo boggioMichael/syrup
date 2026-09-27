@@ -10,10 +10,10 @@ import argparse
 import json
 import subprocess
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
-FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+from the_lip import load_font
+
 BG = (12, 12, 16)
 
 
@@ -77,10 +77,10 @@ def main():
     sentences = f"{summary['sentences_right']}/{summary['clips']}"
     clips = summary["clips"]
 
-    title = ImageFont.truetype(FONT_BOLD, 64)
-    h2 = ImageFont.truetype(FONT, 26)
-    body = ImageFont.truetype(FONT, 20)
-    fine = ImageFont.truetype(FONT, 15)
+    title = load_font(64, bold=True)
+    h2 = load_font(26)
+    body = load_font(20)
+    fine = load_font(15)
     white, grey, dim, yellow, green = (255, 255, 255), (200, 200, 200), (140, 140, 140), (255, 230, 80), (120, 255, 150)
 
     intro = card(size, [
