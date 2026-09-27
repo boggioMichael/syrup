@@ -53,6 +53,13 @@ pub struct GlyphOptions {
     pub min_score: f32,
     /// Minimum lead of the best character over the best other character.
     pub min_margin: f32,
+    /// Blank columns narrower than this do not separate glyphs. The
+    /// default, 1, splits at every blank column, which suits connected
+    /// pixel fonts. Segmented fonts (seven-segment counters, dotted LED
+    /// displays) carry blank columns *inside* a glyph; setting this to the
+    /// widest such gap plus one keeps each digit whole while the wider gaps
+    /// between digits still split.
+    pub min_gap: u32,
 }
 
 impl Default for GlyphOptions {
@@ -64,6 +71,7 @@ impl Default for GlyphOptions {
             ink_threshold: 100,
             min_score: 0.72,
             min_margin: 0.06,
+            min_gap: 1,
         }
     }
 }
@@ -433,6 +441,8 @@ struct Line {
     top: u32,
     height: u32,
     ink_threshold: u8,
+    /// See [`GlyphOptions::min_gap`].
+    min_gap: u32,
 }
 
 impl Line {
@@ -480,6 +490,7 @@ impl Line {
             top,
             height: bottom - top,
             ink_threshold: threshold,
+            min_gap: options.min_gap.max(1),
         })
     }
 
@@ -501,7 +512,7 @@ impl Line {
     /// Runs of inked columns within the band, as half-open `(x0, x1)`.
     fn spans(&self) -> Vec<(u32, u32)> {
         let ink = self.column_ink(0, self.evidence.width());
-        let mut spans = Vec::new();
+        let mut spans: Vec<(u32, u32)> = Vec::new();
         let mut start = None;
         for (x, &count) in ink.iter().enumerate() {
             match (count > 0, start) {
@@ -516,7 +527,15 @@ impl Line {
         if let Some(s) = start {
             spans.push((s, ink.len() as u32));
         }
-        self.main_cluster(spans, &ink)
+        // Gaps narrower than `min_gap` are inside a glyph, not between two.
+        let mut merged: Vec<(u32, u32)> = Vec::with_capacity(spans.len());
+        for span in spans {
+            match merged.last_mut() {
+                Some(last) if span.0 - last.1 < self.min_gap => last.1 = span.1,
+                _ => merged.push(span),
+            }
+        }
+        self.main_cluster(merged, &ink)
     }
 
     /// Keep only the line itself: the group of runs with the most ink,
@@ -931,6 +950,65 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    /// Two seven-segment style digits, each with blank columns *inside*
+    /// the glyph (segments that do not touch), separated by a wider gap.
+    fn segmented_pair() -> (RgbaImage, Rect) {
+        let mut image = RgbaImage::from_pixel(60, 24, BAR);
+        let mut bar = |x0: u32, x1: u32, y0: u32, y1: u32| {
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    image.put_pixel(x, y, INK);
+                }
+            }
+        };
+        // "0": two verticals with a two-column gap between them and the
+        // horizontals, which do not reach the verticals.
+        bar(6, 8, 4, 20);
+        bar(16, 18, 4, 20);
+        bar(9, 15, 4, 6);
+        bar(9, 15, 18, 20);
+        // "1" style glyph: two verticals with a two-column gap, four columns
+        // to the right of the "0" (a glyph gap, narrower than a space).
+        bar(22, 24, 4, 20);
+        bar(26, 28, 4, 20);
+        (
+            image,
+            Rect {
+                x: 0,
+                y: 0,
+                w: 60,
+                h: 24,
+            },
+        )
+    }
+
+    #[test]
+    fn min_gap_keeps_segmented_digits_whole() {
+        let (image, region) = segmented_pair();
+        // Splitting at every blank column sees the five segments, not the
+        // two digits.
+        let mut strict = GlyphSet::new(GlyphOptions::default());
+        assert_eq!(
+            strict.learn(&image, region, "01"),
+            Err(LearnError::GlyphCountMismatch {
+                expected: 2,
+                found: 5
+            })
+        );
+        // Gaps narrower than three columns are inside a glyph.
+        let mut lenient = GlyphSet::new(GlyphOptions {
+            min_gap: 3,
+            ..GlyphOptions::default()
+        });
+        assert_eq!(lenient.learn(&image, region, "01"), Ok(2));
+        let reading = lenient.read(&image, region).value.expect("read back");
+        assert_eq!(reading.text, "01");
+        assert_eq!(reading.glyphs.len(), 2);
+        // The wider gap between the digits still separates them, so the
+        // first glyph's box stops before the second digit starts.
+        assert!(reading.glyphs[0].bounds.x + reading.glyphs[0].bounds.w <= 22);
     }
 
     #[test]
