@@ -30,6 +30,8 @@
 //!   matching against glyphs learned from labelled examples.
 //! - [`template`]: finding a known picture (an icon, a marker) anywhere in a
 //!   frame by normalised cross-correlation, coarse to fine.
+//! - [`cascade`]: boosted cascades of Haar features (Viola–Jones), with the
+//!   bundled frontal-face detector.
 //! - [`ocr`]: text recognition via a Tesseract subprocess, or the OCR engine
 //!   built into Windows.
 //! - [`quality`]: is a region sharp enough for OCR to stand a chance?
@@ -41,6 +43,7 @@
 //! observation *means* — and what to do about it — belongs to the consumer.
 
 pub mod capture;
+pub mod cascade;
 pub mod color;
 pub mod components;
 pub mod detection;
