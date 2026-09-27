@@ -292,8 +292,8 @@ from MapleSyrup.
 | Template search, 32 px icon, whole frame    | —       | 15 ms   |
 | Template search, 64 px icon, whole frame    | —       | 7.5 ms  |
 | Template search, 16 px icon, 240×140 region | —       | 1.6 ms  |
-| Face cascade, 320×320 photograph, 1 thread (OpenCV: 91 ms) | — | 130 ms |
-| Face cascade, 320×320 photograph, 2 threads | —  | 90 ms   |
+| Face cascade, 320×320 photograph, 1 thread (OpenCV: 91 ms) | — | 116 ms |
+| Face cascade, 320×320 photograph, 2 threads | —  | 80 ms   |
 
 Motion is the slowest when the whole view changes, because no row can be
 skipped; even then it stays well inside a 60 fps frame budget.

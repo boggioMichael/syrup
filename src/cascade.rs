@@ -313,11 +313,9 @@ impl Cascade {
             for weak in &self.weak[stage.weak.clone()] {
                 let mut index = 0i32;
                 loop {
-                    let node = &self.nodes[weak.first_node as usize + index as usize];
+                    let node = &level.nodes[weak.first_node as usize + index as usize];
                     let mut value = 0.0f32;
-                    for rect in &level.rects[level.first_rect[node.feature as usize]
-                        ..level.first_rect[node.feature as usize + 1]]
-                    {
+                    for rect in &node.rects[..node.count as usize] {
                         let area = sums[base + rect.offsets[0]] + sums[base + rect.offsets[3]]
                             - sums[base + rect.offsets[1]]
                             - sums[base + rect.offsets[2]];
@@ -355,21 +353,41 @@ impl Cascade {
                 y1 * stride + x1,
             ]
         };
-        let mut rects = Vec::with_capacity(self.features.len() * 3);
-        let mut first_rect = Vec::with_capacity(self.features.len() + 1);
-        for feature in &self.features {
-            first_rect.push(rects.len());
-            for rect in &feature.rects[..feature.count as usize] {
-                rects.push(OffsetRect {
-                    offsets: corners(rect.x.into(), rect.y.into(), rect.w.into(), rect.h.into()),
-                    weight: rect.weight,
-                });
-            }
-        }
-        first_rect.push(rects.len());
+        let empty = OffsetRect {
+            offsets: [0; 4],
+            weight: 0.0,
+        };
+        let nodes = self
+            .nodes
+            .iter()
+            .map(|node| {
+                let feature = &self.features[node.feature as usize];
+                let mut rects = [empty; 3];
+                for (slot, rect) in rects
+                    .iter_mut()
+                    .zip(&feature.rects[..feature.count as usize])
+                {
+                    *slot = OffsetRect {
+                        offsets: corners(
+                            rect.x.into(),
+                            rect.y.into(),
+                            rect.w.into(),
+                            rect.h.into(),
+                        ),
+                        weight: rect.weight,
+                    };
+                }
+                LevelNode {
+                    left: node.left,
+                    right: node.right,
+                    threshold: node.threshold,
+                    count: feature.count,
+                    rects,
+                }
+            })
+            .collect();
         Level {
-            rects,
-            first_rect,
+            nodes,
             norm: corners(1, 1, ww - 2, wh - 2),
             norm_area: f64::from((ww - 2) * (wh - 2)),
         }
@@ -581,12 +599,22 @@ struct OffsetRect {
 
 /// The cascade's features laid out for one pyramid level.
 struct Level {
-    rects: Vec<OffsetRect>,
-    /// `rects[first_rect[f]..first_rect[f + 1]]` belong to feature `f`.
-    first_rect: Vec<usize>,
+    /// One per tree node, in the cascade's node order, with the node's
+    /// feature rectangles inline so evaluating it touches one record.
+    nodes: Vec<LevelNode>,
     /// The variance-normalisation window.
     norm: [usize; 4],
     norm_area: f64,
+}
+
+/// A tree node resolved for one pyramid level.
+#[derive(Debug, Clone, Copy)]
+struct LevelNode {
+    left: i32,
+    right: i32,
+    threshold: f32,
+    count: u8,
+    rects: [OffsetRect; 3],
 }
 
 /// Fraction of a window's size within which two windows count as the same
