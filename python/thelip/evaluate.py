@@ -27,24 +27,27 @@ def main():
     samples = sorted(glob.glob(f"{args.lipnet}/evaluation/samples/GRID/*.mpg"))
     samples += sorted(glob.glob(f"{args.lipnet}/evaluation/samples/*.mpg"))
     words_total = words_ok = 0
+    t_mouth = t_net = 0.0
+    print(f"{'clip':15s} {'spoken':30s} {'network':30s} {'corrected':30s} words")
     for path in samples:
         code = os.path.splitext(os.path.basename(path))[0]
         truth = grid_sentence(code)
         frames, _ = read_frames(path)
         t = time.time()
-        crops, _, ratio = mouth_crops(frames)
-        t_crop = time.time() - t
+        crops, _, _ = mouth_crops(frames)
+        t_mouth += time.time() - t
         t = time.time()
         raw = greedy_decode(net.predict(crops))
-        t_net = time.time() - t
+        t_net += time.time() - t
         fixed = spell.sentence(raw)
         tw, fw = truth.split(), fixed.split()
         ok = sum(1 for a, b in zip(tw, fw) if a == b)
         words_total += len(tw)
         words_ok += ok
-        print(f"{code:16s} spoken: {truth:32s} raw: {raw:34s} corrected: {fixed:32s} {ok}/{len(tw)}"
-              f"  (mouth {t_crop:.1f}s, net {t_net:.1f}s, ratio {ratio:.2f})")
-    print(f"word accuracy: {words_ok}/{words_total} = {100 * words_ok / max(words_total, 1):.1f}%")
+        print(f"{code:15s} {truth:30s} {raw:30s} {fixed:30s} {ok}/{len(tw)}")
+    frames_total = 75 * len(samples)
+    print(f"word accuracy: {words_ok}/{words_total} = {100 * words_ok / max(words_total, 1):.1f}%   "
+          f"(per frame: mouth {1000 * t_mouth / frames_total:.0f} ms, network {1000 * t_net / frames_total:.0f} ms)")
 
 
 if __name__ == "__main__":

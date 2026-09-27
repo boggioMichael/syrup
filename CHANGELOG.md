@@ -31,7 +31,8 @@
   syrup locates the mouth, LipNet's published weights run in numpy (with a
   minimal HDF5 reader, no TensorFlow), the prefix is decoded again after
   every frame. 64/66 words on the GRID sample clips; `make_demo.sh` builds
-  the demo video, `evaluate.py` the accuracy table.
+  the demo video, `evaluate.py` the accuracy table, `proof.py` the proof
+  video (muted, then with sound; a recorded fresh-clone session; the code).
 
 ### Fixes
 - FPS readings 60x too high before the window filled; overflow panics in

@@ -15,4 +15,6 @@ Thumbs.db
 /python/thelip/*.json
 /python/thelip/*.png
 /python/thelip/concat.txt
+/python/thelip/proofwork
+/python/thelip/*.wav
 __pycache__/

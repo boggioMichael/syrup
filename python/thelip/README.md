@@ -63,6 +63,28 @@ Set `LIPNET_DIR` (or pass `--lipnet`) if the checkout lives elsewhere.
 Clip arguments may be glob patterns; `the_lip.py` expands them itself,
 so the same command works from `cmd.exe`.
 
+## The proof video
+
+`proof.py` builds a second video, `the-lip-proof.mp4`: every sample clip
+plays twice, muted with the subtitle forming from the lips and then with
+its own sound, so the viewer hears whether the reading was right; then a
+user's session from a fresh clone, recorded for real (every line on screen
+is what the commands printed, and the clip the session subtitles is played
+back as it came out); then the code, stepped through with a highlight and
+a caption.
+
+```sh
+python3 proof.py record --repo https://github.com/boggioMichael/syrup --workdir proofwork
+python3 proof.py render --workdir proofwork --out the-lip-proof.mp4
+```
+
+`record` clones, builds, fetches LipNet, runs the tests, subtitles a clip,
+reads one from eight lines of Python and runs `evaluate.py`, keeping
+every command's output in `proofwork/session.json` (it runs them through
+a POSIX shell, so use WSL or Git Bash on Windows); `render` needs ffmpeg
+with libx264 and uses pygments for the syntax colours when it is
+installed.
+
 ## What it reads, honestly
 
 | clip | spoken | read from the lips |

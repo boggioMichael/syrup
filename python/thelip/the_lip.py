@@ -37,17 +37,22 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LIPNET_DIR = os.environ.get("LIPNET_DIR", os.path.join(HERE, "LipNet"))
 WEIGHTS = "evaluation/models/overlapped-weights368.h5"
 DICTIONARY = "common/dictionaries/grid.txt"
-# A sans-serif font wherever this runs; PIL's built-in font if none of them.
+# A sans-serif (or monospace) font wherever this runs; PIL's built-in font
+# if none of them.
 FONTS = {
-    False: ["DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "arial.ttf", "segoeui.ttf",
-            "/System/Library/Fonts/Supplemental/Arial.ttf", "/Library/Fonts/Arial.ttf"],
-    True: ["DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "arialbd.ttf", "segoeuib.ttf",
-           "/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/Library/Fonts/Arial Bold.ttf"],
+    (False, False): ["DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "arial.ttf", "segoeui.ttf",
+                     "/System/Library/Fonts/Supplemental/Arial.ttf", "/Library/Fonts/Arial.ttf"],
+    (True, False): ["DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "arialbd.ttf", "segoeuib.ttf",
+                    "/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/Library/Fonts/Arial Bold.ttf"],
+    (False, True): ["DejaVuSansMono.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "consola.ttf", "cour.ttf",
+                    "/System/Library/Fonts/Menlo.ttc", "/System/Library/Fonts/Monaco.ttf"],
+    (True, True): ["DejaVuSansMono-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", "consolab.ttf",
+                   "courbd.ttf", "/System/Library/Fonts/Menlo.ttc"],
 }
 
 
-def load_font(size, bold=False):
-    for name in FONTS[bold]:
+def load_font(size, bold=False, mono=False):
+    for name in FONTS[(bold, mono)]:
         try:
             return ImageFont.truetype(name, size)
         except OSError:
@@ -92,6 +97,15 @@ def streaming_decodes(net, crops):
         decodes.append("".join(text).strip())
     print(f"  {len(crops)} streaming decodes in {time.time() - t0:.1f}s", file=sys.stderr)
     return decodes
+
+
+def settled_words(spell, text):
+    """The streaming subtitle as shown: words that are complete snapped to
+    the dictionary, the word still forming left as the network emitted it."""
+    words = text.split()
+    if not words:
+        return ""
+    return " ".join([spell.correction(w) for w in words[:-1]] + [words[-1]])
 
 
 def render(frames, boxes, crops, decodes, final, spoken, scale, fonts, badge):
@@ -183,7 +197,7 @@ def main():
         code = os.path.splitext(os.path.basename(path))[0]
         frames, fps = read_frames(path)
         crops, boxes, ratio = mouth_crops(frames)
-        decodes = streaming_decodes(net, crops)
+        decodes = [settled_words(spell, d) for d in streaming_decodes(net, crops)]
         # Once the clip has ended nothing is held back: the whole utterance,
         # decoded, then corrected against the dictionary.
         final = spell.sentence(greedy_decode(net.predict(crops)))

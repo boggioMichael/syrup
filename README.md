@@ -174,7 +174,9 @@ run in numpy from its published weights, reads the lips; the prefix seen
 so far is decoded again after every frame. On the eleven GRID sample clips
 that ship with LipNet it reads 64 of 66 words with no audio. It reads
 GRID's 51-word vocabulary, not open English — the README there says
-exactly what it can and cannot do, and how to run it.
+exactly what it can and cannot do, and how to run it. `proof.py` there
+builds a longer video: each clip muted and then with its sound, a
+fresh-clone session recorded for real, and the code stepped through.
 
 ## What it deliberately does not do
 
