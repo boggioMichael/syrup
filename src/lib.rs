@@ -13,8 +13,17 @@
 //!                  Detection<T>: value + confidence + provenance
 //! ```
 //!
+//! Most of the time you do not call the primitives directly: you declare
+//! the function you need and the [`intent`] module builds it from them —
+//! `syrup::intent!(fn find_face(image: &RgbaImage) -> Detection<Vec<Match>>)`
+//! — in-process, or compiled to a shared library through the [`abi`].
+//!
 //! What each module owns:
 //!
+//! - [`intent`]: functions by name — parse the name, plan a composition of
+//!   primitives, run it, or write it out and compile it.
+//! - [`abi`]: the C contract between the library and the implementations
+//!   it loads.
 //! - [`detection`]: the result vocabulary — [`detection::Detection`],
 //!   [`detection::Confidence`], [`detection::Reliability`].
 //! - [`geometry`]: rectangles, pixel-run segmentation, region grouping, and
@@ -42,6 +51,7 @@
 //! The library reports what it measured and how sure it is; deciding what an
 //! observation *means* — and what to do about it — belongs to the consumer.
 
+pub mod abi;
 pub mod capture;
 pub mod cascade;
 pub mod color;
@@ -50,6 +60,7 @@ pub mod detection;
 pub mod draw;
 pub mod geometry;
 pub mod glyphs;
+pub mod intent;
 pub mod motion;
 pub mod ocr;
 pub mod quality;
@@ -61,3 +72,6 @@ pub mod tracking;
 
 pub use detection::{Confidence, Detection, Reliability, Timestamp};
 pub use geometry::Rect;
+/// The image crate this library is built on, so callers and generated
+/// code use the same version without naming it.
+pub use image;
