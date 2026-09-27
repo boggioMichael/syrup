@@ -110,6 +110,12 @@ and is available directly.
   profile-face and eye detectors bundled (245 KB in all, their licences
   alongside). Cross-checked against OpenCV on the same photograph: the
   same face, the same two eyes.
+- **Faces** — once a face is found, where its eyes and mouth are, how open
+  each eye is (blinks) and how open the mouth is (speaking, lip shapes).
+  Proxies for what the pixels show, documented as such.
+- **Sequences** — dynamic time warping and a nearest-example matcher for
+  things that unfold over frames: a mouthed word, a gesture, a pattern of
+  motion. Refuses when two examples are equally close.
 - **OCR** — text recognition via a Tesseract subprocess, with the crop
   prepared the way Tesseract reads best (dark text on light, levels
   stretched, enlarged, framed by a margin), per-word confidence and boxes,
@@ -124,6 +130,32 @@ and is available directly.
 - **Debug drawing** — rectangles and a dependency-free 5×7 bitmap font for
   annotating frames with what a detector saw.
 - **Timing** — FPS and moving-average measurement.
+
+## Live examples
+
+Both take raw RGBA frames on stdin and write annotated frames to stdout,
+so a webcam, a window or a file reaches them through ffmpeg:
+
+```sh
+ffmpeg -v error -f v4l2 -video_size 640x480 -i /dev/video0 -pix_fmt rgba -f rawvideo - \
+  | cargo run --release --example face_cues -- 640 480 30 \
+  | ffplay -v error -f rawvideo -pix_fmt rgba -video_size 640x480 -
+```
+
+(Windows: `-f dshow -i video="Integrated Camera"`; macOS: `-f avfoundation
+-i "0"`; a file: `-i clip.mp4 -r 15`.)
+
+- `face_cues` — the behavioural signals that "lie detection" folklore
+  points at, measured honestly: blink rate, head motion, gaze shifts, mouth
+  activity, facial motion, each against the person's own first ten seconds.
+  The overlay calls the result arousal, because that is all it is: no
+  measurement of a face tells truth from lies, and this one does not claim
+  to.
+- `lip_reading` — `learn hello 640 480 30` records the mouth-shape
+  sequence each time you say the word; `read 640 480 30` names what you
+  say from the words it has examples of, and shows `?` when two are equally
+  close. Your words, your camera; arbitrary lip reading needs a learned
+  model this library does not have.
 
 ## What it deliberately does not do
 
@@ -192,6 +224,7 @@ RgbaImage (any source)                                                      │ 
     ├─ components                    the exact connected regions
     ├─ motion / tracking             what moved, with stable identity
     ├─ template / cascade            where a known picture, or a face, is
+    ├─ face / sequence               a face's parts and what they do over time
     ├─ glyphs / ocr / quality        what text says, and whether it is readable at all
     │
     ▼
