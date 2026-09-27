@@ -3,6 +3,12 @@
 A Rust computer-vision library where you name the function you need and
 the library builds it.
 
+![syrup annotating a gameplay recording live: motion tracks with ids, template matches, bar fills, a seven-segment timer read by learned glyphs](docs/demo.gif)
+
+*Every number in the overlay is computed by the library on that frame —
+motion tracks, template matches, bar fills, a timer read from a font it
+learned — and the overlay is drawn with `syrup::draw`.*
+
 ```rust
 use syrup::prelude::*;
 
