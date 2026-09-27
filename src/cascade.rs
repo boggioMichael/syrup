@@ -414,22 +414,49 @@ impl Cascade {
             // The reference implementation slides two pixels at a time until
             // the window has doubled, then one.
             let step = if scale > 2.0 { 1 } else { 2 };
-            let mut y = 0;
-            while y + wh <= scaled_h {
-                let mut x = 0;
-                while x + ww <= scaled_w {
-                    let base = y as usize * integral.stride + x as usize;
-                    if self.stages_passed(&integral, &offsets, base) == self.stages.len() {
-                        windows.push(Rect {
-                            x: (x as f32 * scale).round() as u32,
-                            y: (y as f32 * scale).round() as u32,
-                            w: window_w,
-                            h: window_h,
-                        });
+            let rows: Vec<u32> = (0..=(scaled_h - wh)).step_by(step as usize).collect();
+            let scan_rows = |rows: &[u32], out: &mut Vec<Rect>| {
+                for &y in rows {
+                    let mut x = 0;
+                    while x + ww <= scaled_w {
+                        let base = y as usize * integral.stride + x as usize;
+                        if self.stages_passed(&integral, &offsets, base) == self.stages.len() {
+                            out.push(Rect {
+                                x: (x as f32 * scale).round() as u32,
+                                y: (y as f32 * scale).round() as u32,
+                                w: window_w,
+                                h: window_h,
+                            });
+                        }
+                        x += step;
                     }
-                    x += step;
                 }
-                y += step;
+            };
+            // Bands of rows go to threads; a level with few rows is not
+            // worth the hand-off. Results keep band order, so the output
+            // is the same whatever the thread count.
+            let threads = options.threads.max(1).min(rows.len().max(1) / 8 + 1);
+            if threads <= 1 {
+                scan_rows(&rows, &mut windows);
+            } else {
+                let band = rows.len().div_ceil(threads);
+                let found: Vec<Vec<Rect>> = std::thread::scope(|scope| {
+                    let handles: Vec<_> = rows
+                        .chunks(band)
+                        .map(|chunk| {
+                            scope.spawn(|| {
+                                let mut out = Vec::new();
+                                scan_rows(chunk, &mut out);
+                                out
+                            })
+                        })
+                        .collect();
+                    handles
+                        .into_iter()
+                        .map(|h| h.join().expect("a scan thread panicked"))
+                        .collect()
+                });
+                windows.extend(found.into_iter().flatten());
             }
             scale *= factor;
         }
@@ -470,6 +497,9 @@ pub struct CascadeOptions {
     pub min_size: u32,
     /// Largest object side to look for, in pixels.
     pub max_size: Option<u32>,
+    /// Threads to scan each scale with; the default is the machine's
+    /// parallelism. Results do not depend on it.
+    pub threads: usize,
 }
 
 impl Default for CascadeOptions {
@@ -479,6 +509,9 @@ impl Default for CascadeOptions {
             min_neighbors: 3,
             min_size: 0,
             max_size: None,
+            threads: std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1),
         }
     }
 }

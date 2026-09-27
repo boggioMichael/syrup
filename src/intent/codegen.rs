@@ -64,11 +64,11 @@ fn pick_name(pick: Pick) -> &'static str {
 fn expression(plan: &Plan, lines: &mut Vec<String>, files: &mut Vec<(String, Vec<u8>)>) -> String {
     match plan {
         Plan::Faces { profile, options } => format!(
-            "plans::find_faces(\n        image,\n        region,\n        {profile},\n        &CascadeOptions {{\n            scale_factor: {:?},\n            min_neighbors: {},\n            min_size: {},\n            max_size: {:?},\n        }},\n    )",
+            "plans::find_faces(\n        image,\n        region,\n        {profile},\n        &CascadeOptions {{\n            scale_factor: {:?},\n            min_neighbors: {},\n            min_size: {},\n            max_size: {:?},\n            ..CascadeOptions::default()\n        }},\n    )",
             options.scale_factor, options.min_neighbors, options.min_size, options.max_size
         ),
         Plan::Eyes { options } => format!(
-            "plans::find_eyes(\n        image,\n        region,\n        &CascadeOptions {{\n            scale_factor: {:?},\n            min_neighbors: {},\n            min_size: {},\n            max_size: {:?},\n        }},\n    )",
+            "plans::find_eyes(\n        image,\n        region,\n        &CascadeOptions {{\n            scale_factor: {:?},\n            min_neighbors: {},\n            min_size: {},\n            max_size: {:?},\n            ..CascadeOptions::default()\n        }},\n    )",
             options.scale_factor, options.min_neighbors, options.min_size, options.max_size
         ),
         Plan::ColorBars { color } => format!("plans::find_bars(image, region, {:?})", color.hue()),
