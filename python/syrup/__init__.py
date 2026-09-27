@@ -125,21 +125,21 @@ def _library() -> ctypes.CDLL:
             lib.syrup_version.restype = ctypes.c_char_p
             lib.syrup_resolve.argtypes = [ctypes.c_char_p, ctypes.POINTER(_c_char_p)]
             lib.syrup_resolve.restype = ctypes.c_void_p
-            lib.syrup_intent_run.argtypes = [
+            lib.syrup_run.argtypes = [
                 ctypes.c_void_p,
                 ctypes.POINTER(_FrameView),
                 ctypes.POINTER(_RegionView),
                 ctypes.POINTER(_ResultView),
             ]
-            lib.syrup_intent_run.restype = ctypes.c_int32
-            lib.syrup_intent_source.argtypes = [ctypes.c_void_p]
-            lib.syrup_intent_source.restype = _c_char_p
-            lib.syrup_intent_compile.argtypes = [ctypes.c_void_p, ctypes.POINTER(_c_char_p)]
-            lib.syrup_intent_compile.restype = _c_char_p
+            lib.syrup_run.restype = ctypes.c_int32
+            lib.syrup_source.argtypes = [ctypes.c_void_p]
+            lib.syrup_source.restype = _c_char_p
+            lib.syrup_compile.argtypes = [ctypes.c_void_p, ctypes.POINTER(_c_char_p)]
+            lib.syrup_compile.restype = _c_char_p
             lib.syrup_register_template.argtypes = [ctypes.c_char_p, ctypes.POINTER(_FrameView)]
             lib.syrup_register_template.restype = ctypes.c_int32
             lib.syrup_result_free.argtypes = [ctypes.POINTER(_ResultView)]
-            lib.syrup_intent_free.argtypes = [ctypes.c_void_p]
+            lib.syrup_release.argtypes = [ctypes.c_void_p]
             lib.syrup_string_free.argtypes = [_c_char_p]
             _lib, _path = lib, path
             return lib
@@ -219,7 +219,7 @@ class Intent:
     def __del__(self):
         handle = getattr(self, "_handle", None)
         if handle and _lib is not None:
-            _lib.syrup_intent_free(handle)
+            _lib.syrup_release(handle)
             self._handle = None
 
     def __call__(self, image, region: Optional[tuple] = None) -> Detection:
@@ -227,7 +227,7 @@ class Intent:
         view, _keep = _frame(image)
         region_view = _RegionView(*region) if region else None
         out = _ResultView()
-        code = lib.syrup_intent_run(
+        code = lib.syrup_run(
             self._handle,
             ctypes.byref(view),
             ctypes.byref(region_view) if region_view else None,
@@ -260,12 +260,12 @@ class Intent:
     @property
     def source(self) -> str:
         """The Rust source the library generated for this intent."""
-        return _take_string(_library().syrup_intent_source(self._handle)) or ""
+        return _take_string(_library().syrup_source(self._handle)) or ""
 
     def compile(self) -> str:
         """Build the intent as its own shared library (needs cargo) and use it; returns the path."""
         error = _c_char_p()
-        path = _library().syrup_intent_compile(self._handle, ctypes.byref(error))
+        path = _library().syrup_compile(self._handle, ctypes.byref(error))
         if not path:
             raise IntentError(_take_string(error) or "compilation failed")
         return _take_string(path) or ""

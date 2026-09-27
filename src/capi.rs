@@ -4,16 +4,18 @@
 //! can do the same. Frames and results use the views in [`crate::abi`].
 //!
 //! ```text
-//!   handle = syrup_resolve("find_face", &error)      // NULL + error text on refusal
-//!   syrup_intent_run(handle, &frame, NULL, &result)  // 0 on success
+//!   handle = syrup_resolve("find_face", &error)   // NULL + error text on refusal
+//!   syrup_run(handle, &frame, NULL, &result)      // 0 on success
 //!   … read result.matches[0..match_count] …
 //!   syrup_result_free(&result)
-//!   syrup_intent_free(handle)
+//!   syrup_release(handle)
 //! ```
 //!
 //! Every string the library hands out is freed with [`syrup_string_free`],
 //! every result with [`syrup_result_free`], every handle with
-//! [`syrup_intent_free`]; nothing crosses an allocator boundary.
+//! [`syrup_release`]; nothing crosses an allocator boundary. The names stay
+//! clear of the `syrup_intent_*` exports a compiled intent carries, since
+//! an intent links this library in.
 //!
 //! Only built when the crate is compiled as a shared library (`cdylib`);
 //! Rust callers use [`crate::intent`] directly.
@@ -91,7 +93,7 @@ pub unsafe extern "C" fn syrup_resolve(
 /// `handle` must come from [`syrup_resolve`]; `frame` and `out` must be
 /// valid; `region` NULL or valid.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn syrup_intent_run(
+pub unsafe extern "C" fn syrup_run(
     handle: *const SyrupIntent,
     frame: *const FrameView,
     region: *const RegionView,
@@ -119,7 +121,7 @@ pub unsafe extern "C" fn syrup_intent_run(
 /// # Safety
 /// `handle` must come from [`syrup_resolve`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn syrup_intent_source(handle: *const SyrupIntent) -> *mut c_char {
+pub unsafe extern "C" fn syrup_source(handle: *const SyrupIntent) -> *mut c_char {
     if handle.is_null() {
         return std::ptr::null_mut();
     }
@@ -134,7 +136,7 @@ pub unsafe extern "C" fn syrup_intent_source(handle: *const SyrupIntent) -> *mut
 /// # Safety
 /// `handle` must come from [`syrup_resolve`]; `error` NULL or writable.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn syrup_intent_compile(
+pub unsafe extern "C" fn syrup_compile(
     handle: *const SyrupIntent,
     error: *mut *mut c_char,
 ) -> *mut c_char {
@@ -178,10 +180,10 @@ pub unsafe extern "C" fn syrup_register_template(
     }
 }
 
-/// Release a result filled by [`syrup_intent_run`].
+/// Release a result filled by [`syrup_run`].
 ///
 /// # Safety
-/// `out` must have been filled by `syrup_intent_run` and not released.
+/// `out` must have been filled by `syrup_run` and not released.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn syrup_result_free(out: *mut ResultView) {
     if !out.is_null() {
@@ -195,7 +197,7 @@ pub unsafe extern "C" fn syrup_result_free(out: *mut ResultView) {
 /// # Safety
 /// `handle` must come from `syrup_resolve` and not have been freed.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn syrup_intent_free(handle: *mut SyrupIntent) {
+pub unsafe extern "C" fn syrup_release(handle: *mut SyrupIntent) {
     if !handle.is_null() {
         // SAFETY: per the contract.
         drop(unsafe { Box::from_raw(handle) });
@@ -233,17 +235,14 @@ mod tests {
             assert!(error.is_null());
             let frame = FrameView::of(&image);
             let mut out = ResultView::empty();
-            assert_eq!(
-                syrup_intent_run(handle, &frame, std::ptr::null(), &mut out),
-                0
-            );
+            assert_eq!(syrup_run(handle, &frame, std::ptr::null(), &mut out), 0);
             assert_eq!(out.status, STATUS_FOUND);
             assert_eq!(out.kind, KIND_MATCHES);
             assert_eq!(out.match_count, 1);
             let face = *out.matches;
             assert!(face.x > 100 && face.x < 120);
             syrup_result_free(&mut out);
-            let source = syrup_intent_source(handle);
+            let source = syrup_source(handle);
             assert!(
                 CStr::from_ptr(source)
                     .to_str()
@@ -251,7 +250,7 @@ mod tests {
                     .contains("plans::find_faces")
             );
             syrup_string_free(source);
-            syrup_intent_free(handle);
+            syrup_release(handle);
         }
     }
 
@@ -267,7 +266,7 @@ mod tests {
             assert!(text.contains("not an intent I understand"), "{text}");
             syrup_string_free(error);
             assert_eq!(
-                syrup_intent_run(
+                syrup_run(
                     std::ptr::null(),
                     std::ptr::null(),
                     std::ptr::null(),
