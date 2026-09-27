@@ -251,6 +251,34 @@ pub fn mouth_shape(image: &RgbaImage, mouth: Rect) -> MouthShape {
     }
 }
 
+/// The mouth's appearance as a small standardised patch: the region in
+/// grey, resampled to `width` x `height`, then shifted to zero mean and
+/// scaled to unit variance so lighting and skin tone drop out and only the
+/// shape of the lips, teeth and cavity remain. Two patches compare by
+/// Euclidean distance; scaled by `1 / sqrt(width * height)` so the
+/// distance between unrelated mouths is about 1.4 whatever the size.
+///
+/// This is what a matcher should compare across frames rather than the
+/// three numbers of [`mouth_shape`] alone: the numbers say how open, the
+/// patch says how — rounded, spread, teeth showing.
+pub fn mouth_patch(image: &RgbaImage, mouth: Rect, width: u32, height: u32) -> Vec<f32> {
+    let gray = channel_image(image, mouth, Channel::Luma);
+    let n = (width * height) as usize;
+    if gray.width() == 0 || gray.height() == 0 || n == 0 {
+        return vec![0.0; n];
+    }
+    let small =
+        image::imageops::resize(&gray, width, height, image::imageops::FilterType::Triangle);
+    let values: Vec<f32> = small.as_raw().iter().map(|&v| f32::from(v)).collect();
+    let mean = values.iter().sum::<f32>() / n as f32;
+    let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / n as f32;
+    if variance < 1.0 {
+        return vec![0.0; n];
+    }
+    let scale = 1.0 / (variance.sqrt() * (n as f32).sqrt());
+    values.iter().map(|v| (v - mean) * scale).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -366,6 +394,76 @@ mod tests {
             }
         }
         assert_eq!(mouth_shape(&shut, frame.mouth), MouthShape::CLOSED);
+    }
+
+    #[test]
+    fn mouth_patches_ignore_brightness_and_tell_shapes_apart() {
+        let image = astronaut();
+        let whole = Rect {
+            x: 0,
+            y: 0,
+            w: 320,
+            h: 320,
+        };
+        let frame = locate(&image, whole, &CascadeOptions::default()).unwrap();
+        let patch = mouth_patch(&image, frame.mouth, 16, 8);
+        assert_eq!(patch.len(), 128);
+        let norm: f32 = patch.iter().map(|v| v * v).sum::<f32>().sqrt();
+        assert!((norm - 1.0).abs() < 1e-3, "unit length, got {norm}");
+
+        // The same mouth, darker: the same patch.
+        let darker = image::imageops::brighten(&image, -60);
+        let dark_patch = mouth_patch(&darker, frame.mouth, 16, 8);
+        let distance = |a: &[f32], b: &[f32]| {
+            a.iter()
+                .zip(b)
+                .map(|(x, y)| (x - y).powi(2))
+                .sum::<f32>()
+                .sqrt()
+        };
+        assert!(
+            distance(&patch, &dark_patch) < 0.2,
+            "{}",
+            distance(&patch, &dark_patch)
+        );
+
+        // A painted-open mouth: a different patch.
+        let mut opened = image.clone();
+        let m = frame.mouth;
+        let (cx, cy) = m.center();
+        for y in m.y..m.y + m.h {
+            for x in m.x..m.x + m.w {
+                let dx = (x as f32 - cx) / (m.w as f32 / 2.0);
+                let dy = (y as f32 - cy) / (m.h as f32 / 2.0);
+                if dx * dx + dy * dy < 0.8 {
+                    opened.put_pixel(x, y, image::Rgba([30, 15, 15, 255]));
+                }
+            }
+        }
+        let open_patch = mouth_patch(&opened, frame.mouth, 16, 8);
+        assert!(
+            distance(&patch, &open_patch) > 0.8,
+            "{}",
+            distance(&patch, &open_patch)
+        );
+
+        // A flat region has no shape: all zeros rather than noise.
+        let flat = RgbaImage::from_pixel(40, 20, image::Rgba([120, 100, 90, 255]));
+        assert!(
+            mouth_patch(
+                &flat,
+                Rect {
+                    x: 0,
+                    y: 0,
+                    w: 40,
+                    h: 20
+                },
+                16,
+                8
+            )
+            .iter()
+            .all(|&v| v == 0.0)
+        );
     }
 
     #[test]

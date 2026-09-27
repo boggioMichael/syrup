@@ -157,18 +157,33 @@ ffmpeg -v error -f v4l2 -video_size 640x480 -i /dev/video0 -pix_fmt rgba -f rawv
   The overlay calls the result arousal, because that is all it is: no
   measurement of a face tells truth from lies, and this one does not claim
   to.
-- `lip_reading` — `learn hello 640 480 30` records the mouth-shape
-  sequence each time you say the word; `read 640 480 30` names what you
-  say from the words it has examples of, and shows `?` when two are equally
-  close. Your words, your camera; arbitrary lip reading needs a learned
-  model this library does not have.
+- `lip_reading` — `learn hello 640 480 30` records the mouth's shape and a
+  small normalised picture of it each time you say the word; `read 640 480
+  30` names what you say from the words it has examples of, and shows `?`
+  when two are equally close. Your words, your camera; arbitrary lip
+  reading needs a learned model this library does not have.
+
+## The Lip
+
+![A muted clip of a person speaking, subtitled live from the lips alone](docs/the-lip.gif)
+
+Lip reading from **muted** video with subtitles that form while the person
+speaks: [`python/thelip`](python/thelip). syrup finds the face and the
+eyes and locates the mouth on every frame; LipNet (Assael et al. 2016),
+run in numpy from its published weights, reads the lips; the prefix seen
+so far is decoded again after every frame. On the eleven GRID sample clips
+that ship with LipNet it reads 64 of 66 words with no audio. It reads
+GRID's 51-word vocabulary, not open English — the README there says
+exactly what it can and cannot do, and how to run it.
 
 ## What it deliberately does not do
 
 - No input synthesis, no window manipulation, no process inspection: the
   library **reads pixels and reports observations**, nothing else.
-- No trained models and no model files: every primitive is deterministic
-  and explainable, which keeps results reproducible in tests.
+- No trained models and no model files in the library: every primitive is
+  deterministic and explainable, which keeps results reproducible in
+  tests. (The Lip, in `python/thelip`, is an application that feeds one
+  trained model from the library's face and eye detection, and says so.)
 - No opinion about what an observation *means* — semantics belong to the
   application built on top.
 

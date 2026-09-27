@@ -3,8 +3,9 @@
 //!
 //! Real lip reading — arbitrary sentences from anyone's lips — needs a
 //! large learned model; nothing here pretends to that. What a camera and
-//! this library can do is measure the mouth's shape frame by frame
-//! (`face::mouth_shape`: how open, how wide, how dark the cavity), cut the
+//! this library can do is measure the mouth frame by frame
+//! (`face::mouth_shape`: how open, how wide, how dark the cavity, and
+//! `face::mouth_patch`: a small normalised picture of the lips), cut the
 //! stream into utterances (the mouth moving, then still), and compare
 //! each utterance against examples you recorded, with dynamic time warping
 //! so speed does not matter (`sequence::Matcher`). With a handful of
@@ -41,6 +42,11 @@ const END_STILL_SECONDS: f32 = 0.4;
 const MIN_UTTERANCE_SECONDS: f32 = 0.2;
 const MAX_UTTERANCE_SECONDS: f32 = 4.0;
 
+/// The mouth patch compared between frames: small enough to shrug off
+/// where exactly the box landed, large enough to show teeth and rounding.
+const PATCH_WIDTH: u32 = 16;
+const PATCH_HEIGHT: u32 = 8;
+
 /// Cuts the stream of mouth shapes into utterances.
 struct Segmenter {
     fps: f32,
@@ -64,20 +70,21 @@ impl Segmenter {
         !self.current.is_empty()
     }
 
-    /// Feed one frame's features; a finished utterance when one just ended.
-    fn push(&mut self, features: [f32; 3]) -> Option<Vec<Vec<f32>>> {
+    /// Feed one frame's features (openness first); a finished utterance
+    /// when one just ended.
+    fn push(&mut self, features: Vec<f32>) -> Option<Vec<Vec<f32>>> {
         let openness = features[0];
         let above_rest = openness - self.rest.value;
         if self.current.is_empty() {
             if above_rest > START_OPENNESS && self.rest.has_seen(3) {
-                self.current.push(features.to_vec());
+                self.current.push(features);
                 self.still_for = 0;
             } else {
                 self.rest.push(openness);
             }
             return None;
         }
-        self.current.push(features.to_vec());
+        self.current.push(features);
         if above_rest < END_OPENNESS {
             self.still_for += 1;
         } else {
@@ -198,7 +205,8 @@ fn main() {
         if let Some(followed) = follower.observe(&frame) {
             let mouth = followed.mouth;
             let shape = face::mouth_shape(&frame, mouth);
-            let features = shape.features();
+            let mut features = shape.features().to_vec();
+            features.extend(face::mouth_patch(&frame, mouth, PATCH_WIDTH, PATCH_HEIGHT));
             trace.push_back(shape.openness);
             while trace.len() > width as usize / 2 {
                 trace.pop_front();

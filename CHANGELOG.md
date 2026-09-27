@@ -22,8 +22,16 @@
 - Connected components by run labelling; motion detection with fixed-point
   luminance the compiler vectorises; Hungarian assignment in the tracker.
 - Pixel-font glyph reading with `min_gap` for segmented (seven-segment) fonts.
-- `face`: eyes and mouth of a found face, eye openness, mouth shape.
+- `face`: eyes and mouth of a found face, eye openness, mouth shape, and
+  `mouth_patch`, a small normalised picture of the mouth for matching.
 - `sequence`: dynamic time warping and a nearest-example matcher.
+
+### The Lip
+- `python/thelip`: lip reading from muted video with live subtitles —
+  syrup locates the mouth, LipNet's published weights run in numpy (with a
+  minimal HDF5 reader, no TensorFlow), the prefix is decoded again after
+  every frame. 64/66 words on the GRID sample clips; `make_demo.sh` builds
+  the demo video, `evaluate.py` the accuracy table.
 
 ### Fixes
 - FPS readings 60x too high before the window filled; overflow panics in
