@@ -110,6 +110,21 @@ and `loaded`. A read in a language without a model answers 503 with the
 reason, and the page says "no model yet" next to it. Registry:
 `languages.py`.
 
+### Trained models
+
+A model `example/thelip-train` exported — `models/<lang>-thelip-v<N>/`
+with `model.pth`, its tokenizer and `info.json` — is served when copied
+into the server's `models/` folder (on Windows
+`C:\Users\Public\thelip-server\models\`): always for a language that has
+no published model (Hebrew), and for one that has (English) only when its
+`info.json` shows it read the consented phone samples better than the
+published model did. `/health` names it under `trained`, with its measured
+error rate as `quality`. Such a model is Auto-AVSR's network, whose code
+carries an `espnet` package different from Chaplin's, so each trained
+model runs in its own process (`trained_worker.py`, crops in, text out over
+pipes; started again if it dies); `run.py` fetches Auto-AVSR's code
+(pinned) the first time a trained model is present.
+
 ## Privacy, and learning from use
 
 Frames leave the phone only when a server is set, only for the sentence
@@ -128,7 +143,7 @@ this next to the switch.
 ## Tests
 
 ```sh
-python3 test_server.py                                    # the routes, against --fake (no model)
+python3 test_server.py                                    # the routes and the worker protocol, against --fake (no model)
 cd ../thelip && NODE_PATH=$(npm root -g) node test/server.test.mjs   # the page against --fake, fake camera
 ```
 
@@ -146,8 +161,10 @@ mediapipe 0.10.35 without the Solutions API (hence the Tasks detector).
   `fps`, `frames`…, `language`, `improve`), `POST /feedback`, CORS open,
   optional bearer token, `--fake`; samples under `THELIP_DATA` (default
   `<work>/data`). `languages.py` — the models per language.
-- `run.py` — fetches Chaplin, the models and cloudflared, starts the
-  server and the tunnel, prints the link and the QR code, writes `link.txt`.
+- `trained_worker.py` — the process a trained model runs in.
+- `run.py` — fetches Chaplin, the models, Auto-AVSR's code when a trained
+  model is present, and cloudflared; starts the server and the tunnel,
+  prints the link and the QR code, writes `link.txt`.
 - `thelip-server.cmd` — the Windows launcher: Python, `.venv`, packages,
   then `run.py`.
 - `requirements.txt`, `test_server.py`.

@@ -37,3 +37,10 @@ __pycache__/
 /example/thelip-server/__pycache__
 /example/thelip-server/tunnel-token.txt
 /example/thelip-server/public-url.txt
+/example/thelip-server/auto_avsr
+/example/thelip-server/models
+/example/thelip-server/data
+/example/thelip-server/test-data
+/example/thelip-server/test-models
+/example/thelip-server/blaze_face_short_range.tflite
+/example/thelip-train/work

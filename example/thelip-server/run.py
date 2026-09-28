@@ -5,10 +5,13 @@ points thelip.ai at it.
     python run.py --no-tunnel     # serve on this machine only (http://127.0.0.1:8791)
     python run.py --fake          # no model download, fixed answers (tests)
 
-What it downloads, once, next to this file:
+What it downloads, once, under THELIP_HOME (this folder by default):
     chaplin/                the Chaplin pipeline (Amanvir Parhar, MIT; pinned commit)
     chaplin/benchmarks/...  the LRS3 model (1 GB) and its language model (215 MB)
-                            from Hugging Face (Amanvir/LRS3_V_WER19.1, Amanvir/lm_en_subword)
+                            from Hugging Face (Amanvir/LRS3_V_WER19.1, Amanvir/lm_en_subword),
+                            and the other languages asked for (--languages; see languages.py)
+    auto_avsr/              Auto-AVSR's model code, once a model example/thelip-train
+                            exported is in models/ (a Hebrew one, or a better English one)
     cloudflared(.exe)       Cloudflare's tunnel client, for an https address the phone can reach
 
 The server itself is server.py; this script starts it as a child process,
@@ -41,8 +44,14 @@ FACE_MODEL = os.path.join(WORK, "blaze_face_short_range.tflite")
 FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite"
 CHAPLIN_COMMIT = "7aee1f8fca776ce4f63690063310b53573b7d804"
 CHAPLIN_ZIP = f"https://github.com/amanvirparhar/chaplin/archive/{CHAPLIN_COMMIT}.zip"
+# Auto-AVSR's code, for the models example/thelip-train produces (the same
+# commit the training pins); fetched only once such a model is in models/.
+AUTO_AVSR_DIR = os.environ.get("THELIP_AUTO_AVSR") or os.path.join(WORK, "auto_avsr")
+AUTO_AVSR_COMMIT = "182b62837773ab01052d4ac21ef1d2203ea7d267"
+AUTO_AVSR_ZIP = f"https://github.com/mpc001/auto_avsr/archive/{AUTO_AVSR_COMMIT}.zip"
+MODELS_DIR = os.environ.get("THELIP_MODELS") or os.path.join(WORK, "models")
 sys.path.insert(0, HERE)
-from languages import LANGUAGES, runnable  # noqa: E402
+from languages import LANGUAGES, runnable, trained_models  # noqa: E402
 SITE = "https://thelip.ai/"
 # A Cloudflare named tunnel (a fixed address such as https://api.thelip.ai)
 # instead of a throwaway one: the tunnel's token in tunnel-token.txt, the
@@ -80,6 +89,19 @@ def download(url: str, dest: str, min_size: int = 0) -> None:
     os.replace(tmp, dest)
 
 
+def fetch_zip(url: str, dest: str, what: str) -> None:
+    """A GitHub archive of one pinned commit, unpacked to dest (its single top folder renamed)."""
+    say(f"fetching {what}")
+    req = urllib.request.Request(url, headers={"User-Agent": "thelip-server/1.0"})
+    with urllib.request.urlopen(req, timeout=300) as r:
+        data = r.read()
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        root = z.namelist()[0].split("/")[0]
+        os.makedirs(WORK, exist_ok=True)
+        z.extractall(WORK)
+    shutil.move(os.path.join(WORK, root), dest)
+
+
 def ensure_chaplin() -> None:
     if os.path.isdir(os.path.join(CHAPLIN_DIR, "pipelines")):
         return
@@ -89,15 +111,14 @@ def ensure_chaplin() -> None:
         os.makedirs(WORK, exist_ok=True)
         shutil.move(old, CHAPLIN_DIR)
         return
-    say("fetching the Chaplin pipeline (MIT; Imperial College preprocessing, Apache-2.0)")
-    req = urllib.request.Request(CHAPLIN_ZIP, headers={"User-Agent": "thelip-server/1.0"})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        data = r.read()
-    with zipfile.ZipFile(io.BytesIO(data)) as z:
-        root = z.namelist()[0].split("/")[0]
-        os.makedirs(WORK, exist_ok=True)
-        z.extractall(WORK)
-    shutil.move(os.path.join(WORK, root), CHAPLIN_DIR)
+    fetch_zip(CHAPLIN_ZIP, CHAPLIN_DIR, "the Chaplin pipeline (MIT; Imperial College preprocessing, Apache-2.0)")
+
+
+def ensure_auto_avsr() -> None:
+    """Auto-AVSR's code, needed to run the models example/thelip-train exports."""
+    if os.path.isdir(os.path.join(AUTO_AVSR_DIR, "espnet")):
+        return
+    fetch_zip(AUTO_AVSR_ZIP, AUTO_AVSR_DIR, "Auto-AVSR's model code (Imperial College, Apache-2.0), for the trained models")
 
 
 def drive_download(url: str, dest_dir: str, what: str) -> None:
@@ -354,6 +375,10 @@ def main() -> None:
         if unknown:
             raise SystemExit(f"unknown language codes {unknown}; known: {', '.join(LANGUAGES)}")
         ensure_models(["en"] + [c for c in codes if c != "en"])
+        trained = trained_models(MODELS_DIR)
+        if trained:
+            say("trained models in " + MODELS_DIR + ": " + ", ".join(f"{LANGUAGES[c]['name']} ({t['name']})" for c, t in trained.items()))
+            ensure_auto_avsr()
     tunnel_bin = None if args.no_tunnel else cloudflared_path()
 
     origin = f"http://127.0.0.1:{args.port}"

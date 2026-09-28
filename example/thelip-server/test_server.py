@@ -54,18 +54,50 @@ def call(method, path, data=None, ctype=None, headers=None):
         return e.code, dict(e.headers), json.loads(e.read() or b"null")
 
 
+def fake_export(models_dir: str) -> None:
+    """What example/thelip-train leaves in models/ for Hebrew, minus the weights."""
+    folder = os.path.join(models_dir, "he-thelip-v1")
+    os.makedirs(folder, exist_ok=True)
+    open(os.path.join(folder, "model.pth"), "wb").write(b"not a real model")
+    json.dump({"name": "he-thelip-v1", "language": "he", "results": {"v1": {"overall": 0.61, "unit": "word", "by_source": {"phone": {"n": 40, "rate": 0.58}}}}},
+              open(os.path.join(folder, "info.json"), "w"))
+
+
 def main() -> int:
     import shutil
 
     shutil.rmtree(DATA, ignore_errors=True)
+    models = os.path.join(HERE, "test-models")
+    shutil.rmtree(models, ignore_errors=True)
+    fake_export(models)
     proc = subprocess.Popen([sys.executable, os.path.join(HERE, "server.py"), "--fake", "--port", str(PORT), "--token", "t0k"],
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=dict(os.environ, THELIP_DATA=DATA))
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=dict(os.environ, THELIP_DATA=DATA, THELIP_MODELS=models))
     failures = 0
 
     def check(name, cond, detail=""):
         nonlocal failures
         print(("ok   " if cond else "FAIL ") + name + (f": {detail}" if detail and not cond else ""))
         failures += 0 if cond else 1
+
+    # The worker protocol, without torch: the server's client end against trained_worker.py --fake.
+    sys.argv.append("--fake")
+    sys.path.insert(0, HERE)
+    import numpy as np
+    import server
+
+    worker = server.TrainedModel("nowhere", "cpu", fake=True)
+    check("a trained model's worker starts and answers over the pipe", worker.info.get("ready") and worker.infer(np.zeros((30, 96, 96), np.uint8)) == "FAKE TRAINED 30 FRAMES")
+    worker.proc.kill()
+    worker.proc.wait()
+    check("a worker that died is started again", worker.infer(np.zeros((7, 96, 96), np.uint8)) == "FAKE TRAINED 7 FRAMES")
+    worker.stop()
+    check("stop ends the worker", worker.proc is None)
+    try:
+        worker.infer(np.zeros((3, 100, 100), np.uint8))
+        check("wrong crop size is refused", False)
+    except ValueError:
+        check("wrong crop size is refused", True)
+    worker.stop()
 
     try:
         for _ in range(100):
@@ -77,8 +109,10 @@ def main() -> int:
         status, headers, body = call("GET", "/health", headers={"Origin": "https://thelip.ai"})
         check("health answers", status == 200 and body["ok"] is True and body["fake"] is True, body)
         langs = {l["code"]: l for l in body.get("languages", [])}
-        check("health lists the languages, Hebrew first after English", [l["code"] for l in body["languages"]][:2] == ["en", "he"] and langs["he"]["available"] is False and "status" in langs["he"], body.get("languages"))
+        check("health lists the languages, Hebrew first after English", [l["code"] for l in body["languages"]][:2] == ["en", "he"] and langs["ar"]["available"] is False and "status" in langs["ar"], body.get("languages"))
         check("the runnable ones carry their quality and licence", langs["es"]["available"] and "44.5%" in langs["es"]["quality"] and "non-commercial" in langs["es"]["licence"], langs.get("es"))
+        check("a trained export makes its language available, with its measured quality",
+              langs["he"]["available"] is True and langs["he"]["trained"] == "he-thelip-v1" and "61.0%" in langs["he"]["quality"] and "status" not in langs["he"], langs.get("he"))
         check("CORS allows thelip.ai", headers.get("access-control-allow-origin") == "*", headers)
 
         req = urllib.request.Request(f"http://127.0.0.1:{PORT}/read", method="OPTIONS")
@@ -99,9 +133,12 @@ def main() -> int:
         ctype, data = multipart([("fps", "25"), ("language", "es")], [("frames", f"f{i:04d}.jpg", jpeg()) for i in range(10)])
         status, _, body = call("POST", "/read", data, ctype, auth)
         check("a language goes with the read", status == 200 and body["text"] == "FAKE ES READING OF 10 FRAMES" and body["language"] == "es", body)
-        ctype, data = multipart([("fps", "25"), ("language", "he")], [("frames", "a.jpg", jpeg())])
+        ctype, data = multipart([("fps", "25"), ("language", "he")], [("frames", f"f{i:04d}.jpg", jpeg()) for i in range(8)])
         status, _, body = call("POST", "/read", data, ctype, auth)
-        check("a language without a model is 503 with the reason", status == 503 and "Hebrew" in body["error"], body)
+        check("a language with only a trained model reads", status == 200 and body["language"] == "he" and body["text"] == "FAKE HE READING OF 8 FRAMES", body)
+        ctype, data = multipart([("fps", "25"), ("language", "ar")], [("frames", "a.jpg", jpeg())])
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        check("a language without a model is 503 with the reason", status == 503 and "Arabic" in body["error"], body)
         ctype, data = multipart([("fps", "25"), ("language", "xx")], [("frames", "a.jpg", jpeg())])
         status, _, body = call("POST", "/read", data, ctype, auth)
         check("an unknown language is 400", status == 400, body)
@@ -145,6 +182,7 @@ def main() -> int:
             proc.kill()
             out = proc.communicate()[0]
     shutil.rmtree(DATA, ignore_errors=True)
+    shutil.rmtree(models, ignore_errors=True)
     if failures:
         print(out)
     print("ALL PASSED" if not failures else f"{failures} FAILED")

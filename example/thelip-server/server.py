@@ -1,12 +1,14 @@
-"""thelip-server: open-vocabulary English lip reading for thelip.syrup.
+"""thelip-server: open-vocabulary lip reading for thelip.syrup.
 
-The page at https://thelip.ai/ reads 51 words on its own. Point it at this
-server and it reads any English words: the server runs the LRS3 visual
-speech recogniser of Ma, Petridis & Pantic (Auto-AVSR; 19.1% word error
-rate on LRS3) through the Chaplin pipeline (Amanvir Parhar, MIT), which
-carries the Imperial College preprocessing (Apache-2.0): a mediapipe face
-detector, alignment to a mean face, a 96x96 mouth crop, a Conformer
-encoder, a transformer decoder with a subword language model.
+The page at https://thelip.ai/ reads 51 English words on its own. Point it
+at this server and it reads any words, in the languages of languages.py:
+the server runs the visual speech recognisers of Ma, Petridis & Pantic
+(Auto-AVSR; 19.1% word error rate on LRS3 for English) through the Chaplin
+pipeline (Amanvir Parhar, MIT), which carries the Imperial College
+preprocessing (Apache-2.0): a mediapipe face detector, alignment to a mean
+face, a 96x96 mouth crop, a Conformer encoder, a transformer decoder with a
+subword language model. Models that example/thelip-train produced (Hebrew,
+or a better English) are served the same way, each in a worker process.
 
     python server.py [--port 8791] [--beam 20] [--no-lm] [--token secret]
     python server.py --fake            # no model: answers with a fixed text (tests)
@@ -64,8 +66,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # because PyTorch's DLLs fail to initialise from a path with non-ASCII characters.
 WORK = os.environ.get("THELIP_HOME") or HERE
 CHAPLIN = os.environ.get("THELIP_CHAPLIN") or os.path.join(WORK, "chaplin")
+AUTO_AVSR = os.environ.get("THELIP_AUTO_AVSR") or os.path.join(WORK, "auto_avsr")
+MODELS = os.environ.get("THELIP_MODELS") or os.path.join(WORK, "models")   # exports of example/thelip-train
 sys.path.insert(0, HERE)
-from languages import LANGUAGES, ORDER, describe, runnable  # noqa: E402
+from languages import LANGUAGES, ORDER, describe, runnable, trained_models  # noqa: E402
 FACE_MODEL = os.environ.get("THELIP_FACE_MODEL") or os.path.join(WORK, "blaze_face_short_range.tflite")
 DATA = os.environ.get("THELIP_DATA") or os.path.join(WORK, "data")
 MODEL_NAME = "LRS3_V_WER19.1 (Auto-AVSR, Ma et al. 2023) via Chaplin"
@@ -106,6 +110,79 @@ class FaceKeypoints:
         return out
 
 
+class TrainedModel:
+    """A model example/thelip-train exported (Auto-AVSR's network, the
+    language's own tokenizer). It runs in its own process, trained_worker.py,
+    because Auto-AVSR's code and Chaplin's each carry an `espnet` package of
+    their own and the two cannot be imported side by side; this class sends
+    it the 96x96 crops and reads the text back. A worker that dies is
+    started once more."""
+
+    def __init__(self, folder: str, device: str, beam: int = 20, fake: bool = False):
+        self.folder, self.device, self.beam, self.fake = folder, device, beam, fake
+        self.proc = None
+        self.info: dict = {}
+        if not fake and not os.path.isdir(os.path.join(AUTO_AVSR, "espnet")):
+            raise SystemExit(f"auto_avsr is needed for trained models; expected at {AUTO_AVSR} (run.py fetches it)")
+        self._start()
+
+    def _start(self) -> None:
+        import json
+        import subprocess
+
+        cmd = [sys.executable, os.path.join(HERE, "trained_worker.py")]
+        cmd += ["--fake"] if self.fake else [self.folder, "--auto-avsr", AUTO_AVSR, "--device", self.device, "--beam", str(self.beam)]
+        env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+        self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=env)
+        line = self.proc.stdout.readline()
+        try:
+            self.info = json.loads(line.decode("utf-8")) if line else {}
+        except ValueError:
+            self.info = {}
+        if not self.info.get("ready"):
+            self.stop()
+            raise SystemExit(f"the worker for {self.folder} did not start: {self.info.get('error') or line[:200]!r}")
+
+    def infer(self, crops: np.ndarray) -> str:
+        import json
+        import struct
+
+        crops = np.ascontiguousarray(crops, dtype=np.uint8)
+        if crops.ndim != 3 or crops.shape[1:] != (96, 96):
+            raise ValueError(f"crops must be T x 96 x 96, got {crops.shape}")
+        for attempt in (1, 2):
+            if self.proc is None or self.proc.poll() is not None:
+                self._start()
+            try:
+                self.proc.stdin.write(struct.pack("<I", len(crops)) + crops.tobytes())
+                self.proc.stdin.flush()
+                line = self.proc.stdout.readline()
+                if line:
+                    reply = json.loads(line.decode("utf-8"))
+                    if "error" in reply:
+                        raise RuntimeError(reply["error"])
+                    return reply["text"]
+            except (OSError, ValueError):
+                pass
+            if attempt == 2:
+                break
+            print(f"the worker for {self.folder} stopped answering; starting it again", flush=True)
+            self.stop()
+        raise RuntimeError(f"the worker for {self.folder} gave no answer")
+
+    def stop(self) -> None:
+        if self.proc and self.proc.poll() is None:
+            try:
+                self.proc.stdin.write(b"\0\0\0\0")
+                self.proc.stdin.flush()
+                self.proc.wait(5)
+            except (OSError, ValueError):
+                pass
+            except Exception:  # noqa: BLE001  (TimeoutExpired)
+                self.proc.kill()
+        self.proc = None
+
+
 class Reader:
     """The models behind /read, one per language, loaded on first use.
     `fake=True` needs no torch and no weights."""
@@ -144,11 +221,18 @@ class Reader:
         self.model_for("en")  # the default language, ready before the first request
 
     def available(self, code: str) -> bool:
-        return runnable(code) and describe(code, CHAPLIN)["available"]
+        return (runnable(code) and describe(code, CHAPLIN)["available"]) or code in trained_models(MODELS)
 
     def model_for(self, code: str):
-        """The AVSR model of a language, loaded the first time it is asked for."""
+        """The model of a language, loaded the first time it is asked for: the one
+        example/thelip-train exported when that is the better one (or the only
+        one, as for Hebrew), else the published model of languages.py."""
         if code in self.models:
+            return self.models[code]
+        trained = trained_models(MODELS).get(code)
+        if trained and (not runnable(code) or trained.get("preferred")):
+            print(f"loading the trained {LANGUAGES[code]['name']} model {trained['name']} ({trained.get('summary', '')})", flush=True)
+            self.models[code] = TrainedModel(trained["folder"], self.device, beam=min(self.beam, 20))
             return self.models[code]
         from pipelines.model import AVSR  # noqa: E402
 
@@ -178,9 +262,11 @@ class Reader:
             landmarks = self.detector.detect(video)
             if all(l is None for l in landmarks):
                 raise NoFace()
-            crops = self.loader.video_process(video, landmarks)
+            crops = np.asarray(self.loader.video_process(video, landmarks), dtype=np.uint8)
+            if isinstance(model, TrainedModel):
+                return model.infer(crops), crops
             data = self.loader.video_transform(self.torch.tensor(crops))
-            return model.infer(data), np.asarray(crops, dtype=np.uint8)
+            return model.infer(data), crops
 
 
 class NoFace(Exception):
@@ -228,8 +314,13 @@ def decode_jpeg(data: bytes) -> np.ndarray:
 def create_app(reader: Reader, token: Optional[str] = None) -> Starlette:
     def languages():
         out = []
+        trained = trained_models(MODELS)
         for code in ORDER:
             entry = describe(code, None if reader.fake else CHAPLIN)
+            if code in trained:
+                t = trained[code]
+                entry.update(available=True, trained=t["name"], quality=t.get("summary") or entry.get("quality"), status=None)
+                entry.pop("status", None)
             entry["loaded"] = code in reader.models
             out.append(entry)
         return out
@@ -255,10 +346,12 @@ def create_app(reader: Reader, token: Optional[str] = None) -> Starlette:
         language = str(form.get("language", "en")).lower()[:8]
         if language not in LANGUAGES:
             return JSONResponse({"error": f"unknown language {language!r}"}, status_code=400)
-        if not runnable(language):
-            return JSONResponse({"error": f"no model for {LANGUAGES[language]['name']}: {LANGUAGES[language]['status']}"}, status_code=503)
+        spec = LANGUAGES[language]
+        has_model = runnable(language) or language in trained_models(MODELS)
+        if not has_model:
+            return JSONResponse({"error": f"no model for {spec['name']}: {spec['status']}"}, status_code=503)
         if not reader.fake and not reader.available(language):
-            return JSONResponse({"error": f"the {LANGUAGES[language]['name']} model is not downloaded on this server"}, status_code=503)
+            return JSONResponse({"error": f"the {spec['name']} model is not downloaded on this server"}, status_code=503)
         started = time.time()
         frames: List[np.ndarray] = []
         for f in files:
@@ -274,6 +367,8 @@ def create_app(reader: Reader, token: Optional[str] = None) -> Starlette:
             text, crops = await _run(reader.read, video, language)
         except NoFace:
             return JSONResponse({"error": "no face found in the frames"}, status_code=422)
+        except RuntimeError as e:  # the model's process failed on this clip
+            return JSONResponse({"error": f"the {spec['name']} model failed: {e}"}, status_code=500)
         sample_id = None
         if str(form.get("improve", "")) == "1":
             sample_id = keep_sample(crops, {"raw": text, "language": language, "fps": 25, "frames": int(len(video)),

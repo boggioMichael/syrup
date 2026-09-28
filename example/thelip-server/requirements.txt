@@ -17,3 +17,4 @@ uvicorn
 python-multipart
 qrcode
 gdown
+sentencepiece

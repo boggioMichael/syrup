@@ -102,3 +102,43 @@ def describe(code: str, root: Optional[str] = None) -> dict:
     if not present:
         out["status"] = "model files not downloaded on this server (run.py --languages)"
     return out
+
+
+def trained_models(models_dir: Optional[str]) -> Dict[str, dict]:
+    """Exports of example/thelip-train under models_dir: one per language, the
+    highest version; `preferred` when its info.json shows it beat the
+    published model on the phone samples (a language with no published model
+    is always served by its trained one)."""
+    import glob
+    import json
+    import os
+
+    out: Dict[str, dict] = {}
+    if not models_dir or not os.path.isdir(models_dir):
+        return out
+    for folder in sorted(glob.glob(os.path.join(models_dir, "*-thelip-v*"))):
+        info_path = os.path.join(folder, "info.json")
+        if not os.path.isfile(info_path) or not os.path.isfile(os.path.join(folder, "model.pth")):
+            continue
+        try:
+            with open(info_path, encoding="utf-8") as f:
+                info = json.load(f)
+        except (OSError, ValueError):
+            continue
+        code = info.get("language")
+        if code not in LANGUAGES:
+            continue
+        results = info.get("results") or {}
+        after = (results.get("v1") or {}).get("by_source", {}).get("phone", {}).get("rate")
+        before = (results.get("base") or {}).get("by_source", {}).get("phone", {}).get("rate")
+        overall = (results.get("v1") or {}).get("overall")
+        preferred = not runnable(code) or (after is not None and before is not None and after < before)
+        summary = ""
+        if overall is not None:
+            summary = f"{overall * 100:.1f}% {(results.get('v1') or {}).get('unit', 'word')} error rate on held-out clips"
+            if after is not None and before is not None:
+                summary += f"; on phone samples {after * 100:.1f}% (published model: {before * 100:.1f}%)"
+        version = int(folder.rsplit("-v", 1)[-1]) if folder.rsplit("-v", 1)[-1].isdigit() else 0
+        if code not in out or version > out[code]["version"]:
+            out[code] = {"name": os.path.basename(folder), "folder": folder, "version": version, "preferred": preferred, "summary": summary}
+    return out
