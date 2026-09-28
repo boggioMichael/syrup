@@ -121,20 +121,21 @@ def ensure_auto_avsr() -> None:
     fetch_zip(AUTO_AVSR_ZIP, AUTO_AVSR_DIR, "Auto-AVSR's model code (Imperial College, Apache-2.0), for the trained models")
 
 
-def drive_download(url: str, dest_dir: str, what: str) -> None:
-    """A model archive from the authors' Google Drive (a bit.ly link to it):
-    fetched with gdown, then model.json and model.pth put in dest_dir."""
+def drive_download(file_id: str, dest_dir: str, what: str) -> None:
+    """A model archive from the authors' Google Drive, by file id: fetched
+    with gdown, then model.json and model.pth put in dest_dir."""
     if os.path.isfile(os.path.join(dest_dir, "model.pth")) and os.path.isfile(os.path.join(dest_dir, "model.json")):
         return
     import gdown
 
+    url = f"https://drive.google.com/uc?id={file_id}"
     os.makedirs(dest_dir, exist_ok=True)
     say(f"downloading {what} from the authors' Google Drive ({url})")
     tmp = os.path.join(dest_dir, "download")
     os.makedirs(tmp, exist_ok=True)
-    got = gdown.download(url, os.path.join(tmp, "archive"), quiet=False, fuzzy=True)
+    got = gdown.download(url, os.path.join(tmp, "archive"), quiet=False)
     if not got:
-        raise SystemExit(f"could not download {what}; open {url} in a browser and unpack model.json and model.pth into {dest_dir}")
+        raise SystemExit(f"could not download {what}; open https://drive.google.com/file/d/{file_id}/view in a browser and unpack model.json and model.pth into {dest_dir}")
     found = {}
     if zipfile.is_zipfile(got):
         with zipfile.ZipFile(got) as z:
@@ -160,7 +161,11 @@ def drive_download(url: str, dest_dir: str, what: str) -> None:
         raise SystemExit(f"{what}: the download did not hold model.json and model.pth; unpack it by hand into {dest_dir}")
 
 
-def ensure_models(codes) -> None:
+def ensure_models(codes) -> list:
+    """Fetches what is missing; returns the codes whose files are in place.
+    English must be there; another language that fails to download is
+    reported and skipped, so that the server still starts."""
+    ready = []
     for code in codes:
         spec = LANGUAGES[code]
         if not runnable(code):
@@ -168,14 +173,21 @@ def ensure_models(codes) -> None:
             continue
         model_dir = os.path.join(CHAPLIN_DIR, "benchmarks", spec["model"])
         lm_dir = os.path.join(CHAPLIN_DIR, "benchmarks", spec["lm"])
-        if "files" in spec:
-            for rel, (url, min_size) in spec["files"].items():
-                dest = os.path.join(lm_dir, rel[3:]) if rel.startswith("lm/") else os.path.join(model_dir, rel)
-                download(url, dest, min_size)
-        else:
-            drive_download(spec["drive"]["model"], model_dir, f"the {spec['name']} model")
-            drive_download(spec["drive"]["lm"], lm_dir, f"the {spec['name']} language model")
+        try:
+            if "files" in spec:
+                for rel, (url, min_size) in spec["files"].items():
+                    dest = os.path.join(lm_dir, rel[3:]) if rel.startswith("lm/") else os.path.join(model_dir, rel)
+                    download(url, dest, min_size)
+            else:
+                drive_download(spec["drive"]["model"], model_dir, f"the {spec['name']} model")
+                drive_download(spec["drive"]["lm"], lm_dir, f"the {spec['name']} language model")
+            ready.append(code)
+        except (Exception, SystemExit) as e:  # noqa: BLE001  (a download can fail in many ways; English is required)
+            if code == "en":
+                raise
+            say(f"{spec['name']}: not available this time — {e}; the server starts without it (run again later, or fetch by hand)")
     download(FACE_MODEL_URL, FACE_MODEL, 100_000)
+    return ready
 
 
 def cloudflared_path() -> str:
@@ -374,7 +386,8 @@ def main() -> None:
         unknown = [c for c in codes if c not in LANGUAGES]
         if unknown:
             raise SystemExit(f"unknown language codes {unknown}; known: {', '.join(LANGUAGES)}")
-        ensure_models(["en"] + [c for c in codes if c != "en"])
+        ready = ensure_models(["en"] + [c for c in codes if c != "en"])
+        say("languages with their files in place: " + ", ".join(LANGUAGES[c]["name"] for c in ready))
         trained = trained_models(MODELS_DIR)
         if trained:
             say("trained models in " + MODELS_DIR + ": " + ", ".join(f"{LANGUAGES[c]['name']} ({t['name']})" for c, t in trained.items()))

@@ -2,8 +2,10 @@
 
 Each entry names a visual speech model in the format Chaplin's pipeline
 loads (ESPnet E2E: model.json + model.pth, optionally a language model),
-its published quality, its licence and how it is fetched. `status` on an
-entry means no runnable model exists yet, and says why.
+its published quality, its licence and how it is fetched: `files` are plain
+URLs (Hugging Face); `drive` holds the Google Drive file ids of the zip
+archives the authors published (the bit.ly links in their model zoo lead
+there). `status` on an entry means no runnable model exists yet, and says why.
 
 Quality numbers are the authors', on their test sets, in the lab; a phone
 is harder. All model weights here are for non-commercial use.
@@ -36,7 +38,7 @@ LANGUAGES: Dict[str, dict] = {
         "credit": "Ma, Petridis & Pantic 2022 (VSR for Multiple Languages)",
         "licence": "non-commercial (comparative and benchmarking use)",
         "beam": 30, "ctc_weight": 0.1, "lm_weight": 0.4, "penalty": 0.0,
-        "drive": {"model": "https://bit.ly/34MjWBW", "lm": "https://bit.ly/3rppyJN"},
+        "drive": {"model": "17VZMnMcsR4rqhQkqxEQNFCOh7Y8NAzFJ", "lm": "1TNweJfgMEIrXJhzY02IxhWuu-2QWc1eU"},
     },
     "fr": {
         "name": "French", "native": "Français",
@@ -45,7 +47,7 @@ LANGUAGES: Dict[str, dict] = {
         "credit": "Ma, Petridis & Pantic 2022 (VSR for Multiple Languages)",
         "licence": "non-commercial (comparative and benchmarking use)",
         "beam": 30, "ctc_weight": 0.1, "lm_weight": 0.4, "penalty": 0.0,
-        "drive": {"model": "https://bit.ly/3Ik6owb", "lm": "https://bit.ly/3LDChSn"},
+        "drive": {"model": "1XOrFsQqF2ea-sf-SydsYaeMLw_Q7RME1", "lm": "1EhRWuKIQspYMm0ViJBix-KUTk4pMOw0h"},
     },
     "pt": {
         "name": "Portuguese", "native": "Português",
@@ -54,7 +56,7 @@ LANGUAGES: Dict[str, dict] = {
         "credit": "Ma, Petridis & Pantic 2022 (VSR for Multiple Languages)",
         "licence": "non-commercial (comparative and benchmarking use)",
         "beam": 30, "ctc_weight": 0.1, "lm_weight": 0.4, "penalty": 0.0,
-        "drive": {"model": "https://bit.ly/3HjXCgo", "lm": "https://bit.ly/3gPvneF"},
+        "drive": {"model": "1SkK8pn39WtRhOhQHmG-9R0Xp676XS2Y_", "lm": "1zqv3qs8DkN_GHZ_aso8Or6AyBgZl06bB"},
     },
     "zh": {
         "name": "Mandarin Chinese", "native": "普通话",
@@ -63,7 +65,7 @@ LANGUAGES: Dict[str, dict] = {
         "credit": "Ma, Petridis & Pantic 2022 (VSR for Multiple Languages)",
         "licence": "non-commercial (comparative and benchmarking use)",
         "beam": 20, "ctc_weight": 0.1, "lm_weight": 0.3, "penalty": 0.3,
-        "drive": {"model": "https://bit.ly/3fR8RkU", "lm": "https://bit.ly/3fPxXAJ"},
+        "drive": {"model": "1tN79KWj3Za8oS-7WWrcPMBCIx0RARfVD", "lm": "1de4lqf_SkkjVn4t_NFs1dmRhAQpR1CfD"},
     },
     "he": {
         "name": "Hebrew", "native": "עברית",
