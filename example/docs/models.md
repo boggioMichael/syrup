@@ -40,7 +40,12 @@ every one of them degrades — LipNet measurably (docs/benchmarks.md: WER
   its download — and, for anything sold, a licence conversation.
 - Hebrew visual-only is not a matter of engineering here: there is no model
   to integrate. The honest path is `audio-attributed` mode (Whisper reads
-  the sound, the lips decide who spoke), which the pipeline supports.
+  the sound, the lips decide who spoke), which the pipeline supports —
+  and, for thelip.ai, training the first one:
+  [`example/thelip-train`](../thelip-train) fine-tunes Auto-AVSR's encoder
+  with a new Hebrew decoder on Creative Commons and public-domain video
+  plus the consented phone samples, on a rented GPU under a budget. Not
+  run yet; its expectations are labelled as such.
 - Language identification from lips does not exist publicly; `auto` in
   visual mode is reported as `assumed`.
 

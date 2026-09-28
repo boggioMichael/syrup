@@ -90,7 +90,13 @@ jobs:
           NODE_PATH=$(npm root -g) node test/page.test.mjs
           ffmpeg -v error -y -i test/sbwe5n.webm -pix_fmt yuv420p test/sbwe5n.y4m
           NODE_PATH=$(npm root -g) node test/camera.test.mjs
-      - name: thelip-server (routes against --fake; the page's server mode)
+      - name: thelip-server (routes against --fake; the trained-model worker; the page's server mode)
         run: |
           python example/thelip-server/test_server.py
           cd example/thelip && NODE_PATH=$(npm root -g) node test/server.test.mjs
+      - name: thelip-train (text rules, captions, utterances, the split, manifests, the Auto-AVSR patch, GRID crops)
+        run: |
+          python -m pip install --quiet scikit-image
+          git clone -q https://github.com/amanvirparhar/chaplin.git /tmp/chaplin && git -C /tmp/chaplin checkout -q 7aee1f8fca776ce4f63690063310b53573b7d804
+          git clone -q https://github.com/mpc001/auto_avsr.git /tmp/auto_avsr && git -C /tmp/auto_avsr checkout -q 182b62837773ab01052d4ac21ef1d2203ea7d267
+          THELIP_CHAPLIN=/tmp/chaplin THELIP_AUTO_AVSR=/tmp/auto_avsr python example/thelip-train/test_train.py
