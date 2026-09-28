@@ -51,3 +51,6 @@ __pycache__/
 /example/thelip/test/crawl.png
 /example/thelip/test/auto.png
 /example/thelip/test/two-camera.png
+/example/minesweeper-coach/target/
+/example/minesweeper-coach/dump/
+/example/minesweeper-coach/build.log

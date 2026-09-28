@@ -1,13 +1,30 @@
-//! Live window capture (Windows).
+//! Live capture (Windows): a window, or the whole screen.
 //!
-//! Captures a window's client area by title substring and returns an RGBA
-//! image. On non-Windows platforms every function is a stub that reports
-//! "nothing available", so callers can compile portably and fall back to
-//! file-based frames.
+//! [`capture_window_by_title_info`] captures a window's client area by title
+//! substring; [`capture_screen`] captures everything on every monitor, with
+//! where that picture sits on the desktop, so that something found in it can
+//! be pointed at on the screen. On non-Windows platforms every function is a
+//! stub that reports "nothing available", so callers can compile portably and
+//! fall back to file-based frames.
 //!
-//! Capture uses `PrintWindow`, which asks the window to draw itself — so it
-//! works while the window is occluded — and falls back to a screen copy for
-//! windows that refuse (hardware-accelerated or protected surfaces).
+//! Window capture uses `PrintWindow`, which asks the window to draw itself —
+//! so it works while the window is occluded — and falls back to a screen copy
+//! for windows that refuse (hardware-accelerated or protected surfaces).
+//! Screen capture copies what is on the screen, as the user sees it (windows
+//! that exclude themselves from capture excepted).
+
+use image::RgbaImage;
+
+/// The whole screen as captured: the picture, and the desktop position of
+/// its top left pixel (negative when a monitor sits left of or above the
+/// main one). A pixel at `(x, y)` in the picture is at `(left + x, top + y)`
+/// on the desktop, in physical pixels when the process is DPI aware.
+#[derive(Debug, Clone)]
+pub struct Screen {
+    pub left: i32,
+    pub top: i32,
+    pub image: RgbaImage,
+}
 
 #[cfg(target_os = "windows")]
 mod windows_capture {
@@ -17,6 +34,12 @@ mod windows_capture {
 
     use image::RgbaImage;
     use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+        SM_YVIRTUALSCREEN,
+    };
+
+    use super::Screen;
     use windows::Win32::Graphics::Gdi::{
         BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC,
         DeleteDC, DeleteObject, GetDC, GetDIBits, ReleaseDC, SRCCOPY, SelectObject,
@@ -253,6 +276,82 @@ mod windows_capture {
         }
     }
 
+    /// Everything on every monitor, as the user sees it.
+    pub fn capture_screen() -> Option<Screen> {
+        unsafe {
+            let left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+            let top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+            let width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+            let height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+            if width <= 0 || height <= 0 {
+                return None;
+            }
+
+            let hdc_screen = GetDC(None);
+            let hdc_mem = CreateCompatibleDC(Some(hdc_screen));
+            let hbitmap = CreateCompatibleBitmap(hdc_screen, width, height);
+            let old_obj = SelectObject(hdc_mem, hbitmap.into());
+
+            // No CAPTUREBLT: layered windows drawn over the screen (an
+            // overlay pointing at what was found) stay out of the picture.
+            let copied = BitBlt(
+                hdc_mem,
+                0,
+                0,
+                width,
+                height,
+                Some(hdc_screen),
+                left,
+                top,
+                SRCCOPY,
+            )
+            .is_ok();
+
+            let mut bmi: BITMAPINFO = std::mem::zeroed();
+            bmi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+            bmi.bmiHeader.biWidth = width;
+            bmi.bmiHeader.biHeight = -height;
+            bmi.bmiHeader.biPlanes = 1;
+            bmi.bmiHeader.biBitCount = 32;
+            bmi.bmiHeader.biCompression = BI_RGB.0;
+
+            let mut buffer = vec![0u8; (width as usize) * (height as usize) * 4];
+            let result = if copied {
+                GetDIBits(
+                    hdc_mem,
+                    hbitmap,
+                    0,
+                    height as u32,
+                    Some(buffer.as_mut_ptr() as *mut _),
+                    &mut bmi,
+                    windows::Win32::Graphics::Gdi::DIB_RGB_COLORS,
+                )
+            } else {
+                0
+            };
+
+            let _ = SelectObject(hdc_mem, old_obj);
+            let _ = DeleteObject(hbitmap.into());
+            let _ = DeleteDC(hdc_mem);
+            let _ = ReleaseDC(None, hdc_screen);
+
+            if result == 0 {
+                return None;
+            }
+
+            for chunk in buffer.as_chunks_mut::<4>().0 {
+                chunk.swap(0, 2);
+                chunk[3] = 255;
+            }
+
+            RgbaImage::from_raw(width as u32, height as u32, buffer).map(|image| Screen {
+                left,
+                top,
+                image,
+            })
+        }
+    }
+
     /// Is this captured surface effectively featureless?
     ///
     /// Used to spot a PrintWindow call that "succeeded" but returned nothing
@@ -274,13 +373,15 @@ mod windows_capture {
 }
 
 #[cfg(target_os = "windows")]
-pub use windows_capture::{capture_window_by_title_info, list_windows};
-
-#[cfg(not(target_os = "windows"))]
-use image::RgbaImage;
+pub use windows_capture::{capture_screen, capture_window_by_title_info, list_windows};
 
 #[cfg(not(target_os = "windows"))]
 pub fn capture_window_by_title_info(_: &str) -> Option<(String, RgbaImage)> {
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn capture_screen() -> Option<Screen> {
     None
 }
 
