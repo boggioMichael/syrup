@@ -51,6 +51,30 @@ def read_manifest(path: str) -> List[dict]:
 
 def evaluate(language: str, checkpoint: str, manifest: Optional[str] = None, beam: int = 20, limit: Optional[int] = None,
              unit: Optional[str] = None) -> dict:
+    """Runs the evaluation in a process of its own: each language has its own
+    copy of Auto-AVSR and its own tokenizer, and Python would keep the first
+    copy's modules for the second language."""
+    import subprocess
+
+    out = os.path.join(DIRS["exp"], language, f"eval-{os.path.basename(checkpoint)}.json")
+    cmd = [sys.executable, "-m", "thelip_train.evaluate", language, checkpoint, "--out", out, "--beam", str(beam)]
+    if manifest:
+        cmd += ["--manifest", manifest]
+    if limit:
+        cmd += ["--limit", str(limit)]
+    if unit:
+        cmd += ["--unit", unit]
+    env = dict(os.environ, THELIP_TRAIN_HOME=os.path.dirname(DIRS["exp"]), PYTHONPATH=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    proc = subprocess.run(cmd, env=env)
+    if proc.returncode != 0 or not os.path.isfile(out):
+        raise SystemExit(f"evaluation of {checkpoint} failed (exit {proc.returncode})")
+    with open(out, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def evaluate_here(language: str, checkpoint: str, manifest: Optional[str] = None, beam: int = 20, limit: Optional[int] = None,
+                  unit: Optional[str] = None) -> dict:
+    """The evaluation itself, in this process (see evaluate)."""
     import torch
     import torchvision
 
@@ -91,3 +115,21 @@ def record(language: str, name: str, result: dict) -> None:
     data[name] = result
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
+
+
+if __name__ == "__main__":
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("language")
+    ap.add_argument("checkpoint")
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--manifest", default=None)
+    ap.add_argument("--beam", type=int, default=20)
+    ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--unit", default=None)
+    a = ap.parse_args()
+    result = evaluate_here(a.language, a.checkpoint, a.manifest, a.beam, a.limit, a.unit)
+    os.makedirs(os.path.dirname(a.out), exist_ok=True)
+    with open(a.out, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=1)
