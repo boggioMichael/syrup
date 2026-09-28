@@ -44,3 +44,4 @@ __pycache__/
 /example/thelip-server/test-models
 /example/thelip-server/blaze_face_short_range.tflite
 /example/thelip-train/work
+/example/thelip-server/hf

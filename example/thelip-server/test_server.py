@@ -112,6 +112,17 @@ def main() -> int:
     except ValueError:
         check("wrong crop size is refused", True)
     worker.stop()
+    # ... and the speech worker's, the same way.
+    ear = server.Transcriber("medium", "cpu", fake_worker=True)
+    check("the speech worker starts and hears over the pipe", ear.hear(wav(1.0), "en")["heard"] == "FAKE HEARD 1.0s" and ear.proc is not None)
+    ear.proc.kill(); ear.proc.wait()
+    check("a speech worker that died is started again", ear.hear(wav(0.5), "he")["heard"] == "FAKE HEARD 0.5s")
+    try:
+        ear.hear(b"not a wav", "en"); check("a bad wav is refused before the worker", False)
+    except Exception:  # noqa: BLE001
+        check("a bad wav is refused before the worker", True)
+    ear.stop()
+    check("stop ends the speech worker", ear.proc is None)
 
     try:
         for _ in range(100):

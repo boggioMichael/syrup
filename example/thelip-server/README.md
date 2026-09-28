@@ -172,8 +172,10 @@ mediapipe 0.10.35 without the Solutions API (hence the Tasks detector).
   `fps`, `frames`…, `language`, `improve`, `utt`), `POST /hear` (the
   sound), `POST /feedback`, CORS open, optional bearer token, `--fake`;
   samples under `THELIP_DATA` (default `<work>/data`). `languages.py` —
-  the models per language. `hear.py` — speech recognition for the labels.
-- `trained_worker.py` — the process a trained model runs in. `version.py` —
+  the models per language.
+- `hear.py`, `hear_worker.py` — speech recognition for the labels, in a
+  process of its own (CTranslate2 next to PyTorch crashed the server on
+  Windows). `trained_worker.py` — the process a trained model runs in. `version.py` —
   the server version `/health` carries: `run.py` attaches to a running
   server of the same version and replaces one of another.
 - `run.py` — fetches Chaplin, the models, Auto-AVSR's code when a trained

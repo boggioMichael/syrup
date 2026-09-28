@@ -8,11 +8,14 @@ Models, loaded on first use per language: ivrit.ai's Hebrew-tuned Whisper
 for Hebrew (Apache-2.0), OpenAI's multilingual Whisper (MIT) otherwise —
 `--whisper` picks its size (small, medium, large-v3-turbo; medium by
 default). On a CPU an utterance takes a few seconds: Whisper always hears
-30 seconds, however short the clip.
+30 seconds, however short the clip. The models run in hear_worker.py, a
+process of their own: on Windows, loading CTranslate2 next to PyTorch
+ended the server with an access violation.
 """
 from __future__ import annotations
 
 import io
+import json
 import threading
 import wave
 from typing import Dict, Optional
@@ -48,11 +51,73 @@ def wav_to_float(data: bytes):
 
 
 class Transcriber:
-    def __init__(self, size: str = "medium", device: str = "cpu", fake: bool = False, threads: Optional[int] = None):
-        self.size, self.device, self.fake, self.threads = size, device, fake, threads
+    """Speech recognition for the server. In the server's process it only
+    talks to hear_worker.py (PyTorch and CTranslate2 do not share a process
+    well on Windows); `in_process=True` is what the worker itself uses, and
+    `fake=True` answers without any model."""
+
+    def __init__(self, size: str = "medium", device: str = "cpu", fake: bool = False, threads: Optional[int] = None, in_process: bool = False,
+                 fake_worker: bool = False):
+        self.size, self.device, self.fake, self.threads, self.in_process = size, device, fake, threads, in_process
+        self.fake_worker = fake_worker   # tests: a worker that answers without a model
         self.models: Dict[str, object] = {}
         self.lock = threading.Lock()
-        self.available = fake or self._importable()
+        self.proc = None
+        self.available = fake or fake_worker or self._importable()
+
+    # ---- the worker ------------------------------------------------------------------
+    def _start(self) -> None:
+        import os
+        import subprocess
+        import sys
+
+        cmd = [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "hear_worker.py"),
+               "--size", self.size, "--device", self.device]
+        if self.threads:
+            cmd += ["--threads", str(self.threads)]
+        if self.fake_worker:
+            cmd.append("--fake")
+        env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+        self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=env)
+        line = self.proc.stdout.readline()
+        try:
+            info = json.loads(line.decode("utf-8")) if line else {}
+        except ValueError:
+            info = {}
+        if not info.get("ready"):
+            self.stop()
+            raise RuntimeError(f"the speech worker did not start: {info.get('error') or line[:200]!r}")
+
+    def _ask(self, wav: bytes, language: str) -> dict:
+        for attempt in (1, 2):
+            if self.proc is None or self.proc.poll() is not None:
+                self._start()
+            try:
+                self.proc.stdin.write(json.dumps({"language": language, "bytes": len(wav)}).encode("utf-8") + b"\n" + wav)
+                self.proc.stdin.flush()
+                line = self.proc.stdout.readline()
+                if line:
+                    reply = json.loads(line.decode("utf-8"))
+                    if "error" in reply:
+                        raise ValueError(reply["error"])
+                    return reply
+            except OSError:
+                pass
+            if attempt == 2:
+                break
+            print("the speech worker stopped answering; starting it again", flush=True)
+            self.stop()
+        raise RuntimeError("the speech worker gave no answer")
+
+    def stop(self) -> None:
+        if self.proc and self.proc.poll() is None:
+            try:
+                self.proc.stdin.write(b'{"bytes": 0}\n')
+                self.proc.stdin.flush()
+                self.proc.wait(5)
+            except Exception:  # noqa: BLE001
+                self.proc.kill()
+        self.proc = None
 
     @staticmethod
     def _importable() -> bool:
@@ -82,10 +147,15 @@ class Transcriber:
 
     def hear(self, wav: bytes, language: str) -> dict:
         """-> {"heard": text, "confidence": 0..1, "seconds": float, "model": name}"""
-        audio, seconds = wav_to_float(wav)
         if self.fake:
+            audio, seconds = wav_to_float(wav)
             return {"heard": f"FAKE HEARD {seconds:.1f}s" if seconds >= 0.2 else "", "confidence": 0.9 if seconds >= 0.2 else 0.0,
                     "seconds": round(seconds, 2), "model": "fake"}
+        if not self.in_process:
+            wav_to_float(wav)   # a bad file is refused here, before it reaches the worker
+            with self.lock:
+                return self._ask(wav, language)
+        audio, seconds = wav_to_float(wav)
         if seconds < 0.2 or float(np.abs(audio).max()) < 1e-4:
             return {"heard": "", "confidence": 0.0, "seconds": round(seconds, 2), "model": self.model_name(language)}
         with self.lock:

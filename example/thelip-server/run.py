@@ -12,6 +12,7 @@ What it downloads, once, under THELIP_HOME (this folder by default):
                             and the other languages asked for (--languages; see languages.py)
     auto_avsr/              Auto-AVSR's model code, once a model example/thelip-train
                             exported is in models/ (a Hebrew one, or a better English one)
+    hf/                     the speech recognition models (faster-whisper), on first use
     cloudflared(.exe)       Cloudflare's tunnel client, for an https address the phone can reach
 
 The server itself is server.py; this script starts it as a child process,
@@ -444,7 +445,10 @@ def main() -> None:
         say("starting the server" + ("" if args.fake else " (loading the model takes a minute the first time)"))
         # UTF-8 mode: Chaplin opens its token list without an encoding, and a
         # Windows with a Hebrew (or any non-Latin) locale would decode it as cp1255.
-        env = dict(os.environ, THELIP_HOME=WORK, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+        # Hugging Face's cache (the speech models) under WORK too: an ASCII
+        # path, next to everything else this server downloads.
+        env = dict(os.environ, THELIP_HOME=WORK, PYTHONIOENCODING="utf-8", PYTHONUTF8="1",
+                   HF_HOME=os.path.join(WORK, "hf"), HF_HUB_DISABLE_SYMLINKS_WARNING="1", HF_HUB_DISABLE_TELEMETRY="1")
         server = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
     tunnel = None
     try:
