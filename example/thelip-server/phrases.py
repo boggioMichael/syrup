@@ -12,8 +12,20 @@ enough and clearly nearer than any other phrase. So a reader who said
 
 Distances are cosine, summed along the warping path and divided by the
 longer length: 0 is the same movement, about 2 the opposite. The
-thresholds below are starting points; the numbers come back in every
-answer so they can be set from real phones.
+thresholds below were set from a measurement through the running server
+(2026-09-28, the English model's encoder, GRID's ten sample clips):
+
+    a clip against a slowed (0.85x), sped-up (1.15x) or trimmed copy of itself   0.02 - 0.20
+    a clip against the nearest other sentence                                    0.44 - 0.60
+    ... and the second-nearest other sentence, as a ratio of the nearest         1.00 - 1.23
+
+GRID's sentences are alike (six words from a small grammar, one
+speaker), so a phone's different phrases should lie farther apart; a real
+repetition, on the other hand, differs more than a copy of one recording.
+A miss here says "not one of your phrases" and, with the microphone on,
+adds one more example of the phrase, so the thresholds lean to missing
+rather than to reading the wrong phrase. The numbers come back with every
+answer and are kept with the samples, to set them again from phones.
 
 The index lives in memory, built from data/ on first use per reader
 (the `profile`, a random id the page keeps for itself) and kept current
@@ -29,8 +41,8 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-MAX_DISTANCE = 0.45      # a match must be this near
-MIN_MARGIN = 1.15        # and the nearest other phrase this much farther (ratio)
+MAX_DISTANCE = 0.35      # a match must be this near (copies: <= 0.20; other GRID sentences: >= 0.44)
+MIN_MARGIN = 1.25        # and the nearest other phrase this much farther (ratio; other GRID sentences: <= 1.23)
 BAND = 0.3               # Sakoe-Chiba band, as a share of the longer sequence
 MIN_CONFIDENCE = 0.4     # a heard text below this is not a label
 

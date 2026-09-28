@@ -95,12 +95,13 @@ def main() -> int:
                       ("b" * 32, {"raw": "SET RED", "corrected": "set red by g nine soon", "heard": "wrong", "heard_confidence": 0.9, "language": "en"}),
                       ("c" * 32, {"raw": "LAY WHITE", "confirmed": True, "language": "en"}),
                       ("d" * 32, {"raw": "PLACE GREEN", "heard": "place green", "heard_confidence": 0.1, "language": "en"}),
-                      ("e" * 32, {"raw": "שלום", "heard": "שלום לכולם", "heard_confidence": 0.7, "language": "he"})):
+                      ("e" * 32, {"raw": "שלום", "heard": "שלום לכולם", "heard_confidence": 0.7, "language": "he"}),
+                      ("9" * 32, {"raw": "X", "corrected": "set blue with e five now", "language": "en", "source": "test"})):
         os.makedirs(os.path.join(data, sid), exist_ok=True)
         np.save(os.path.join(data, sid, "crops.npy"), np.zeros((30, 96, 96), np.uint8))
         json.dump(meta, open(os.path.join(data, sid, "meta.json"), "w"))
     got = {r["video"][0]: (r["text"], r["how"]) for r in segment.phone_samples(data, "en")}
-    check("phone samples: typed beats heard beats confirmed; an unsure hearing and another language are left out",
+    check("phone samples: typed beats heard beats confirmed; an unsure hearing, another language and test measurements are left out",
           got == {"a": ("BIN BLUE AT F TWO NOW", "heard"), "b": ("SET RED BY G NINE SOON", "corrected"), "c": ("LAY WHITE", "confirmed")}, got)
     # the Auto-AVSR patch
     auto = os.environ.get("THELIP_AUTO_AVSR") or "/home/claude/auto_avsr"

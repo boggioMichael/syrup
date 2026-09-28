@@ -317,6 +317,8 @@ def phone_samples(data_dir: str, language: str) -> List[dict]:
             meta = json.load(f)
         if meta.get("language", "en") != language:
             continue
+        if meta.get("source") == "test":   # measurements made through the server (GRID clips), not a person on a phone
+            continue
         # The label: what the person typed, else what the microphone heard
         # (speech recognition, when it was sure enough), else the reading
         # the person confirmed.
