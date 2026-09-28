@@ -59,6 +59,7 @@ was found.
 | `example/chrome-extension/` | Lip Read for YouTube (Manifest V3, TypeScript): overlay, follow a person, side panel, seek, export | 25-check Playwright end-to-end test |
 | `example/web/` | one page over the service | 7-check end-to-end test |
 | `example/thelip/` | **thelip.syrup**: The Lip in the browser, on a phone (the network in a Web Worker, camera or a recorded clip) | engine matches numpy to 2e-6; reads a GRID clip in Chromium |
+| `example/thelip-server/` | any English words for thelip.ai: Auto-AVSR's LRS3 model on your computer, behind a tunnel | routes and the page's server mode tested against `--fake`; the model not run here |
 | `example/ios/` | the SwiftUI app (Vision, AVFoundation, Core ML, remote backend) | written without a compiler; not built here |
 | `example/shared-types/`, `example/ml/`, `example/docs/` | the JSON contract, model scripts behind licence gates, and the design, model survey, benchmarks, API and setup docs | — |
 | `docs/` | the GitHub Pages site, thelip.ai: the thelip.syrup page and the demo GIFs | published to the `gh-pages` branch by `.github/workflows/pages.yml` |
@@ -198,6 +199,9 @@ The Lip on your phone: **https://thelip.ai/**
 runs the lip reader in the browser (a Web Worker, plain JavaScript, no
 upload, no audio). Point the camera at your mouth, say a sentence from its
 vocabulary, and read it back. Source in [`example/thelip`](example/thelip).
+For **any English words**, run [`example/thelip-server`](example/thelip-server)
+on a computer: it prints a link that points the page at an open-vocabulary
+model (Auto-AVSR on LRS3, non-commercial weights) running there.
 
 ## The Lip
 

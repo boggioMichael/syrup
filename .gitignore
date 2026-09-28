@@ -28,3 +28,10 @@ __pycache__/
 /example/thelip/test/page.png
 /example/thelip/test/*.y4m
 /example/thelip/test/camera.png
+/example/thelip-server/.venv
+/example/thelip-server/chaplin
+/example/thelip-server/cloudflared
+/example/thelip-server/cloudflared.exe
+/example/thelip-server/*.log
+/example/thelip-server/link.txt
+/example/thelip-server/__pycache__

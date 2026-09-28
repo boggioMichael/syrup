@@ -90,3 +90,7 @@ jobs:
           NODE_PATH=$(npm root -g) node test/page.test.mjs
           ffmpeg -v error -y -i test/sbwe5n.webm -pix_fmt yuv420p test/sbwe5n.y4m
           NODE_PATH=$(npm root -g) node test/camera.test.mjs
+      - name: thelip-server (routes against --fake; the page's server mode)
+        run: |
+          python example/thelip-server/test_server.py
+          cd example/thelip && NODE_PATH=$(npm root -g) node test/server.test.mjs

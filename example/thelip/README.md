@@ -24,6 +24,12 @@ to https by the page itself, because a camera needs a secure page.
   thelip sees, and a "?" holds the vocabulary, the credits and a way to
   open a recorded clip instead. Where the camera is refused (a claude.ai
   artifact, a plain-http page) it says so and offers the clip.
+- Server mode: with `?server=<address>` (or the address typed in the "?"
+  sheet) the page sends each sentence's frames (320 px JPEGs, 25 fps) to
+  [`../thelip-server`](../thelip-server) and shows its answer — any English
+  words, a few seconds late, nothing read locally meanwhile. The address is
+  kept in the browser; "Stop" forgets it. `test/server.test.mjs` covers it
+  against the server's `--fake` mode.
 - `build.py` — inlines everything into one file: `thelip.syrup.html` (page
   content, for a claude.ai artifact) or, with `--standalone`, a complete
   document for hosting (`docs/index.html`).

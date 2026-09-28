@@ -1,0 +1,16 @@
+# thelip-server: the model needs PyTorch; the preprocessing needs mediapipe
+# (Python 3.10-3.12), OpenCV and scikit-image; the server is Starlette.
+torch
+torchvision
+torchaudio
+numpy<2
+mediapipe>=0.10.14,<0.11
+opencv-python
+scikit-image
+scipy
+six
+pillow
+starlette
+uvicorn
+python-multipart
+qrcode

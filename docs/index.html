@@ -37,6 +37,9 @@
   .sheet .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; }
   .sheet label { display: inline-block; background: rgba(255,255,255,.12); }
   .sheet input { display: none; }
+  .sheet input.text { display: block; flex: 1; min-width: 0; font: 15px ui-monospace, Menlo, Consolas, monospace; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--dim); background: rgba(255,255,255,.08); color: var(--ink); }
+  .sheet .status { font-size: 13px; }
+  .sheet .status.on { color: #7BE495; }
   .sheet .row { display: flex; gap: 10px; flex-wrap: wrap; }
   @media (prefers-reduced-motion: no-preference) { .dot[data-state="listening"] { animation: pulse 1s infinite; } }
   @keyframes pulse { 50% { opacity: .35; } }
@@ -56,11 +59,15 @@
   <div class="msg" id="msg"><div>Loading thelip&hellip;</div></div>
   <div class="sheet" id="sheet" hidden>
     <h1>thelip<span>.syrup</span></h1>
-    <div>Lips in the dashed oval, face still, then mouth a sentence. The words appear below as they are read. No audio is used; nothing leaves the phone.</div>
+    <div>Lips in the dashed oval, face still, then mouth a sentence. The words appear below as they are read. No audio is used; nothing leaves the phone unless you set a server below.</div>
     <div><b>It knows 51 words, in one sentence shape:</b></div>
     <div class="mono">command &middot; colour &middot; preposition &middot; letter &middot; digit &middot; adverb<br>bin lay place set &middot; blue green red white &middot; at by in with &middot; a&ndash;z (no w) &middot; zero&ndash;nine &middot; again now please soon</div>
     <div>Drag the oval to your mouth; pinch to resize. Tap the sentence for another one.</div>
     <div class="row"><label>Open a clip<input type="file" id="file2" accept="video/*"></label><label>Record a clip<input type="file" id="file" accept="video/*" capture="user"></label></div>
+    <div><b>Any English words &mdash; with a server</b></div>
+    <div>Run <span class="mono">example/thelip-server</span> from the syrup repository on a computer: it prints a link (and a QR code) that brings its address here. The frames of each sentence go to that computer, which reads them with an open-vocabulary English model (LRS3, 19% word error rate in the lab) and answers in a few seconds. English only.</div>
+    <div class="row"><input class="text" type="url" id="serverUrl" placeholder="https://&hellip;trycloudflare.com" autocapitalize="off" autocorrect="off" spellcheck="false"><button id="serverUse">Use</button><button id="serverOff" hidden>Stop</button></div>
+    <div class="status" id="serverStatus"></div>
     <div id="speed"></div>
     <div>The Lip is the lip reader of the <b>syrup</b> library. Its network is LipNet (Assael, Shillingford, Whiteson, de Freitas 2016), weights from rizkiarm/LipNet (MIT), trained on the GRID corpus (CC BY 4.0): 64 of 66 words on GRID's sample clips. A new face and a phone camera are harder than that; expect misses.</div>
     <div class="row"><button id="closeSheet">Back</button></div>
@@ -490,6 +497,50 @@ self.onmessage = (e) => {
   const cam = $("cam"), view = $("view"), guide = $("guide"), dot = $("dot"), msg = $("msg"), sub = $("sub"), say = $("say");
   const cropCanvas = $("crop"), cropCtx = cropCanvas.getContext("2d", { willReadFrequently: true });
   let worker = null, ready = false, perFrameMs = 0;
+  // ---- a server for any English words (example/thelip-server) ----------------------------------
+  let server = null, serverToken = null, serverInfo = null;
+  const fullCanvas = document.createElement("canvas"), fullCtx = fullCanvas.getContext("2d");
+  function loadServer() {
+    const q = new URLSearchParams(location.search);
+    if (q.get("server")) {
+      try { localStorage.setItem("thelip.server", q.get("server")); if (q.get("token")) localStorage.setItem("thelip.token", q.get("token")); else localStorage.removeItem("thelip.token"); } catch {}
+      window.history.replaceState(null, "", location.pathname + location.hash);
+    }
+    try { server = localStorage.getItem("thelip.server") || null; serverToken = localStorage.getItem("thelip.token") || null; } catch {}
+    if (server) checkServer();
+    renderServer();
+  }
+  function renderServer() {
+    $("serverUrl").value = server || "";
+    $("serverOff").hidden = !server;
+    const st = $("serverStatus");
+    st.className = "status" + (serverInfo && serverInfo.ok ? " on" : "");
+    st.textContent = !server ? "" : serverInfo === null ? "checking…" : serverInfo.ok ? `connected: ${serverInfo.model} on ${serverInfo.device}` : `not reachable (${serverInfo.error}) — reading 51 words here meanwhile`;
+  }
+  async function checkServer() {
+    serverInfo = null; renderServer();
+    try {
+      const r = await fetch(server.replace(/\/$/, "") + "/health", { headers: serverToken ? { Authorization: `Bearer ${serverToken}` } : {} });
+      serverInfo = r.ok ? await r.json() : { ok: false, error: `HTTP ${r.status}` };
+    } catch (e) { serverInfo = { ok: false, error: e.message || "network" }; }
+    renderServer();
+    if (serverInfo.ok) newSentence();
+  }
+  const serverOn = () => !!(server && serverInfo && serverInfo.ok);
+  async function readOnServer(blobs) {
+    const body = new FormData();
+    body.append("fps", String(FPS));
+    blobs.forEach((b, i) => body.append("frames", b, `f${String(i).padStart(4, "0")}.jpg`));
+    const r = await fetch(server.replace(/\/$/, "") + "/read", { method: "POST", body, headers: serverToken ? { Authorization: `Bearer ${serverToken}` } : {} });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  }
+  function fullFrame() {
+    if (!fullCanvas.width) { const k = Math.min(1, 320 / sourceSize.w); fullCanvas.width = Math.round(sourceSize.w * k); fullCanvas.height = Math.round(sourceSize.h * k); }
+    fullCtx.drawImage(source, 0, 0, fullCanvas.width, fullCanvas.height);
+    return new Promise((res) => fullCanvas.toBlob(res, "image/jpeg", 0.7));
+  }
   let mode = "idle", source = null, sourceSize = { w: 0, h: 0 }, mirror = false;
   let guideBox = null;
 
@@ -577,8 +628,9 @@ self.onmessage = (e) => {
     }
     return out;
   }
-  const PRE = 10, POST = 8, MAX = 75, STILL = 12;
-  let utter = null, last = null, preRoll = [], quiet = 0.004, anyUtterance = false;
+  const PRE = 10, POST = 8, STILL_LOCAL = 12, MAX_LOCAL = 75, STILL_SERVER = 20, MAX_SERVER = 250;
+  let MAX = MAX_LOCAL, STILL = STILL_LOCAL;
+  let utter = null, last = null, preRoll = [], preRollFull = [], quiet = 0.004, anyUtterance = false;
   const recent = [], lastFrames = [], history = [];
   // The still level of this camera: the 15th percentile of the last four seconds of motion,
   // which stays low through speech because speech has pauses.
@@ -591,6 +643,9 @@ self.onmessage = (e) => {
   function onFrame() {
     if (!ready || !source || !guideBox) return;
     const data = cropFrame();
+    const onServer = serverOn();
+    MAX = onServer ? MAX_SERVER : MAX_LOCAL; STILL = onServer ? STILL_SERVER : STILL_LOCAL;
+    const full = onServer ? fullFrame() : null;
     if (mode === "file") { lastFrames.push(data); if (lastFrames.length > MAX) lastFrames.shift(); }
     const motion = smoothed(motionOf(last, data));
     last = data;
@@ -600,9 +655,10 @@ self.onmessage = (e) => {
     if (debug.trace && debug.trace.length < 400) debug.trace.push(+motion.toFixed(4));
     if (!utter) {
       preRoll.push(data); if (preRoll.length > PRE) preRoll.shift();
+      if (full) { preRollFull.push(full); if (preRollFull.length > PRE) preRollFull.shift(); }
       if (moving) {
-        utter = { frames: [...preRoll], sent: 0, still: 0, reads: 0, finished: false };
-        anyUtterance = true; preRoll = []; debug.started++;
+        utter = { frames: [...preRoll], full: [...preRollFull], onServer, sent: 0, still: 0, reads: 0, finished: false };
+        anyUtterance = true; preRoll = []; preRollFull = []; debug.started++;
         worker.postMessage({ type: "reset" });
         setState("listening");
         show([], false);
@@ -610,9 +666,14 @@ self.onmessage = (e) => {
       return;
     }
     utter.frames.push(data);
+    if (full) utter.full.push(full);
     utter.still = moving ? 0 : utter.still + 1;
     const done = utter.still >= STILL || utter.frames.length >= MAX;
     const u = utter;
+    if (u.onServer) {
+      if (done) { utter = null; u.finished = true; queue(() => readWithServer(u)); }
+      return;
+    }
     queue(async () => {
       while (u.sent < u.frames.length) { await sendFrame(u.sent, u.frames[u.sent].slice()); u.sent++; }
       const n = u.frames.length;
@@ -633,6 +694,27 @@ self.onmessage = (e) => {
     if (done) utter = null;
   }
 
+  async function readWithServer(u) {
+    setState("reading");
+    showText("…", true);
+    try {
+      const keep = Math.max(0, Math.min(u.full.length, u.full.length - u.still + POST));
+      const blobs = await Promise.all(u.full.slice(0, keep));
+      debug.server.sent++;
+      const r = await readOnServer(blobs);
+      debug.server.lastText = r.text;
+      showText(r.text ? r.text.toLowerCase() : "(nothing read)", false);
+    } catch (e) {
+      debug.server.lastError = e.message;
+      showText(`server: ${e.message}`, true);
+    }
+    setState("idle");
+  }
+  function showText(text, dim) {
+    sub.replaceChildren();
+    const s = document.createElement("span"); if (dim) s.className = "forming"; s.textContent = text; sub.appendChild(s);
+    if (!dim) say.hidden = true;
+  }
   function show(words, final) {
     const settled = final ? words : words.slice(0, Math.max(0, words.length - 1));
     const forming = final ? [] : words.slice(-1);
@@ -655,7 +737,7 @@ self.onmessage = (e) => {
     }
     if (!cam.videoWidth) await new Promise((r) => cam.addEventListener("loadedmetadata", r, { once: true }));
     mode = "camera"; source = cam; mirror = true;
-    sourceSize = { w: cam.videoWidth, h: cam.videoHeight };
+    sourceSize = { w: cam.videoWidth, h: cam.videoHeight }; fullCanvas.width = 0;
     msg.hidden = true; cam.hidden = false; view.hidden = true;
     cropCanvas.hidden = dot.hidden = $("helpBtn").hidden = say.hidden = false;
     defaultGuide();
@@ -694,7 +776,7 @@ self.onmessage = (e) => {
     v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = url;
     try { await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error("cannot decode this video")); }); }
     catch (e) { return noCamera("This video cannot be decoded here."); }
-    source = v; sourceSize = { w: v.videoWidth, h: v.videoHeight };
+    source = v; sourceSize = { w: v.videoWidth, h: v.videoHeight }; fullCanvas.width = 0;
     msg.hidden = true; cam.hidden = true; view.hidden = false;
     view.width = v.videoWidth; view.height = v.videoHeight;
     const vctx = view.getContext("2d");
@@ -711,7 +793,8 @@ self.onmessage = (e) => {
       onFrame();
       await busy;
     }
-    if (utter || !anyUtterance) {
+    if (utter && utter.onServer) { const u = utter; utter = null; u.finished = true; await queue(() => readWithServer(u)); }
+    else if (utter || !anyUtterance) {
       const u = utter ?? { frames: [], sent: 0 };
       utter = null;
       if (!anyUtterance) { u.frames = lastFrames.slice(-MAX); worker.postMessage({ type: "reset" }); }
@@ -733,13 +816,21 @@ self.onmessage = (e) => {
   const G = { c: ["bin", "lay", "place", "set"], k: ["blue", "green", "red", "white"], p: ["at", "by", "in", "with"],
     l: "abcdefghijklmnopqrstuvxyz".split(""), d: ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"], a: ["again", "now", "please", "soon"] };
   const pick = (x) => x[Math.floor(Math.random() * x.length)];
-  const newSentence = () => { $("sentence").textContent = [pick(G.c), pick(G.k), pick(G.p), pick(G.l), pick(G.d), pick(G.a)].join(" "); say.hidden = false; };
+  const newSentence = () => { $("sentence").textContent = serverOn() ? "anything, in English" : [pick(G.c), pick(G.k), pick(G.p), pick(G.l), pick(G.d), pick(G.a)].join(" "); say.hidden = false; };
   say.addEventListener("click", newSentence);
   $("helpBtn").addEventListener("click", () => { $("sheet").hidden = false; });
+  $("serverUse").addEventListener("click", () => {
+    const v = $("serverUrl").value.trim().replace(/\/$/, "");
+    if (!/^https?:\/\//.test(v)) { serverInfo = { ok: false, error: "the address starts with http:// or https://" }; renderServer(); return; }
+    server = v; try { localStorage.setItem("thelip.server", v); } catch {}
+    checkServer();
+  });
+  $("serverOff").addEventListener("click", () => { server = null; serverToken = null; serverInfo = null; try { localStorage.removeItem("thelip.server"); localStorage.removeItem("thelip.token"); } catch {} renderServer(); newSentence(); });
   $("closeSheet").addEventListener("click", () => { $("sheet").hidden = true; });
 
-  const debug = { frames: 0, started: 0, finished: 0, reads: 0, lastMotion: 0, quiet: 0, lastWords: null, trace: [] };
-  window.lipLive = { get ready() { return ready; }, get text() { return sub.textContent; }, startFile, debug };
+  const debug = { frames: 0, started: 0, finished: 0, reads: 0, lastMotion: 0, quiet: 0, lastWords: null, trace: [], server: { sent: 0, lastText: null, lastError: null } };
+  window.lipLive = { get ready() { return ready; }, get text() { return sub.textContent; }, get server() { return serverOn() ? server : null; }, startFile, debug };
+  loadServer();
   bootWorker();
 })();
 </script>
