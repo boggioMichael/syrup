@@ -47,6 +47,22 @@ without pretending to more certainty than the pixels support. Every result
 carries a confidence, a reliability grade, and a failure reason when nothing
 was found.
 
+## What is in this repository
+
+| path | what | status |
+|---|---|---|
+| `src/` | the library: intents (`intent!`, parse → plan → run/compile), Viola–Jones cascades (bundled face, profile, eye), template matching, connected components, motion and tracking, glyph reading and OCR, `face` and `sequence`, drawing, the C ABI and the C API | 162 unit + 4 native + 3 integration + 3 doc tests; clippy clean |
+| `python/syrup/` | the Python package over the C API: `syrup.find_face(image)` | 5 tests |
+| `python/thelip/` | **The Lip**: lip reading from muted video with live subtitles (syrup finds the mouth, LipNet reads it, decoded again after every frame); demo and proof videos built by `make_demo.sh` and `proof.py` | 64/66 words on the GRID sample clips; 10 tests |
+| `example/lipreader/` | the multi-person pipeline: faces → tracks → mouths → speaking → reading → subtitles per person, three modes, honest language registry, exports, evaluation framework | 25 tests; 0% WER on the composited fixtures |
+| `example/inference-api/` | the local HTTP service (jobs, streamed sessions, exports, deletion, token, rate limit) | 9 tests |
+| `example/chrome-extension/` | Lip Read for YouTube (Manifest V3, TypeScript): overlay, follow a person, side panel, seek, export | 25-check Playwright end-to-end test |
+| `example/web/` | one page over the service | 7-check end-to-end test |
+| `example/thelip/` | **thelip.syrup**: The Lip in the browser, on a phone (the network in a Web Worker, camera or a recorded clip) | engine matches numpy to 2e-6; reads a GRID clip in Chromium |
+| `example/ios/` | the SwiftUI app (Vision, AVFoundation, Core ML, remote backend) | written without a compiler; not built here |
+| `example/shared-types/`, `example/ml/`, `example/docs/` | the JSON contract, model scripts behind licence gates, and the design, model survey, benchmarks, API and setup docs | — |
+| `docs/` | the GitHub Pages site: the thelip.syrup page and the demo GIFs | deployed by `.github/workflows/pages.yml` |
+
 ## The convention
 
 | Name          | Returns             | Meaning                                   |
@@ -296,7 +312,20 @@ cargo clippy --all-targets -- -D warnings
 cargo bench         # criterion benchmarks for the per-frame primitives
 cargo run --release --example intents   # declare, run, and compile an intent
 cd python && python3 test_syrup.py      # the Python package against the built library
+
+# The Lip and the example projects (Python 3.11+, ffmpeg, Node 18+ with typescript and playwright)
+example/ml/models/get_lipnet.sh                      # LipNet weights and GRID sample clips (MIT / CC BY 4.0)
+python3 python/thelip/test_thelip.py                 # The Lip
+cd example/lipreader && python3 tests/make_fixtures.py && python3 tests/test_lipreader.py
+cd ../inference-api && python3 tests/test_api.py
+cd ../shared-types && tsc -p tsconfig.json && cd ../chrome-extension && tsc -p tsconfig.json
+NODE_PATH=$(npm root -g) node test/e2e.mjs           # the extension, in Chromium, against the service
+cd ../web && NODE_PATH=$(npm root -g) node test/e2e.mjs
+cd ../thelip && node test/engine.test.mjs && python3 build.py && NODE_PATH=$(npm root -g) node test/page.test.mjs
 ```
+
+CI (`.github/workflows/ci.yml`) runs the Rust checks on Linux, Windows and
+macOS and all of the above on Linux; `pages.yml` publishes `docs/`.
 
 Tests run against synthetic, in-code fixtures plus one public-domain
 photograph (`tests/fixtures`); no network access is required. The native
@@ -334,6 +363,11 @@ from MapleSyrup.
 
 Motion is the slowest when the whole view changes, because no row can be
 skipped; even then it stays well inside a 60 fps frame budget.
+
+The lipreader pipeline's measured speed and accuracy (per fixture, both
+face detectors, stage timings) are in
+[`example/docs/benchmarks.md`](example/docs/benchmarks.md); the cascade is
+the cost there, and it is the library's next performance item.
 
 ## Limitations
 
