@@ -63,6 +63,12 @@ Control off in Windows Security → App & browser control. On current
 Windows 11 it can be turned back on afterwards
 ([Microsoft's FAQ](https://support.microsoft.com/en-us/windows/security/threat-malware-protection/smart-app-control-frequently-asked-questions)).
 
+**If the build fails with `unable to find library -lgcc_eh`,** your default
+Rust toolchain is `windows-gnu` and the `x86_64-w64-mingw32-gcc` it found on
+your PATH is llvm-mingw's clang, which has no libgcc. Build with the
+toolchain that matches llvm-mingw, `cargo +stable-x86_64-pc-windows-gnullvm
+build --release`, or with the MSVC one.
+
 Other commands, on any system:
 
 ```
