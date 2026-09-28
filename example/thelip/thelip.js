@@ -27,7 +27,7 @@ export function loadWeights(buffer) {
   const tensors = {};
   for (const t of header.tensors) {
     const q = new Int8Array(buffer, base + t.offset, t.size);
-    const f = new Float32Array(t.size);
+    const f = new Float64Array(t.size);
     const s = t.scale;
     for (let i = 0; i < t.size; i++) f[i] = q[i] * s;
     tensors[t.name] = { data: f, shape: t.shape };
@@ -46,7 +46,7 @@ class Conv3d {
     this.outH = Math.floor((inH + 2 * pad[2] - kh) / stride[2]) + 1;
     this.poolW = Math.floor(this.outW / 2);
     this.poolH = Math.floor(this.outH / 2);
-    this.raw = new Float32Array(this.outW * this.outH * cout);
+    this.raw = new Float64Array(this.outW * this.outH * cout);
   }
 
   /**
@@ -57,7 +57,7 @@ class Conv3d {
   step(frames) {
     const { kt, kw, kh, cin, cout, pad, stride, inW, inH, outW, outH, w, b, raw } = this;
     const sw = stride[1], sh = stride[2], pw = pad[1], ph = pad[2];
-    const acc = new Float32Array(cout);
+    const acc = new Float64Array(cout);
     for (let ox = 0; ox < outW; ox++) {
       for (let oy = 0; oy < outH; oy++) {
         acc.set(b);
@@ -92,7 +92,7 @@ class Conv3d {
     }
     // 2x2 max pool over (x, y), channels kept.
     const { poolW, poolH } = this;
-    const pooled = new Float32Array(poolW * poolH * cout);
+    const pooled = new Float64Array(poolW * poolH * cout);
     for (let px = 0; px < poolW; px++) {
       for (let py = 0; py < poolH; py++) {
         const a = ((2 * px) * outH + 2 * py) * cout, bq = ((2 * px) * outH + 2 * py + 1) * cout;
@@ -120,10 +120,10 @@ function hardSigmoid(x) {
 function gru(x, T, D, kernel, recurrent, bias, reverse) {
   const units = recurrent.shape[0];
   const K = kernel.data, R = recurrent.data, B = bias.data;
-  const out = new Float32Array(T * units);
-  const h = new Float32Array(units);
-  const xw = new Float32Array(3 * units);
-  const hz = new Float32Array(units), hr = new Float32Array(units), rh = new Float32Array(units), hh = new Float32Array(units);
+  const out = new Float64Array(T * units);
+  const h = new Float64Array(units);
+  const xw = new Float64Array(3 * units);
+  const hz = new Float64Array(units), hr = new Float64Array(units), rh = new Float64Array(units), hh = new Float64Array(units);
   for (let step = 0; step < T; step++) {
     const t = reverse ? T - 1 - step : step;
     // Input projection for this frame: xw = x[t] @ K + B.
@@ -188,7 +188,8 @@ export class LipNet {
 
   /** Feed one frame (Float32Array 100*50*3). Finalises conv1[t-1], conv2[t-2], conv3[t-3]. */
   push(frame) {
-    this.frames.push(frame);
+    // Doubles all the way: V8 runs typed-array arithmetic faster without the float32 rounding on every store.
+    this.frames.push(frame instanceof Float64Array ? frame : Float64Array.from(frame));
     const t = this.frames.length - 1;
     this._finalise(0, t - 1, this.frames);
     this._finalise(1, t - 2, this.layers[0]);
@@ -217,7 +218,7 @@ export class LipNet {
    */
   features(from, to) {
     const T = to - from + 1;
-    const out = new Float32Array(T * this.featureSize);
+    const out = new Float64Array(T * this.featureSize);
     // Layer by layer, recompute what the window's edges change.
     const l0 = [], l1 = [], l2 = [];
     const inputAt = (i) => (i < from || i > to ? null : this.frames[i]);
@@ -247,7 +248,7 @@ export class LipNet {
       const fw = gru(x, T, D, t[`gru${i}_fw_kernel`], t[`gru${i}_fw_recurrent`], t[`gru${i}_fw_bias`], false);
       const bw = gru(x, T, D, t[`gru${i}_bw_kernel`], t[`gru${i}_bw_recurrent`], t[`gru${i}_bw_bias`], true);
       const units = t[`gru${i}_fw_recurrent`].shape[0];
-      const cat = new Float32Array(T * 2 * units);
+      const cat = new Float64Array(T * 2 * units);
       for (let s = 0; s < T; s++) {
         cat.set(fw.subarray(s * units, (s + 1) * units), s * 2 * units);
         cat.set(bw.subarray(s * units, (s + 1) * units), s * 2 * units + units);
@@ -256,7 +257,7 @@ export class LipNet {
     }
     const W = t.dense_kernel.data, B = t.dense_bias.data, C = t.dense_kernel.shape[1];
     const probs = new Float32Array(T * C);
-    const logits = new Float32Array(C);
+    const logits = new Float64Array(C);
     for (let s = 0; s < T; s++) {
       logits.set(B);
       for (let d = 0; d < D; d++) {

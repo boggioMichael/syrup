@@ -88,3 +88,5 @@ jobs:
           node test/engine.test.mjs
           python build.py
           NODE_PATH=$(npm root -g) node test/page.test.mjs
+          ffmpeg -v error -y -i test/sbwe5n.webm -pix_fmt yuv420p test/sbwe5n.y4m
+          NODE_PATH=$(npm root -g) node test/camera.test.mjs

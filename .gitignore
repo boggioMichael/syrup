@@ -26,3 +26,5 @@ __pycache__/
 /example/thelip/*.f32
 /example/thelip/thelip.syrup.html
 /example/thelip/test/page.png
+/example/thelip/test/*.y4m
+/example/thelip/test/camera.png

@@ -24,14 +24,15 @@ try {
   // The GRID mouth of sbwe5n sits at (127,176) 113x57 in the 360x288 frame.
   await page.goto(`http://127.0.0.1:8793${pagePath}#g127-176-113-57`);
   await page.waitForFunction(() => window.lipLive && window.lipLive.ready, null, { timeout: 60000 });
-  const perFrame = await page.$eval("#lag", (e) => e.textContent);
-  console.log("ok   network ready in the worker:", perFrame);
+  // No camera in headless Chromium: the page must say so and offer the clip.
+  await page.waitForFunction(() => document.querySelector("#msg") && !document.querySelector("#msg").hidden && /camera/i.test(document.querySelector("#msg").textContent), null, { timeout: 20000 });
+  const speed = await page.$eval("#speed", (e) => e.textContent);
+  console.log("ok   thelip ready in the worker:", speed);
   await page.setInputFiles("#file2", path.join(here, "sbwe5n.webm"));
-  await page.waitForFunction(() => document.querySelector("#status").textContent === "done", null, { timeout: 180000 });
-  const text = await page.$eval("#text", (e) => e.textContent.trim());
-  const raw = await page.$eval("#raw", (e) => e.textContent.trim());
-  const status = await page.$eval("#status", (e) => e.textContent);
-  console.log(`ok   status "${status}"; reading "${text}"; ${raw}`);
+  await page.waitForFunction(() => document.querySelector("#dot").dataset.state === "idle" && document.querySelector("#sub").textContent.trim().length > 0, null, { timeout: 180000 });
+  await new Promise((r) => setTimeout(r, 500));
+  const text = await page.$eval("#sub", (e) => e.textContent.trim());
+  console.log(`ok   reading "${text}"`);
   const right = "set blue with e five now".split(" ").filter((w, i) => text.split(" ")[i] === w).length;
   if (right < 5) { console.error(`FAIL: expected "set blue with e five now", got "${text}"`); process.exit(1); }
   await page.screenshot({ path: path.join(here, "page.png"), fullPage: true });
