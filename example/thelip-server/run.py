@@ -52,6 +52,7 @@ AUTO_AVSR_ZIP = f"https://github.com/mpc001/auto_avsr/archive/{AUTO_AVSR_COMMIT}
 MODELS_DIR = os.environ.get("THELIP_MODELS") or os.path.join(WORK, "models")
 sys.path.insert(0, HERE)
 from languages import LANGUAGES, runnable, trained_models  # noqa: E402
+from version import SERVER_VERSION  # noqa: E402
 SITE = "https://thelip.ai/"
 # A Cloudflare named tunnel (a fixed address such as https://api.thelip.ai)
 # instead of a throwaway one: the tunnel's token in tunnel-token.txt, the
@@ -227,6 +228,35 @@ def try_health(url: str, timeout: float = 3) -> Optional[dict]:
         return None
 
 
+def stop_listener(port: int) -> None:
+    """Ends whatever process listens on the port (a thelip-server of another
+    version, left running in its own window)."""
+    pids = set()
+    if platform.system() == "Windows":
+        out = subprocess.run(["netstat", "-ano", "-p", "tcp"], capture_output=True, text=True).stdout
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 5 and parts[0].upper() == "TCP" and parts[1].endswith(f":{port}") and parts[3].upper() == "LISTENING":
+                pids.add(parts[4])
+        for pid in pids:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", pid], capture_output=True)
+    else:
+        try:
+            out = subprocess.run(["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"], capture_output=True, text=True).stdout
+        except FileNotFoundError:
+            out = ""
+        for pid in out.split():
+            pids.add(pid)
+            try:
+                os.kill(int(pid), 15)
+            except (OSError, ValueError):
+                pass
+    say(f"stopped the process listening on port {port}" + (f" (pid {', '.join(sorted(pids))})" if pids else " (none found)"))
+    deadline = time.time() + 30
+    while time.time() < deadline and try_health(f"http://127.0.0.1:{port}/health", timeout=2):
+        time.sleep(1)
+
+
 def wait_health(port: int, timeout: float) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -396,9 +426,13 @@ def main() -> None:
 
     origin = f"http://127.0.0.1:{args.port}"
     server = None
-    if try_health(origin + "/health"):
+    running = try_health(origin + "/health")
+    if running and running.get("version") == SERVER_VERSION and bool(running.get("fake")) == args.fake:
         say(f"a thelip-server is already running on this computer at {origin}; using it (close its window to stop it)")
     else:
+        if running:
+            say(f"a thelip-server of another version is running at {origin}; stopping it (its window will say the server stopped)")
+            stop_listener(args.port)
         log = open(os.path.join(HERE, "server.log"), "a", buffering=1)
         cmd = [sys.executable, os.path.join(HERE, "server.py"), "--port", str(args.port), "--beam", str(args.beam)]
         if args.no_lm:

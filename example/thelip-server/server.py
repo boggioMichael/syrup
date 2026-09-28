@@ -14,7 +14,7 @@ or a better English) are served the same way, each in a worker process.
     python server.py --fake            # no model: answers with a fixed text (tests)
 
 Routes
-    GET  /health            -> {"ok": true, "model": ..., "device": ..., "fake": bool}
+    GET  /health            -> {"ok": true, "version": N, "model": ..., "device": ..., "fake": bool, "languages": [...]}
     POST /read              multipart: fps=<number>, frames=<jpeg>... in order,
                             language=<code> (en default; see languages.py),
                             improve=1 to keep the mouth crops for training
@@ -70,6 +70,7 @@ AUTO_AVSR = os.environ.get("THELIP_AUTO_AVSR") or os.path.join(WORK, "auto_avsr"
 MODELS = os.environ.get("THELIP_MODELS") or os.path.join(WORK, "models")   # exports of example/thelip-train
 sys.path.insert(0, HERE)
 from languages import LANGUAGES, ORDER, describe, runnable, trained_models  # noqa: E402
+from version import SERVER_VERSION  # noqa: E402
 FACE_MODEL = os.environ.get("THELIP_FACE_MODEL") or os.path.join(WORK, "blaze_face_short_range.tflite")
 DATA = os.environ.get("THELIP_DATA") or os.path.join(WORK, "data")
 MODEL_NAME = "LRS3_V_WER19.1 (Auto-AVSR, Ma et al. 2023) via Chaplin"
@@ -326,7 +327,7 @@ def create_app(reader: Reader, token: Optional[str] = None) -> Starlette:
         return out
 
     async def health(request: Request):
-        return JSONResponse({"ok": True, "model": MODEL_NAME, "device": reader.device, "fake": reader.fake,
+        return JSONResponse({"ok": True, "version": SERVER_VERSION, "model": MODEL_NAME, "device": reader.device, "fake": reader.fake,
                              "beam": reader.beam, "lm": reader.lm, "max_frames": MAX_FRAMES,
                              "languages": languages(), "keeps": "mouth crops and texts, only when asked (improve=1)"})
 

@@ -161,7 +161,9 @@ mediapipe 0.10.35 without the Solutions API (hence the Tasks detector).
   `fps`, `frames`…, `language`, `improve`), `POST /feedback`, CORS open,
   optional bearer token, `--fake`; samples under `THELIP_DATA` (default
   `<work>/data`). `languages.py` — the models per language.
-- `trained_worker.py` — the process a trained model runs in.
+- `trained_worker.py` — the process a trained model runs in. `version.py` —
+  the server version `/health` carries: `run.py` attaches to a running
+  server of the same version and replaces one of another.
 - `run.py` — fetches Chaplin, the models, Auto-AVSR's code when a trained
   model is present, and cloudflared; starts the server and the tunnel,
   prints the link and the QR code, writes `link.txt`.

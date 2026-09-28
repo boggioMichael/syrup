@@ -108,6 +108,7 @@ def main() -> int:
                 time.sleep(0.1)
         status, headers, body = call("GET", "/health", headers={"Origin": "https://thelip.ai"})
         check("health answers", status == 200 and body["ok"] is True and body["fake"] is True, body)
+        check("health carries the server version run.py compares", body.get("version") == server.SERVER_VERSION, body.get("version"))
         langs = {l["code"]: l for l in body.get("languages", [])}
         check("health lists the languages, Hebrew first after English", [l["code"] for l in body["languages"]][:2] == ["en", "he"] and langs["ar"]["available"] is False and "status" in langs["ar"], body.get("languages"))
         check("the runnable ones carry their quality and licence", langs["es"]["available"] and "44.5%" in langs["es"]["quality"] and "non-commercial" in langs["es"]["licence"], langs.get("es"))
