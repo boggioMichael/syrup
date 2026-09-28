@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +26,121 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
+        # Includes tests/intent_native.rs, which builds an intent into a
+        # shared library with cargo and loads it back.
         run: cargo test --workspace
       - name: Build
-        run: cargo build --workspace --all-targets
+        run: cargo build --workspace --all-targets --release
+      - name: Examples
+        run: cargo run --release --example demo && cargo run --release --example intents
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python package
+        run: |
+          python -m pip install --quiet numpy pillow opencv-python-headless
+          python python/test_syrup.py
+          python python/thelip/test_thelip.py
+
+  minesweeper-coach:
+    # example/minesweeper-coach: its tests on Linux and on Windows, and on
+    # Windows the coach live, watching a game shown on the runner's screen.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: example/minesweeper-coach
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: example/minesweeper-coach
+      - name: Format
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --release
+      - name: A game played by doing what the coach says
+        run: cargo run --release -- demo 4 --level intermediate
+      - name: The coach live, watching a game on the screen
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tests/windows-live.ps1
+      - name: What it saw and said
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: minesweeper-coach-live
+          path: |
+            example/minesweeper-coach/dump
+            example/minesweeper-coach/live.out
+            example/minesweeper-coach/live.err
+            example/minesweeper-coach/expected.txt
+          if-no-files-found: ignore
+
+  example:
+    # The lipreader example projects: pipeline, service, shared types, extension, web page.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the library (the face and eye detector)
+        run: cargo build --release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python packages
+        run: python -m pip install --quiet numpy opencv-python-headless pillow scipy starlette uvicorn httpx python-multipart jsonschema
+      - name: ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: LipNet weights and sample clips (MIT / CC BY 4.0)
+        run: example/ml/models/get_lipnet.sh
+      - name: Fixtures
+        run: cd example/lipreader && python tests/make_fixtures.py
+      - name: Pipeline tests
+        run: cd example/lipreader && python tests/test_lipreader.py
+      - name: Weights export round-trip
+        run: python example/ml/conversion/export_lipnet_weights.py --out /tmp/lipnet.npz
+      - name: API tests
+        run: cd example/inference-api && python tests/test_api.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: TypeScript
+        run: |
+          npm install -g typescript playwright
+          npx playwright install --with-deps chromium
+          cd example/shared-types && tsc -p tsconfig.json
+          cd ../chrome-extension && tsc -p tsconfig.json
+      - name: Extension end to end
+        run: cd example/chrome-extension && NODE_PATH=$(npm root -g) node test/e2e.mjs
+      - name: Web page end to end
+        run: cd example/web && NODE_PATH=$(npm root -g) node test/e2e.mjs
+      - name: thelip.syrup (engine against numpy, built page in Chromium)
+        run: |
+          cd example/thelip
+          python ../ml/conversion/export_thelip_weights.py --out thelip-weights.bin --reference sbwe5n
+          node test/engine.test.mjs
+          node test/faces.test.mjs
+          python build.py
+          NODE_PATH=$(npm root -g) node test/page.test.mjs
+          ffmpeg -v error -y -i test/sbwe5n.webm -pix_fmt yuv420p test/sbwe5n.y4m
+          NODE_PATH=$(npm root -g) node test/camera.test.mjs
+      - name: thelip-server (routes against --fake; the trained-model worker; the page's server mode)
+        run: |
+          python example/thelip-server/test_server.py
+          cd example/thelip && NODE_PATH=$(npm root -g) node test/server.test.mjs
+      - name: thelip-train (text rules, captions, utterances, the split, manifests, the Auto-AVSR patch, GRID crops)
+        run: |
+          python -m pip install --quiet scikit-image
+          git clone -q https://github.com/amanvirparhar/chaplin.git /tmp/chaplin && git -C /tmp/chaplin checkout -q 7aee1f8fca776ce4f63690063310b53573b7d804
+          git clone -q https://github.com/mpc001/auto_avsr.git /tmp/auto_avsr && git -C /tmp/auto_avsr checkout -q 182b62837773ab01052d4ac21ef1d2203ea7d267
+          THELIP_CHAPLIN=/tmp/chaplin THELIP_AUTO_AVSR=/tmp/auto_avsr python example/thelip-train/test_train.py

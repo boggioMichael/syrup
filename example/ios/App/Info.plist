@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>LipReader</string>
+	<key>CFBundleName</key>
+	<string>LipReader</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+
+	<!-- Usage descriptions. Each one says what the data is used for and what never happens with it. -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>LipReader reads the video you choose to find who is speaking and what their lips say. Frames are processed on this device and discarded; no face is identified or stored.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>LipReader records a clip of a face to read its lips. The recording stays on this device unless you send it to a server you configured.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Sound is recorded only if you turn it on, for the audiovisual and audio-attributed modes. The visual mode never uses the microphone or the audio track.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>The audiovisual and audio-attributed modes use Apple's speech recogniser to transcribe the audio track, on this device where the language supports it. The visual mode never uses speech recognition.</string>
+
+	<!-- Long analyses continue as a BGProcessingTask when the app is backgrounded (LipReaderApp.swift, BackgroundAnalysis). -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>processing</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>dev.lipreader.analysis</string>
+	</array>
+
+	<!-- lipreader://inbox makes the app read its App Group inbox (a share extension cannot open its host app itself; the app also checks the inbox whenever it becomes active). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>dev.lipreader</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>lipreader</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
+	<key>UIFileSharingEnabled</key>
+	<false/>
+</dict>
+</plist>

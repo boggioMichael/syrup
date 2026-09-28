@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lip Read</title>
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<header>
+  <h1>Lip Read</h1>
+  <button id="options" class="link" title="Service address, token, source">Options</button>
+</header>
+<section class="controls">
+  <label>Mode
+    <select id="mode">
+      <option value="visual">Visual only (lips; audio never opened)</option>
+      <option value="audiovisual">Audio + visual</option>
+      <option value="audio-attributed">Audio transcript, speakers from the lips</option>
+    </select>
+  </label>
+  <label>Language
+    <select id="language">
+      <option value="auto">auto</option>
+      <option value="en">English</option>
+      <option value="he">Hebrew</option>
+      <option value="es">Spanish</option>
+      <option value="ar">Arabic</option>
+      <option value="fr">French</option>
+      <option value="de">German</option>
+      <option value="it">Italian</option>
+    </select>
+  </label>
+  <label>Speakers
+    <select id="speakers">
+      <option value="all">every visible speaker</option>
+      <option value="current">current speaker only</option>
+    </select>
+  </label>
+  <div class="buttons">
+    <button id="start">Lip Read</button>
+    <button id="pause" disabled>Pause</button>
+    <button id="stop" disabled>Stop</button>
+  </div>
+</section>
+<div id="status" class="status" data-phase="idle"></div>
+<div id="notice" class="notice"></div>
+<div id="transcript" class="transcript"></div>
+<section id="export" class="export" hidden>
+  <span>Export</span>
+  <button id="export-txt">TXT</button>
+  <button id="export-json">JSON</button>
+  <button id="export-srt">SRT</button>
+  <button id="export-vtt">VTT</button>
+</section>
+<script type="module" src="dist/panel.js"></script>
+</body>
+</html>

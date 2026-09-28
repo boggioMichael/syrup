@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lipreader.dev/schema/job.schema.json",
+  "title": "Job",
+  "description": "One analysis request at the inference API. Uploaded video is deleted as soon as its frames have been read; the result lives in memory until it is deleted or expires.",
+  "type": "object",
+  "required": ["id", "status", "progress", "createdAt", "options"],
+  "properties": {
+    "id": { "type": "string" },
+    "status": { "type": "string", "enum": ["queued", "running", "done", "failed", "deleted"] },
+    "progress": { "type": "number", "minimum": 0, "maximum": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "finishedAt": { "type": ["string", "null"], "format": "date-time" },
+    "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+    "options": { "$ref": "#/$defs/Options" },
+    "result": { "$ref": "analysis.schema.json" },
+    "error": { "type": ["string", "null"] },
+    "processing": {
+      "type": "string",
+      "enum": ["local", "server"],
+      "description": "where the frames were processed; shown to the user"
+    }
+  },
+  "$defs": {
+    "Options": {
+      "type": "object",
+      "properties": {
+        "mode": { "type": "string", "enum": ["visual", "audiovisual", "audio-attributed"], "default": "visual" },
+        "language": { "type": "string", "default": "auto" },
+        "speakers": {
+          "description": "\"all\", \"current\" (the largest face at the requested time), or explicit track ids",
+          "oneOf": [
+            { "type": "string", "enum": ["all", "current"] },
+            { "type": "array", "items": { "type": "integer" } }
+          ],
+          "default": "all"
+        },
+        "sampleFps": { "type": "number", "description": "frame rate to analyse at; default is the model's native rate" },
+        "maxFaces": { "type": "integer", "minimum": 1, "default": 8 },
+        "startTime": { "type": "number", "minimum": 0 },
+        "endTime": { "type": "number", "minimum": 0 },
+        "uncertainBelow": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.5 }
+      }
+    }
+  }
+}

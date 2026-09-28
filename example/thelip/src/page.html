@@ -1,0 +1,1147 @@
+<meta charset="utf-8">
+<title>thelip.syrup</title>
+<style>
+  :root { --lip: #FF6B62; --ink: #FFFFFF; --dim: rgba(255,255,255,.55); --ok: #8BD17C; --bad: #FF8A80; color-scheme: dark; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: #000; color: var(--ink); font: 15px/1.4 -apple-system, "Segoe UI", Roboto, system-ui, sans-serif; overflow: hidden; }
+  .app { position: fixed; inset: 0; background: #000; }
+  video, canvas.view { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .mirror { transform: scaleX(-1); }
+  .guide { position: absolute; border: 1.5px dashed rgba(255,255,255,.7); border-radius: 50%; touch-action: none; }
+  .guide::after { content: ""; position: absolute; inset: -18%; border-radius: 12px; }
+  .guide.auto { border-style: solid; border-color: rgba(255,107,98,.85); }
+  .mouths { position: absolute; inset: 0; pointer-events: none; }
+  .mouths .mouth { position: absolute; border: 1.5px dashed rgba(255,255,255,.45); border-radius: 50%; }
+  .mouths .mouth.moving { border-color: rgba(255,107,98,.85); border-style: solid; }
+  .sees { position: absolute; left: 12px; top: calc(12px + env(safe-area-inset-top, 0px)); width: 100px; height: 50px; opacity: .8; border-radius: 4px; image-rendering: pixelated; }
+  .dot { position: absolute; left: 120px; top: calc(12px + env(safe-area-inset-top, 0px)); width: 10px; height: 10px; border-radius: 50%; background: var(--dim); }
+  .dot[data-state="listening"] { background: var(--lip); }
+  .dot[data-state="reading"] { background: #FFC857; }
+  .help { position: absolute; right: 12px; top: calc(10px + env(safe-area-inset-top, 0px)); width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--dim); background: rgba(0,0,0,.35); color: var(--ink); font: 600 16px system-ui, sans-serif; }
+  .bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(24px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 8px; justify-items: center; text-align: center; background: linear-gradient(transparent, rgba(0,0,0,.55)); }
+  .say { font-size: 14px; color: var(--dim); }
+  .say b { color: var(--ink); font-weight: 600; }
+  .sub { font: 700 clamp(28px, 8vw, 44px)/1.15 system-ui, sans-serif; letter-spacing: -.01em; text-shadow: 0 2px 8px rgba(0,0,0,.8); min-height: 1.2em; text-wrap: balance; }
+  .sub .forming { color: var(--dim); font-weight: 500; }
+  .sub .u { color: var(--dim); }
+  .msg { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; gap: 14px; grid-auto-rows: max-content; align-content: center; }
+  .msg button, .sheet button, .sheet label { font: 600 16px system-ui, sans-serif; padding: 12px 20px; border-radius: 999px; border: none; background: var(--lip); color: #fff; }
+  .msg .small { color: var(--dim); font-size: 14px; }
+  .sheet { position: absolute; inset: 0; background: rgba(0,0,0,.92); padding: 24px 20px calc(24px + env(safe-area-inset-bottom, 0px)); overflow-y: auto; display: grid; gap: 14px; align-content: start; font-size: 14px; color: var(--dim); }
+  .sheet h1 { margin: 0; font-size: 22px; color: var(--ink); }
+  .sheet h1 span { color: var(--lip); }
+  .sheet b { color: var(--ink); }
+  .sheet .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6; }
+  .sheet label { display: inline-block; background: rgba(255,255,255,.12); }
+  .sheet input { display: none; }
+  .sheet input.text { display: block; flex: 1; min-width: 0; font: 15px ui-monospace, Menlo, Consolas, monospace; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--dim); background: rgba(255,255,255,.08); color: var(--ink); }
+  .sheet .status { font-size: 13px; }
+  .sub.tappable { cursor: pointer; }
+  .faces { position: absolute; inset: 0; pointer-events: none; }
+  .faces .face { position: absolute; border: 1.5px solid rgba(255,255,255,.55); border-radius: 10px; }
+  .faces .face.speaking { border-color: var(--lip); }
+  .faces .said { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); width: max-content; max-width: 46vw; text-align: center;
+    font: 700 clamp(15px, 4.2vw, 22px)/1.2 system-ui, sans-serif; color: var(--ink); text-shadow: 0 2px 8px rgba(0,0,0,.9); }
+  .faces .said.quiet { color: var(--dim); font-weight: 500; }
+  .heard { font: 500 clamp(15px, 4vw, 20px)/1.3 system-ui, sans-serif; color: var(--dim); text-shadow: 0 2px 8px rgba(0,0,0,.8); margin-top: 6px; }
+  .heard b { color: var(--ink); font-weight: 600; }
+  .heard .agree { color: var(--ok); }
+  .heard .miss { color: var(--ink); text-decoration: underline 2px var(--bad); text-underline-offset: 3px; }
+  .heard .hit { color: var(--ok); }
+  .sub .hit { color: var(--ok); }
+  .sub .wrong { color: var(--bad); }
+  .sub .tag, .heard .tag { font: 600 12px system-ui, sans-serif; letter-spacing: .04em; color: var(--dim); vertical-align: middle; margin-inline-end: 8px; text-transform: uppercase; }
+  .fix { display: flex; gap: 8px; width: 100%; max-width: 560px; }
+  .fix input { flex: 1; min-width: 0; font: 600 20px system-ui, sans-serif; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--dim); background: rgba(0,0,0,.6); color: var(--ink); }
+  .fix button { font: 600 16px system-ui, sans-serif; padding: 10px 14px; border-radius: 10px; border: none; background: var(--lip); color: #fff; }
+  .fix button.quiet { background: rgba(255,255,255,.15); }
+  .sheet .toggle { display: flex; align-items: center; gap: 10px; color: var(--ink); background: none; padding: 0; }
+  .sheet .toggle input { display: inline-block; width: 22px; height: 22px; accent-color: var(--lip); }
+  .sheet select { font: 15px system-ui, sans-serif; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--dim); background: rgba(255,255,255,.08); color: var(--ink); max-width: 100%; }
+  .sheet select option { color: #000; }
+  .sheet .status.on { color: #7BE495; }
+  .sheet .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  /* The subtitles that were: up the screen and away, smaller and fainter as they age (a Star Wars crawl). */
+  .crawl { width: 100%; max-width: 760px; max-height: 20vh; overflow: hidden; perspective: 260px; perspective-origin: 50% 100%; pointer-events: none;
+    display: flex; align-items: flex-end; justify-content: center;
+    -webkit-mask-image: linear-gradient(to top, #000 40%, transparent); mask-image: linear-gradient(to top, #000 40%, transparent); }
+  .plane { width: 100%; transform: rotateX(30deg); transform-origin: 50% 100%; display: flex; flex-direction: column; align-items: center; gap: .3em;
+    font: 700 clamp(18px, 5.4vw, 30px)/1.15 system-ui, sans-serif; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+  .plane .line { transition: opacity 1s linear, font-size .6s ease; text-wrap: balance; }
+  .plane .hd { font-weight: 500; font-size: .6em; color: var(--dim); }
+  .plane .hit, .plane .agree { color: var(--ok); }
+  .plane .wrong { color: var(--bad); }
+  .plane .forming, .plane .u { color: var(--dim); font-weight: 500; }
+  .plane .miss { color: var(--ink); text-decoration: underline 2px var(--bad); text-underline-offset: 3px; }
+  .plane .tag { font: 600 max(10px, .36em) system-ui, sans-serif; letter-spacing: .04em; color: var(--dim); vertical-align: middle; margin-inline-end: 8px; text-transform: uppercase; }
+  .plane .hd .tag { font-size: max(10px, .6em); }
+  /* Asked once, at the start, before any sentence is kept: a card over the subtitles,
+     the face and the "?" left free (the sheet says more). */
+  .consent { position: absolute; left: 0; right: 0; bottom: 0; display: grid; justify-items: center; padding: 16px 16px calc(20px + env(safe-area-inset-bottom, 0px)); pointer-events: none; }
+  .consent .card { pointer-events: auto; width: 100%; max-width: 440px; box-sizing: border-box; background: rgba(22,22,26,.97); border: 1px solid rgba(255,255,255,.14); border-radius: 18px; padding: 18px 20px;
+    display: grid; gap: 14px; font-size: 15px; line-height: 1.45; color: rgba(255,255,255,.8); box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+  .consent h2 { margin: 0; font-size: 21px; color: var(--ink); }
+  .consent .row { display: flex; gap: 10px; }
+  .consent button { flex: 1; font: 600 16px system-ui, sans-serif; padding: 12px 16px; border-radius: 999px; border: none; background: var(--lip); color: #fff; }
+  .consent button.quiet, .sheet button.quiet { background: rgba(255,255,255,.14); }
+  @media (prefers-reduced-motion: no-preference) { .dot[data-state="listening"] { animation: pulse 1s infinite; } }
+  @keyframes pulse { 50% { opacity: .35; } }
+</style>
+
+<div class="app" id="app">
+  <video id="cam" class="mirror" playsinline muted autoplay hidden></video>
+  <canvas id="view" class="view" hidden></canvas>
+  <div class="guide" id="guide" hidden></div>
+  <div class="mouths" id="mouths"></div>
+  <div class="faces" id="faces"></div>
+  <canvas id="crop" class="sees" width="100" height="50" hidden></canvas>
+  <div class="dot" id="dot" data-state="idle" hidden></div>
+  <button class="help" id="helpBtn" aria-label="about" hidden>?</button>
+  <div class="bottom">
+    <div class="crawl" id="crawl" hidden><div class="plane" id="plane"></div></div>
+    <div class="say" id="say" hidden>say <b id="sentence">set blue with e five now</b></div>
+    <div class="sub" id="sub"></div>
+    <div class="heard" id="heard" hidden></div>
+  </div>
+  <div class="msg" id="msg"><div>Loading thelip&hellip;</div></div>
+  <div class="sheet" id="sheet" hidden>
+    <h1>thelip<span>.syrup</span></h1>
+    <div>The oval finds your mouth by itself (red while it follows it); face the camera, keep still, then mouth a sentence. The words appear below as they are read. Without a server nothing leaves the phone. With one (below), each sentence's frames go there to be read; and if you agreed when it asked at the start, your sentences are kept for training (see below).</div>
+    <div><b>It knows 51 words, in one sentence shape:</b></div>
+    <div class="mono">command &middot; colour &middot; preposition &middot; letter &middot; digit &middot; adverb<br>bin lay place set &middot; blue green red white &middot; at by in with &middot; a&ndash;z (no w) &middot; zero&ndash;nine &middot; again now please soon</div>
+    <div>Tap the sentence for another one. To place the oval by hand, drag it to your mouth (pinch to resize); it then stays where you put it until you turn this back on:</div>
+    <label class="toggle"><input type="checkbox" id="auto" checked> Find the mouth by itself</label>
+    <div class="status" id="autoStatus"></div>
+    <div class="row"><label>Open a clip<input type="file" id="file2" accept="video/*"></label><label>Record a clip<input type="file" id="file" accept="video/*" capture="user"></label></div>
+    <div><b>Any words &mdash; with a server</b></div>
+    <div>The page looks for thelip's own server when it opens; when it answers, every sentence's frames go there and come back read by an open-vocabulary model in a few seconds &mdash; English (LRS3, 19% word error rate in the lab), Spanish, French, Portuguese, Mandarin. Languages with no lip-reading model yet, Hebrew among them, read the phrases you taught it (below). Several people in the picture are read each on their own, even when they speak at once (their voices would mix, their lips do not): a frame around each face, red while it speaks, and what it said under it. You can also run <span class="mono">example/thelip-server</span> from the syrup repository on your own computer and put its address here.</div>
+    <div class="row"><input class="text" type="url" id="serverUrl" placeholder="https://&hellip;" autocapitalize="off" autocorrect="off" spellcheck="false"><button id="serverUse">Use</button><button id="serverOff" hidden>Stop</button></div>
+    <div class="status" id="serverStatus"></div>
+    <div><b>Language</b> (with a server; here, the 51 English words)</div>
+    <div class="row"><select id="lang" aria-label="language"></select></div>
+    <div class="status" id="langStatus"></div>
+    <div><b>Your sentences, for training</b></div>
+    <div class="status" id="consentState"></div>
+    <div class="row"><button id="consentChange" class="quiet" hidden></button></div>
+    <div>When a server is connected, thelip asks once, at the start, whether it may keep your sentences for training. If you agree, for each sentence it keeps a small grey video of your mouth (96&times;96 pixels, 25 frames a second: the mouth alone, not your face, not the picture around it) and what you said, written down by speech recognition from the microphone or from an opened clip's sound; the sound itself is deleted once it is written down. A random id this page keeps for itself goes with them, so that only your own phrases are matched. Under the subtitle you see what was heard against what the lips gave; if speech recognition got it wrong, tap the subtitle and fix it. They train thelip's readers on real phones and real speakers; in a language with no reader yet, Hebrew among them, they are also how it learns your phrases: say one out loud once, and your lips alone read it after that. If you do not agree, nothing is kept and the microphone stays off.</div>
+    <div class="status" id="micStatus"></div>
+    <div class="status" id="tally"></div>
+    <div id="speed"></div>
+    <div>The Lip is the lip reader of the <b>syrup</b> library. Its network is LipNet (Assael, Shillingford, Whiteson, de Freitas 2016), weights from rizkiarm/LipNet (MIT), trained on the GRID corpus (CC BY 4.0): 64 of 66 words on GRID's sample clips. A new face and a phone camera are harder than that; expect misses.</div>
+    <div class="row"><button id="closeSheet">Back</button></div>
+  </div>
+  <div class="consent" id="consent" role="dialog" aria-modal="true" aria-labelledby="consentTitle" hidden>
+    <div class="card" id="consentCard">
+      <h2 id="consentTitle"></h2>
+      <div id="consentText"></div>
+      <div class="row"><button id="consentYes"></button><button id="consentNo" class="quiet"></button></div>
+    </div>
+  </div>
+</div>
+
+<script id="worker-src" type="text/plain">
+__WORKER__
+</script>
+<script id="weights" type="text/plain">__WEIGHTS_B64__</script>
+<script id="face-worker-src" type="text/plain">
+__FACE_WORKER__
+</script>
+<script id="face-weights" type="text/plain">__FACE_WEIGHTS_B64__</script>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const FPS = 25, W = 100, H = 50;
+  const cam = $("cam"), view = $("view"), guide = $("guide"), dot = $("dot"), msg = $("msg"), sub = $("sub"), say = $("say");
+  const cropCanvas = $("crop"), cropCtx = cropCanvas.getContext("2d", { willReadFrequently: true });
+  let worker = null, ready = false, perFrameMs = 0;
+  // ---- a server for any English words (example/thelip-server) ----------------------------------
+  let server = null, serverToken = null, serverInfo = null, serverExplicit = false, improve = false, lastRead = null, lastHeard = null, language = "en";
+  // The languages the page offers, in this order; a server says which of them it can read.
+  const LANGS = [["en", "English"], ["he", "עברית"], ["es", "Español"], ["ar", "العربية"], ["zh", "普通话"], ["fr", "Français"], ["de", "Deutsch"], ["pt", "Português"]];
+  const langInfo = (code) => ((serverInfo && serverInfo.languages) || []).find((l) => l.code === code) || null;
+  const hasModel = (code) => { const l = langInfo(code); return !!(l && l.available); };
+  // A language with no lip-reading model reads the phrases this reader said
+  // before, kept for training with their agreement (the server learned them
+  // from what it heard). `phrases` is how many it knows, for the current language.
+  let phrases = { language: null, count: 0 };
+  function renderLanguages() {
+    const sel = $("lang");
+    sel.replaceChildren();
+    for (const [code, name] of LANGS) {
+      const o = document.createElement("option"); o.value = code;
+      o.textContent = name + (serverOn() ? (hasModel(code) ? "" : " — learns your phrases") : (code === "en" ? " — 51 words, here" : " — needs a server"));
+      sel.appendChild(o);
+    }
+    sel.value = language;
+    const l = langInfo(language);
+    const n = phrases.language === language ? phrases.count : 0;
+    $("langStatus").textContent = !serverOn() ? "" : !l ? "" : l.available ? `${l.quality}${l.loaded ? "" : " — loads on first use"}`
+      : `No lip-reading model for this language yet (${l.status || "none published"}). Meanwhile it reads your own phrases: with your sentences kept for training (asked at the start; see below), say one out loud or open a clip with its sound; what is heard is written down, and the next time your lips alone read it. ${n ? `${n} phrase${n === 1 ? "" : "s"} learned so far.` : "None learned yet."}`;
+  }
+  function setLanguage(code) {
+    language = code; try { localStorage.setItem("thelip.language", code); } catch {}
+    renderLanguages();
+    refreshPhrases();
+  }
+  function storedProfile() { try { const p = localStorage.getItem("thelip.profile"); return /^[0-9a-f]{32}$/.test(p || "") ? p : null; } catch { return null; } }
+  function profileId() {
+    let p = storedProfile();
+    if (!p) { p = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join(""); try { localStorage.setItem("thelip.profile", p); } catch {} }
+    return p;
+  }
+  async function refreshPhrases() {
+    const p = storedProfile();
+    if (!serverOn() || hasModel(language) || !p) { phrases = { language, count: 0 }; renderLanguages(); return; }
+    try {
+      const r = await fetch(server.replace(/\/$/, "") + `/phrases?profile=${p}&language=${language}`, { headers: auth() });
+      const j = r.ok ? await r.json() : null;
+      phrases = { language, count: j && j.phrases ? j.phrases.length : 0 };
+    } catch { phrases = { language, count: 0 }; }
+    renderLanguages();
+  }
+  const DEFAULT_SERVER = "https://api.thelip.ai";
+  const fullCanvas = document.createElement("canvas"), fullCtx = fullCanvas.getContext("2d");
+  function loadServer() {
+    const q = new URLSearchParams(location.search);
+    if (q.get("server")) {
+      try { localStorage.setItem("thelip.server", q.get("server")); if (q.get("token")) localStorage.setItem("thelip.token", q.get("token")); else localStorage.removeItem("thelip.token"); } catch {}
+      window.history.replaceState(null, "", location.pathname + location.hash);
+    }
+    try { server = localStorage.getItem("thelip.server") || null; serverToken = localStorage.getItem("thelip.token") || null; language = localStorage.getItem("thelip.language") || language; } catch {}
+    if (!LANGS.some(([c]) => c === language)) language = "en";
+    renderLanguages();
+    serverExplicit = !!server;
+    if (server) checkServer(); else discoverServer();
+    renderServer();
+  }
+  // thelip's own server: the address in /server.json on this site (kept current
+  // by the server that runs), else api.thelip.ai; either is used only when it
+  // answers /health. Nothing set: reading 51 words here, and looking again.
+  async function probe(url, ms) {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
+    try { const r = await fetch(url.replace(/\/$/, "") + "/health", { signal: ctl.signal }); if (!r.ok) return null; const j = await r.json(); return j && j.ok ? j : null; }
+    catch { return null; } finally { clearTimeout(t); }
+  }
+  let discovering = false;
+  // `force`: the server a link set (a throwaway tunnel, usually) has stopped
+  // answering; thelip's own server, if it answers, takes its place.
+  async function discoverServer(force) {
+    if (discovering || (serverExplicit && !force)) return;
+    discovering = true;
+    try {
+      const candidates = [];
+      if (location.protocol.startsWith("http")) {
+        try { const r = await fetch("/server.json?t=" + Date.now(), { cache: "no-store" }); const j = r.ok ? await r.json() : null; if (j && typeof j.url === "string" && /^https:\/\/|^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?/.test(j.url)) candidates.push(j.url); } catch {}
+      }
+      candidates.push(DEFAULT_SERVER);
+      for (const url of candidates) {
+        if (serverOn()) return;
+        const info = await probe(url, 5000);
+        if (info) {
+          if (serverExplicit) { serverExplicit = false; try { localStorage.removeItem("thelip.server"); localStorage.removeItem("thelip.token"); } catch {} }
+          server = url; serverToken = null; serverInfo = info; renderServer(); newSentence(); return;
+        }
+      }
+      if (!serverExplicit && !serverOn()) { server = null; serverInfo = null; renderServer(); }
+    } finally { discovering = false; }
+  }
+  setInterval(async () => { if (serverOn()) return; if (serverExplicit) await checkServer(); if (!serverOn()) discoverServer(true); }, 60000);
+  function renderServer() {
+    syncMic();
+    renderConsent();
+    askConsent();
+    if (serverOn() && phrases.language !== language) refreshPhrases();
+    $("serverUrl").value = server || "";
+    $("serverOff").hidden = !server;
+    const st = $("serverStatus");
+    st.className = "status" + (serverInfo && serverInfo.ok ? " on" : "");
+    st.textContent = !server ? "thelip's server is not answering right now — reading 51 words here; looking again every minute"
+      : serverInfo === null ? "checking…" : serverInfo.ok ? `connected${serverExplicit ? "" : " to thelip's server"}: ${serverInfo.model} on ${serverInfo.device}` : `not reachable (${serverInfo.error}) — reading 51 words here meanwhile`;
+    renderLanguages();
+  }
+  // ---- keeping sentences for training: asked once, at the start ------------------------------------
+  // Nothing is kept until the reader answers. The question comes as soon as a server
+  // answers (without one nothing leaves the phone); the answer stays in this browser
+  // (thelip.consent) and can be changed in the sheet. `improve` is true only after a yes.
+  const CONSENT = {
+    en: { title: "Help train thelip?", yes: "Yes", no: "No, thanks",
+          text: "To read lips better, and to learn Hebrew, which no lip reader knows yet, thelip keeps the sentences said here: for each one, a small grey video of the mouth alone and the words that were said, written down from the microphone (or from a clip's sound). The face and the voice are not kept: the sound is deleted once the words are written down. You can change your answer any time: the ? button at the top." },
+    he: { title: "לעזור לאמן את thelip?", yes: "כן", no: "לא, תודה",
+          text: "כדי לקרוא שפתיים טוב יותר, וללמוד גם עברית, שאף קורא שפתיים עוד לא יודע, thelip שומר את המשפטים שנאמרים כאן: לכל משפט סרטון קטן באפור של הפה בלבד, והמילים שנאמרו, כפי שנכתבו מהמיקרופון (או מהקול של קליפ). הפנים והקול לא נשמרים: הקול נמחק ברגע שהמילים נכתבו. אפשר לשנות את התשובה בכל זמן: כפתור ? למעלה." },
+  };
+  let consent = null, consentAt = null;
+  try { const c = JSON.parse(localStorage.getItem("thelip.consent") || "null"); if (c && (c.answer === "yes" || c.answer === "no")) { consent = c.answer; consentAt = c.at || null; } } catch {}
+  improve = consent === "yes";
+  const inHebrew = () => language === "he" || /^(he|iw)\b/i.test(navigator.language || "");
+  function renderConsent() {
+    const st = $("consentState"), change = $("consentChange");
+    st.className = "status" + (consent === "yes" ? " on" : "");
+    st.textContent = consent === "yes" ? `Your sentences are kept for training: you agreed${consentAt ? ` on ${new Date(consentAt).toLocaleDateString()}` : ""}.`
+      : consent === "no" ? "Your sentences are not kept: you said no." : serverOn() ? "Not answered yet: nothing is kept." : "Without a server nothing is kept.";
+    change.textContent = consent === "yes" ? "Stop keeping them" : "Keep them for training…";
+    change.hidden = !serverOn() && consent !== "yes";
+  }
+  function askConsent(again) {
+    if (!serverOn() || (consent && !again) || !$("sheet").hidden) return;   // with the sheet open: when it closes
+    const t = CONSENT[inHebrew() ? "he" : "en"];
+    $("consentCard").dir = inHebrew() ? "rtl" : "ltr";
+    $("consentTitle").textContent = t.title; $("consentText").textContent = t.text;
+    $("consentYes").textContent = t.yes; $("consentNo").textContent = t.no;
+    $("consent").hidden = false;
+  }
+  function answerConsent(answer) {
+    consent = answer; consentAt = new Date().toISOString();
+    try { localStorage.setItem("thelip.consent", JSON.stringify({ answer, at: consentAt })); } catch {}
+    improve = answer === "yes";
+    $("consent").hidden = true;
+    renderConsent();
+    syncMic();   // a yes opens the microphone, from this tap (which iOS needs to let it run)
+  }
+  $("consentYes").addEventListener("click", () => answerConsent("yes"));
+  $("consentNo").addEventListener("click", () => answerConsent("no"));
+  $("consentChange").addEventListener("click", () => { if (consent === "yes") answerConsent("no"); else { $("sheet").hidden = true; askConsent(true); } });
+  async function checkServer() {
+    serverInfo = null; renderServer();
+    try {
+      const r = await fetch(server.replace(/\/$/, "") + "/health", { headers: serverToken ? { Authorization: `Bearer ${serverToken}` } : {} });
+      serverInfo = r.ok ? await r.json() : { ok: false, error: `HTTP ${r.status}` };
+    } catch (e) { serverInfo = { ok: false, error: e.message || "network" }; }
+    renderServer();
+    if (serverInfo.ok) newSentence(); else if (serverExplicit) discoverServer(true);
+  }
+  const serverOn = () => !!(server && serverInfo && serverInfo.ok);
+  const serverHears = () => !!(serverOn() && serverInfo.hears);
+  const auth = () => (serverToken ? { Authorization: `Bearer ${serverToken}` } : {});
+  async function readOnServer(blobs, utt) {
+    const body = new FormData();
+    body.append("fps", String(FPS));
+    body.append("language", language);
+    body.append("utt", utt);
+    if (improve) { body.append("improve", "1"); body.append("source", mode); }
+    // The page's random id goes only where it is needed: with kept sentences,
+    // and to read a language with no model from this reader's own phrases.
+    if (improve || !hasModel(language)) body.append("profile", profileId());
+    blobs.forEach((b, i) => body.append("frames", b, `f${String(i).padStart(4, "0")}.jpg`));
+    const r = await fetch(server.replace(/\/$/, "") + "/read", { method: "POST", body, headers: auth() });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  }
+  // The microphone, only when the reader agreed to their sentences being kept and a server that
+  // hears is connected: the last seconds of sound stay in memory here, and
+  // the stretch of each utterance goes to the server as a small WAV, to be
+  // written down. The page never plays it, never keeps it.
+  let mic = null;
+  const MIC_SECONDS = 24, MIC_RATE = 16000;
+  function renderMic(text) { const el = $("micStatus"); el.textContent = text; }
+  async function startMic() {
+    if (mic || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) { renderMic("no microphone in this viewer — corrections by tapping the subtitle"); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+      const ctx = new Ctx();
+      const m = { ctx, stream, rate: ctx.sampleRate, blocks: [], total: 0 };
+      const src = ctx.createMediaStreamSource(stream);
+      const node = ctx.createScriptProcessor(4096, 1, 1);
+      m.peak = -120; m.shown = 0;
+      node.onaudioprocess = (e) => {
+        const d = new Float32Array(e.inputBuffer.getChannelData(0));
+        m.blocks.push({ t: performance.now(), data: d }); m.total += d.length;
+        while (m.total > m.rate * MIC_SECONDS) m.total -= m.blocks.shift().data.length;
+        let sum = 0; for (let i = 0; i < d.length; i++) sum += d[i] * d[i];
+        const db = 20 * Math.log10(Math.sqrt(sum / d.length) + 1e-9);
+        m.peak = Math.max(m.peak - 1.5, db);
+        const now = performance.now();
+        if (now - m.shown > 400) { m.shown = now; renderMic(`microphone on — level ${Math.round(m.peak)} dB${m.peak < -85 ? " (silent: is the microphone allowed for this site?)" : ""}; say your sentences out loud to label them`); }
+      };
+      const mute = ctx.createGain(); mute.gain.value = 0;
+      src.connect(node); node.connect(mute); mute.connect(ctx.destination);
+      m.node = node;
+      mic = m;
+      await ctx.resume().catch(() => {});
+      renderMic(ctx.state === "running" ? "microphone on: what you say is written down for you" : "microphone waiting for a tap on the page");
+      if (ctx.state !== "running") document.addEventListener("pointerdown", () => ctx.resume().then(() => renderMic("microphone on: what you say is written down for you")).catch(() => {}), { once: true });
+    } catch (e) { renderMic(`no microphone (${e.name || e.message}) — corrections by tapping the subtitle`); }
+  }
+  function stopMic() {
+    if (!mic) return;
+    try { mic.node.disconnect(); mic.stream.getTracks().forEach((t) => t.stop()); mic.ctx.close(); } catch {}
+    mic = null; renderMic("");
+  }
+  function syncMic() { if (improve && serverHears()) startMic(); else stopMic(); }
+  function micWav(t0, t1) {
+    if (!mic || !mic.blocks.length) return null;
+    const parts = [];
+    for (const b of mic.blocks) { const start = b.t - (b.data.length / mic.rate) * 1000; if (b.t >= t0 && start <= t1) parts.push(b.data); }
+    if (!parts.length) return null;
+    let n = 0; for (const p of parts) n += p.length;
+    const all = new Float32Array(n); let o = 0; for (const p of parts) { all.set(p, o); o += p.length; }
+    return wavOf(all, mic.rate);
+  }
+  // A clip's own sound, mono, when the browser can take it out of the file
+  // (Chrome can for most; Safari for some): null otherwise, and the clip
+  // itself goes to the server, which takes the sound out there.
+  async function clipAudio(file) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    let ctx = null;
+    try {
+      const data = await file.arrayBuffer();
+      ctx = new Ctx();
+      const buf = await new Promise((res, rej) => { const p = ctx.decodeAudioData(data, res, rej); if (p && p.then) p.then(res, rej); });
+      const n = buf.length, ch = buf.numberOfChannels, mono = new Float32Array(n);
+      for (let c = 0; c < ch; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) mono[i] += d[i] / ch; }
+      return { samples: mono, rate: buf.sampleRate };
+    } catch { return null; } finally { try { ctx && ctx.close(); } catch {} }
+  }
+  function wavOf(all, rate, t0 = 0, t1 = Infinity) {
+    all = all.subarray(Math.max(0, Math.floor(t0 * rate)), Math.min(all.length, Math.ceil(t1 * rate)));
+    const n = all.length;
+    const ratio = rate / MIC_RATE, out = new Int16Array(Math.floor(n / ratio));
+    for (let i = 0; i < out.length; i++) {
+      const a = Math.floor(i * ratio), b = Math.max(a + 1, Math.floor((i + 1) * ratio));
+      let sum = 0; for (let k = a; k < b; k++) sum += all[k];
+      const v = sum / (b - a); out[i] = Math.max(-32768, Math.min(32767, Math.round(v * 32767)));
+    }
+    const buf = new ArrayBuffer(44 + out.length * 2), dv = new DataView(buf);
+    const str = (off, t) => { for (let i = 0; i < t.length; i++) dv.setUint8(off + i, t.charCodeAt(i)); };
+    str(0, "RIFF"); dv.setUint32(4, 36 + out.length * 2, true); str(8, "WAVE"); str(12, "fmt "); dv.setUint32(16, 16, true);
+    dv.setUint16(20, 1, true); dv.setUint16(22, 1, true); dv.setUint32(24, MIC_RATE, true); dv.setUint32(28, MIC_RATE * 2, true);
+    dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); str(36, "data"); dv.setUint32(40, out.length * 2, true);
+    new Int16Array(buf, 44).set(out);
+    return new Blob([buf], { type: "audio/wav" });
+  }
+  async function hearOnServer(blob, utt, span) {
+    const body = new FormData();
+    body.append("language", language);
+    body.append("utt", utt);
+    if (improve) body.append("improve", "1");
+    if (span) { body.append("start", String(span[0])); body.append("end", String(span[1])); }
+    body.append("audio", blob, blob.name || "u.wav");
+    const r = await fetch(server.replace(/\/$/, "") + "/hear", { method: "POST", body, headers: auth() });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  }
+  // Words as compared: lower case, no punctuation, "E5" as "e five" (digits spelled
+  // out in English, the way the lip-reading model writes them).
+  const DIGITS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+  const wordsOf = (t) => (t || "").toLowerCase().replace(/[^\p{L}\p{N}' ]+/gu, " ").split(/\s+/).filter(Boolean)
+    .flatMap((w) => (language === "en" ? (w.match(/\p{L}+|\d/gu) || [w]).map((p) => (/^\d$/.test(p) ? DIGITS[+p] : p)) : [w]));
+  // The lips' words against the heard ones, aligned by edit distance: which of the
+  // lips' words were right, and which of the heard words the lips missed.
+  function alignWords(a, b) {
+    const n = a.length, m = b.length, D = Array.from({ length: n + 1 }, (_, i) => Array.from({ length: m + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)));
+    for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) D[i][j] = Math.min(D[i - 1][j] + 1, D[i][j - 1] + 1, D[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    const lips = new Array(n).fill(false), heard = new Array(m).fill(false);
+    for (let i = n, j = m; i > 0 || j > 0;) {
+      if (i > 0 && j > 0 && D[i][j] === D[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)) { if (a[i - 1] === b[j - 1]) { lips[i - 1] = true; heard[j - 1] = true; } i--; j--; }
+      else if (i > 0 && D[i][j] === D[i - 1][j] + 1) i--;
+      else j--;
+    }
+    return { lips, heard, hits: lips.filter(Boolean).length };
+  }
+  // A running score, for this browser: how many heard words the lips got.
+  let tally = { day: new Date().toDateString(), words: 0, hits: 0, sentences: 0 };
+  try { const t = JSON.parse(localStorage.getItem("thelip.tally") || "null"); if (t && t.day === tally.day) tally = t; } catch {}
+  function renderTally() {
+    $("tally").textContent = tally.sentences ? `Today, heard against read: the lips got ${tally.hits} of ${tally.words} words (${Math.round((100 * tally.hits) / Math.max(1, tally.words))}%) over ${tally.sentences} sentence${tally.sentences === 1 ? "" : "s"}.` : "";
+  }
+  function showHeard(h, lips) {
+    const el = $("heard");
+    if (h === null) { el.hidden = true; el.replaceChildren(); return; }
+    el.hidden = false; el.replaceChildren();
+    if (h.silent) { el.textContent = "🎤 silence — say it out loud and the microphone writes it down (the lips are read either way)"; return; }
+    const heardWords = wordsOf(h.heard);
+    if (!heardWords.length) { el.textContent = "🎤 (no words heard)"; return; }
+    const lipsWords = wordsOf(lips);
+    const al = alignWords(lipsWords, heardWords);
+    // The lips' line again, word by word: right in green, wrong in red.
+    if (lipsWords.length && !fixing) {
+      sub.replaceChildren();
+      const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = "👄 lips"; sub.appendChild(tag);
+      lipsWords.forEach((w, i) => { const s = document.createElement("span"); s.className = al.lips[i] ? "hit" : "wrong"; s.textContent = w + " "; sub.appendChild(s); });
+    }
+    keepable = true;
+    const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = "🎤 heard"; el.appendChild(tag);
+    heardWords.forEach((w, i) => { const s = document.createElement("span"); s.className = al.heard[i] ? "hit" : "miss"; s.textContent = w; el.append(s, " "); });
+    const score = document.createElement("span"); score.className = "agree"; score.textContent = `— ${al.hits} of ${heardWords.length}`; el.appendChild(score);
+    tally.words += heardWords.length; tally.hits += al.hits; tally.sentences += 1;
+    try { localStorage.setItem("thelip.tally", JSON.stringify(tally)); } catch {}
+    renderTally();
+    debug.server.lastAlign = { lips: lipsWords, heard: heardWords, hits: al.hits };
+  }
+  function fullFrame() {
+    if (!fullCanvas.width) { const k = Math.min(1, 320 / sourceSize.w); fullCanvas.width = Math.round(sourceSize.w * k); fullCanvas.height = Math.round(sourceSize.h * k); }
+    fullCtx.drawImage(source, 0, 0, fullCanvas.width, fullCanvas.height);
+    return new Promise((res) => fullCanvas.toBlob(res, "image/jpeg", 0.7));
+  }
+  let mode = "idle", source = null, sourceSize = { w: 0, h: 0 }, mirror = false;
+  let guideBox = null;
+
+  // ---- the network, in a worker ------------------------------------------------------
+  function bootWorker() {
+    const bin = atob($("weights").textContent.trim());
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    worker = new Worker(URL.createObjectURL(new Blob([$("worker-src").textContent], { type: "text/javascript" })));
+    worker.onmessage = onWorker;
+    worker.postMessage({ type: "init", weights: bytes.buffer }, [bytes.buffer]);
+  }
+  const pending = new Map();
+  let readResolve = null;
+  function onWorker(e) {
+    const m = e.data;
+    if (m.type === "ready") {
+      ready = true; perFrameMs = m.perFrameMs;
+      $("speed").textContent = `${perFrameMs.toFixed(0)} ms per frame on this device (25 frames per second of video).`;
+      startCamera();
+    } else if (m.type === "processed") {
+      const r = pending.get(m.index); if (r) { pending.delete(m.index); r(); }
+    } else if (m.type === "reading") {
+      if (readResolve) { const r = readResolve; readResolve = null; r(m); }
+    }
+  }
+  const sendFrame = (index, data) => new Promise((resolve) => { pending.set(index, resolve); worker.postMessage({ type: "frame", index, data }, [data.buffer]); });
+  const read = (from, to, final) => new Promise((resolve) => { readResolve = resolve; worker.postMessage({ type: "read", from, to, final }); });
+
+  // ---- the guide oval: where the mouth is, in source pixels --------------------------------
+  // Where source pixels land on the screen: the camera fills it (cover); an opened
+  // clip is shown whole (contain), so that nobody at its edges is cut off.
+  function viewMap() {
+    const r = $("app").getBoundingClientRect();
+    const scale = (mode === "file" ? Math.min : Math.max)(r.width / sourceSize.w, r.height / sourceSize.h);
+    return { r, scale, dx: (r.width - sourceSize.w * scale) / 2, dy: (r.height - sourceSize.h * scale) / 2 };
+  }
+  function layoutGuide() {
+    if (!guideBox || !sourceSize.w) return;
+    const { r, scale, dx, dy } = viewMap();
+    let left = dx + guideBox.x * scale;
+    if (mirror) left = r.width - (dx + (guideBox.x + guideBox.w) * scale);
+    guide.style.left = `${left}px`; guide.style.top = `${dy + guideBox.y * scale}px`;
+    guide.style.width = `${guideBox.w * scale}px`; guide.style.height = `${guideBox.h * scale}px`;
+    guide.hidden = false;
+    return { scale, dx, dy };
+  }
+  function defaultGuide() {
+    // A new picture: the finder starts afresh (its first sighting places the oval).
+    guide.classList.remove("auto"); mainSeenAt = 0; mouths = []; mainTrack = []; renderMouths();
+    const w = Math.round(Math.min(sourceSize.w, sourceSize.h * 4 / 3) * 0.34), h = Math.round(w / 2);
+    guideBox = { x: Math.round((sourceSize.w - w) / 2), y: Math.round(sourceSize.h * 0.6 - h / 2), w, h };
+    const m = location.hash.match(/^#g(\d+)-(\d+)-(\d+)-(\d+)$/);
+    if (m) guideBox = { x: +m[1], y: +m[2], w: +m[3], h: +m[4] };
+    layoutGuide();
+  }
+  // Drag to move, pinch to resize.
+  const touches = new Map();
+  let pinch = null;
+  guide.addEventListener("pointerdown", (e) => { setAuto(false, true); guide.setPointerCapture(e.pointerId); touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (touches.size === 2) { const [a, b] = [...touches.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), w: guideBox.w }; } });
+  guide.addEventListener("pointermove", (e) => {
+    if (!touches.has(e.pointerId) || !guideBox) return;
+    const prev = touches.get(e.pointerId);
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const lay = layoutGuide();
+    if (touches.size === 2 && pinch) {
+      const [a, b] = [...touches.values()];
+      const f = Math.hypot(a.x - b.x, a.y - b.y) / pinch.d;
+      const cx = guideBox.x + guideBox.w / 2, cy = guideBox.y + guideBox.h / 2;
+      const w = Math.max(40, Math.min(sourceSize.w, pinch.w * f)), h = w / 2;
+      guideBox = { x: cx - w / 2, y: cy - h / 2, w, h };
+    } else if (touches.size === 1) {
+      const dx = (e.clientX - prev.x) / lay.scale * (mirror ? -1 : 1), dy = (e.clientY - prev.y) / lay.scale;
+      guideBox = { x: guideBox.x + dx, y: guideBox.y + dy, w: guideBox.w, h: guideBox.h };
+    }
+    layoutGuide();
+  });
+  const release = (e) => { touches.delete(e.pointerId); if (touches.size < 2) pinch = null; };
+  guide.addEventListener("pointerup", release); guide.addEventListener("pointercancel", release);
+  window.addEventListener("resize", layoutGuide);
+
+  // ---- finding the mouth by itself: BlazeFace in a worker of its own --------------------------------
+  // A few times a second the frame goes, letterboxed to 128x128, to the face finder
+  // (faces.js: MediaPipe's BlazeFace, run from its own weights). The largest face's
+  // mouth is the oval: it follows the mouth when the head moves and holds still when
+  // it does not, so that what starts a sentence is the lips moving, not the oval. The
+  // other faces' mouths get ovals of their own, and with a server (which reads every
+  // face) their motion starts a sentence too. Dragging the oval places it by hand.
+  // The oval: 0.85 of the face's width, on the median of the mouth's last sightings
+  // (two seconds): a speaking mouth's centre drops as the jaw opens, and LipNet reads
+  // best from an oval between closed and open. Measured on GRID's ten sample clips,
+  // read whole (tools/oval_check.mjs): 60 of 60 words at 0.85 and 0.9 of the face,
+  // 58 at 0.8, 59 at 0.94; at 0.85 from the first frame alone (mouth closed), 54.
+  const FACE_EVERY_MS = 150, OVAL_OF_FACE = 0.85, HOLD_SHIFT = 0.07, HOLD_SIZE = 0.15, LOST_MS = 1500, TRACK_MS = 2000, TRACK_N = 12;
+  let faceWorker = null, faceReady = false, facePending = null, faceId = 0, lastFaceAt = 0, mainSeenAt = 0;
+  let autoGuide = true, mouths = [], mainTrack = [];
+  const faceCanvas = document.createElement("canvas"); faceCanvas.width = faceCanvas.height = 128;
+  const faceCtx = faceCanvas.getContext("2d", { willReadFrequently: true });
+  const mouthCanvas = document.createElement("canvas"); mouthCanvas.width = 40; mouthCanvas.height = 20;
+  const mouthCtx = mouthCanvas.getContext("2d", { willReadFrequently: true });
+  function bootFaces() {
+    try {
+      const bin = atob($("face-weights").textContent.trim()), bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      faceWorker = new Worker(URL.createObjectURL(new Blob([$("face-worker-src").textContent], { type: "text/javascript" })));
+      faceWorker.onmessage = (e) => {
+        const m = e.data;
+        if (m.type === "ready") { faceReady = true; debug.faceMs = Math.round(m.ms); renderAuto(); }
+        else if (m.type === "failed") { debug.faceError = m.error; renderAuto(); }
+        else if (m.type === "faces" && facePending && facePending.id === m.id) { const p = facePending; facePending = null; debug.faceMs = Math.round(m.ms); p.resolve(m.faces); }
+      };
+      faceWorker.postMessage({ type: "init", model: bytes.buffer }, [bytes.buffer]);
+    } catch (e) { debug.faceError = e.message; }
+  }
+  function renderAuto() {
+    $("auto").checked = autoGuide;
+    $("autoStatus").textContent = debug.faceError ? `the face finder did not start here (${debug.faceError}): place the oval by hand`
+      : !faceReady ? "" : `BlazeFace (MediaPipe's face detector, Apache 2.0) finds it, here in this page: ${debug.faceMs} ms a look on this device.`;
+  }
+  function setAuto(on, byHand) {
+    if (autoGuide === on) return;
+    autoGuide = on;
+    if (byHand || on) { try { localStorage.setItem("thelip.auto", on ? "1" : "0"); } catch {} }
+    if (!on) { guide.classList.remove("auto"); mouths = []; renderMouths(); }
+    renderAuto();
+  }
+  // The frame, letterboxed into the finder's input -> the faces, in source pixels.
+  function findFaces() {
+    if (!faceReady || facePending || !source || !sourceSize.w) return null;
+    const { w, h } = sourceSize, k = 128 / Math.max(w, h), dx = (128 - w * k) / 2, dy = (128 - h * k) / 2;
+    faceCtx.fillStyle = "#000"; faceCtx.fillRect(0, 0, 128, 128);
+    faceCtx.drawImage(source, dx, dy, w * k, h * k);
+    const rgba = faceCtx.getImageData(0, 0, 128, 128).data;
+    const id = ++faceId;
+    const found = new Promise((resolve) => { facePending = { id, resolve }; });
+    faceWorker.postMessage({ type: "detect", id, rgba }, [rgba.buffer]);
+    lastFaceAt = performance.now();
+    const px = (u) => (u * 128 - dx) / k, py = (v) => (v * 128 - dy) / k;
+    return found.then((faces) => faces.map((f) => ({ score: f.score, x: px(f.box[0]), y: py(f.box[1]), w: (f.box[2] * 128) / k, h: (f.box[3] * 128) / k,
+                                                   mouth: [px(f.keypoints[3][0]), py(f.keypoints[3][1])] })));
+  }
+  const ovalOf = (f) => { const w = f.w * OVAL_OF_FACE, h = w / 2; return { x: f.mouth[0] - w / 2, y: f.mouth[1] - h / 2, w, h }; };
+  const centre = (b) => [b.x + b.w / 2, b.y + b.h / 2];
+  // Moves an oval to where the finder saw the mouth, only when it really moved.
+  function follow(b, t, resize) {
+    if (!b) return t;
+    const [cx, cy] = centre(b), [tx, ty] = centre(t);
+    const shift = Math.hypot(tx - cx, ty - cy) / b.w, size = Math.abs(t.w - b.w) / b.w;
+    if (shift > 0.5 || size > 0.4) return t;
+    if (shift <= HOLD_SHIFT && (size <= HOLD_SIZE || !resize)) return b;
+    const w = resize && size > HOLD_SIZE ? b.w + (t.w - b.w) * 0.6 : b.w, h = w / 2;
+    const nx = shift > HOLD_SHIFT ? cx + (tx - cx) * 0.6 : cx, ny = shift > HOLD_SHIFT ? cy + (ty - cy) * 0.6 : cy;
+    return { x: nx - w / 2, y: ny - h / 2, w, h };
+  }
+  function applyFaces(faces, exact) {
+    if (!autoGuide) return;
+    const now = performance.now();
+    debug.facesSeen = faces.length;
+    if (!faces.length) {
+      if (now - mainSeenAt > LOST_MS) { guide.classList.remove("auto"); mouths = []; renderMouths(); }
+      return;
+    }
+    // The main face: the one at the oval while it is followed, else the largest.
+    let main = faces.reduce((a, b) => (b.w > a.w ? b : a));
+    if (guideBox && now - mainSeenAt < LOST_MS) {
+      const [gx, gy] = centre(guideBox), d = (f) => Math.hypot(f.mouth[0] - gx, f.mouth[1] - gy);
+      const near = faces.reduce((a, b) => (d(b) < d(a) ? b : a));
+      if (d(near) < near.w * 0.5 && near.w > main.w * 0.6) main = near;
+    }
+    mainSeenAt = now;
+    const was = mainTrack[mainTrack.length - 1];
+    if (was && Math.hypot(main.mouth[0] - was.mx, main.mouth[1] - was.my) > main.w * 0.5) mainTrack = [];   // another face, or a jump
+    mainTrack.push({ mx: main.mouth[0], my: main.mouth[1], w: main.w, t: now });
+    mainTrack = mainTrack.filter((m) => now - m.t < TRACK_MS).slice(-TRACK_N);
+    const med = (k) => mainTrack.map((m) => m[k]).sort((a, b) => a - b)[mainTrack.length >> 1];
+    const target = ovalOf({ mouth: [med("mx"), med("my")], w: med("w") });
+    guideBox = exact ? target : follow(guide.classList.contains("auto") ? guideBox : null, target, !utter);
+    guide.classList.add("auto");
+    layoutGuide();
+    debug.guide = { x: Math.round(guideBox.x), y: Math.round(guideBox.y), w: Math.round(guideBox.w), h: Math.round(guideBox.h) };
+    // The others: each keeps its oval (and its last crop) while its mouth stays put.
+    mouths = faces.filter((f) => f !== main).map((f) => {
+      const t = ovalOf(f), [tx, ty] = centre(t);
+      const was = mouths.find((m) => Math.hypot(centre(m.box)[0] - tx, centre(m.box)[1] - ty) < m.box.w * 0.5);
+      if (!was) return { box: t, last: null, recent: [], motion: 0 };
+      const box = follow(was.box, t, true);
+      return box === was.box ? was : { box, last: null, recent: [], motion: 0 };
+    });
+    renderMouths();
+  }
+  function renderMouths() {
+    const box = $("mouths");
+    box.replaceChildren();
+    if (!mouths.length || guide.hidden || !sourceSize.w) return;
+    const { r, scale, dx, dy } = viewMap();
+    for (const m of mouths) {
+      const b = m.box, el = (m.el = document.createElement("div"));
+      el.className = "mouth";
+      let left = dx + b.x * scale;
+      if (mirror) left = r.width - (dx + (b.x + b.w) * scale);
+      el.style.left = `${left}px`; el.style.top = `${dy + b.y * scale}px`; el.style.width = `${b.w * scale}px`; el.style.height = `${b.h * scale}px`;
+      box.appendChild(el);
+    }
+  }
+  window.addEventListener("resize", renderMouths);
+  // How much another face's mouth moved since the last frame (the first channel of a
+  // 40x20 crop, as motionOf does for the oval's), median of the last five.
+  function mouthMotion(m) {
+    const b = m.box;
+    mouthCtx.drawImage(source, b.x, b.y, b.w, b.h, 0, 0, 40, 20);
+    const img = mouthCtx.getImageData(0, 0, 40, 20).data, cur = new Float32Array(800);
+    for (let i = 0; i < 800; i++) cur[i] = img[i * 4] / 255;
+    let s = 0;
+    if (m.last) { for (let i = 0; i < 800; i++) s += Math.abs(cur[i] - m.last[i]); s /= 800; }
+    m.last = cur;
+    m.recent.push(s); if (m.recent.length > 5) m.recent.shift();
+    return (m.motion = [...m.recent].sort((a, c) => a - c)[m.recent.length >> 1]);
+  }
+  // Several faces in a server's reading: a frame around each, and what each one's
+  // lips said under it (the main face's reading is also the subtitle).
+  let lastFaces = null;
+  function renderFaces(faces) {
+    lastFaces = faces;
+    const box = $("faces");
+    box.replaceChildren();
+    if (!faces || faces.length < 2 || !sourceSize.w) return;
+    const { r, scale, dx, dy } = viewMap();
+    for (const f of faces) {
+      if (!f.box) continue;
+      const [fx, fy, fw, fh] = f.box;
+      let left = dx + fx * sourceSize.w * scale;
+      if (mirror) left = r.width - (dx + (fx + fw) * sourceSize.w * scale);
+      const el = document.createElement("div"); el.className = "face" + (f.speaking ? " speaking" : "");
+      el.style.left = `${left}px`; el.style.top = `${dy + fy * sourceSize.h * scale}px`;
+      el.style.width = `${fw * sourceSize.w * scale}px`; el.style.height = `${fh * sourceSize.h * scale}px`;
+      const said = document.createElement("div"); said.className = "said" + (f.speaking && f.text ? "" : " quiet");
+      said.textContent = f.speaking ? (f.text ? f.text.toLowerCase() : "…") : "(not speaking)";
+      el.appendChild(said);
+      box.appendChild(el);
+    }
+  }
+  window.addEventListener("resize", () => renderFaces(lastFaces));
+
+  // ---- frames and utterances ---------------------------------------------------------------------
+  function setState(state) { dot.dataset.state = state; }
+  function cropFrame() {
+    const g = guideBox;
+    cropCtx.drawImage(source, g.x, g.y, g.w, g.h, 0, 0, W, H);
+    const img = cropCtx.getImageData(0, 0, W, H).data;
+    const out = new Float32Array(W * H * 3);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4, o = (x * H + y) * 3;
+      out[o] = img[i] / 255; out[o + 1] = img[i + 1] / 255; out[o + 2] = img[i + 2] / 255;
+    }
+    return out;
+  }
+  const PRE = 10, POST = 8, STILL_LOCAL = 12, MAX_LOCAL = 75, STILL_SERVER = 20, MAX_SERVER = 250, MIN_SERVER = 25;
+  let MAX = MAX_LOCAL, STILL = STILL_LOCAL;
+  let utter = null, last = null, preRoll = [], preRollFull = [], quiet = 0.004, anyUtterance = false;
+  const recent = [], lastFrames = [], history = [];
+  // The still level of this camera: the 15th percentile of the last four seconds of motion,
+  // which stays low through speech because speech has pauses.
+  const stillLevel = (m) => { history.push(m); if (history.length > 100) history.shift(); const s = [...history].sort((a, b) => a - b); return s[Math.floor(s.length * 0.15)]; };
+  const motionOf = (a, b) => { if (!a) return 0; let s = 0; for (let i = 0; i < a.length; i += 3) s += Math.abs(a[i] - b[i]); return s / (a.length / 3); };
+  const smoothed = (m) => { recent.push(m); if (recent.length > 5) recent.shift(); return [...recent].sort((a, b) => a - b)[recent.length >> 1]; };
+  let busy = Promise.resolve();
+  const queue = (fn) => (busy = busy.then(fn).catch((e) => console.error(e)));
+
+  function onFrame() {
+    if (!ready || !source || !guideBox) return;
+    // A look every 150 ms, or less often on a device where a look takes long (a third of a core at most).
+    if (autoGuide && faceReady && !facePending && !guide.hidden && performance.now() - lastFaceAt >= Math.max(FACE_EVERY_MS, 3 * (debug.faceMs || 0))) { const f = findFaces(); if (f) f.then(applyFaces); }
+    const data = cropFrame();
+    const onServer = serverOn();
+    MAX = onServer ? MAX_SERVER : MAX_LOCAL; STILL = onServer ? STILL_SERVER : STILL_LOCAL;
+    const full = onServer ? fullFrame() : null;
+    if (mode === "file") { lastFrames.push(data); if (lastFrames.length > MAX) lastFrames.shift(); }
+    let motion = smoothed(motionOf(last, data));
+    // With a server, any face's lips start a sentence (it reads each face on its own).
+    if (onServer && mouths.length) {
+      let other = 0;
+      for (const m of mouths) { other = Math.max(other, mouthMotion(m)); if (m.el) m.el.classList.toggle("moving", m.motion > Math.max(quiet * 2.5, 0.005)); }
+      debug.otherMotion = other;
+      motion = Math.max(motion, other);
+    }
+    last = data;
+    quiet = stillLevel(motion);
+    const moving = motion > Math.max(quiet * 2.5, 0.005);
+    debug.frames++; debug.lastMotion = motion; debug.quiet = quiet;
+    if (debug.trace && debug.trace.length < 400) debug.trace.push(+motion.toFixed(4));
+    if (!utter) {
+      preRoll.push(data); if (preRoll.length > PRE) preRoll.shift();
+      if (full) { preRollFull.push(full); if (preRollFull.length > PRE) preRollFull.shift(); }
+      if (moving) {
+        utter = { frames: [...preRoll], full: [...preRollFull], onServer, sent: 0, still: 0, reads: 0, finished: false, startedAt: performance.now() - (preRoll.length / FPS) * 1000 };
+        anyUtterance = true; preRoll = []; preRollFull = []; debug.started++;
+        worker.postMessage({ type: "reset" });
+        setState("listening");
+        show([], false);
+      }
+      return;
+    }
+    utter.frames.push(data);
+    if (full) utter.full.push(full);
+    utter.still = moving ? 0 : utter.still + 1;
+    const done = utter.still >= STILL || utter.frames.length >= MAX;
+    const u = utter;
+    if (u.onServer) {
+      if (done) { utter = null; u.finished = true; u.endedAt = performance.now() - (Math.max(0, u.still - POST) / FPS) * 1000; queue(() => readWithServer(u)); }
+      return;
+    }
+    queue(async () => {
+      while (u.sent < u.frames.length) { await sendFrame(u.sent, u.frames[u.sent].slice()); u.sent++; }
+      const n = u.frames.length;
+      if (done && !u.finished) {
+        u.finished = true;
+        setState("reading");
+        const r = await read(0, Math.max(0, Math.min(n - 1, n - u.still + POST - 1)), true);
+        debug.finished++; debug.lastWords = r.words.map((w) => w.raw).join(" ");
+        show(r.words, true);
+        setState("idle");
+      } else if (!u.finished && n - u.reads >= 8 && perFrameMs < 60) {
+        u.reads = n;
+        const r = await read(0, n - 1, false);
+        debug.reads++;
+        show(r.words, false);
+      }
+    });
+    if (done) utter = null;
+  }
+
+  const uttId = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
+  async function readWithServer(u) {
+    setState("reading");
+    showText("…", true); showHeard(null);
+    const utt = uttId();
+    lastHeard = null;
+    // The sound of the same stretch goes in parallel: the microphone's, or a clip's own.
+    const wav = u.sound ? u.sound.wav : improve && mic && serverHears() && mode === "camera" ? micWav(u.startedAt - 400, (u.endedAt || performance.now()) + 300) : null;
+    const heardFrom = wav ? hearOnServer(wav, utt) : u.sound && u.sound.clip ? hearOnServer(u.sound.clip, utt, u.sound.span) : null;
+    const hearing = heardFrom ? heardFrom.then((h) => { lastHeard = h; debug.server.lastHeard = h; return h; }).catch((e) => { debug.server.lastHearError = e.message; return null; }) : null;
+    let lips = "";
+    try {
+      const keep = Math.max(0, Math.min(u.full.length, u.full.length - u.still + POST));
+      if (keep < MIN_SERVER) { showText("(too short — say a whole sentence)", true); setState("idle"); return; }
+      const blobs = await Promise.all(u.full.slice(0, keep));
+      debug.server.sent++;
+      const r = await readOnServer(blobs, utt);
+      debug.server.lastText = r.text; debug.server.lastHow = r.how; debug.server.lastLearned = r.learned || null; debug.server.lastFaces = r.faces || null;
+      renderFaces(r.faces || null);
+      lips = r.text || "";
+      lastRead = { id: r.id || null, raw: lips, utt, how: r.how || "model" };
+      const learning = !!(improve && hearing);
+      if (r.how === "still") showText("(the lips did not move — nothing to read)", true);
+      else if (r.how === "learned") { showText(lips, false); showNote("↺ one of your phrases"); }
+      else if (r.how === "unmatched") showText(learning ? "(a new phrase — learned from its sound)" : "(not one of your phrases)", true);
+      else if (r.how === "none") showText(learning ? "(your first phrase in this language — learned from its sound)" : "(no lip-reading for this language yet — see ? for how it learns your phrases)", true);
+      else showText(lips ? lips.toLowerCase() : "(nothing read)", false);
+      sub.classList.toggle("tappable", !!lips);
+    } catch (e) {
+      debug.server.lastError = e.message;
+      showText(`server: ${e.message}`, true);
+    }
+    setState("idle");
+    if (hearing) {
+      const h = await hearing;
+      if (h && lastRead && lastRead.utt === utt) showHeard(h, lips);
+      if (!hasModel(language)) refreshPhrases();
+    }
+  }
+  function showNote(text) { const el = $("heard"); el.hidden = false; el.textContent = text; }
+  // Tap the subtitle of a server reading to fix it; the fix (or "as read") goes
+  // back to the server for the sample it kept, when it kept one.
+  let fixing = false;
+  async function sendFeedback(corrected) {
+    if (!lastRead || !server) return;
+    const sent = { id: lastRead.id, raw: lastRead.raw, corrected };
+    debug.server.lastFeedback = sent;
+    if (!lastRead.id) return;
+    try {
+      await fetch(server.replace(/\/$/, "") + "/feedback", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, serverToken ? { Authorization: `Bearer ${serverToken}` } : {}), body: JSON.stringify(sent) });
+    } catch {}
+  }
+  function openFix() {
+    if (fixing || !lastRead || !lastRead.raw) return;
+    fixing = true;
+    const box = document.createElement("div"); box.className = "fix";
+    const input = document.createElement("input"); input.value = lastRead.raw.toLowerCase(); input.setAttribute("aria-label", "what you said");
+    const ok = document.createElement("button"); ok.textContent = "✓"; ok.setAttribute("aria-label", "save the correction");
+    const cancel = document.createElement("button"); cancel.textContent = "✕"; cancel.className = "quiet"; cancel.setAttribute("aria-label", "cancel");
+    const finish = (text) => { fixing = false; if (text !== null) { showText(text, false); sub.classList.add("tappable"); sendFeedback(text); } else { showText(lastRead.raw.toLowerCase(), false); sub.classList.add("tappable"); } };
+    ok.addEventListener("click", () => finish(input.value.trim()));
+    cancel.addEventListener("click", () => finish(null));
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") finish(input.value.trim()); if (e.key === "Escape") finish(null); });
+    box.append(input, ok, cancel);
+    sub.replaceChildren(box); sub.classList.remove("tappable");
+    input.focus(); input.select();
+  }
+  sub.addEventListener("click", (e) => { if (sub.classList.contains("tappable") && !e.target.closest(".fix")) openFix(); });
+  // A status ("…", "reading the clip…") or a new sentence takes the subtitle's
+  // place: a reading that was there moves up into the crawl first.
+  function showText(text, dim) {
+    if (dim) archive();
+    sub.replaceChildren();
+    const s = document.createElement("span"); if (dim) s.className = "forming"; s.textContent = text; sub.appendChild(s);
+    keepable = !dim && !!text;
+    if (!dim) say.hidden = true;
+  }
+  function show(words, final) {
+    if (!final && !words.length) archive();
+    keepable = !!(final && words.length);
+    const settled = final ? words : words.slice(0, Math.max(0, words.length - 1));
+    const forming = final ? [] : words.slice(-1);
+    sub.replaceChildren();
+    for (const w of settled) { const s = document.createElement("span"); if (w.confidence < 0.5) s.className = "u"; s.textContent = (w.confidence < 0.5 ? `[${w.text}?]` : w.text) + " "; sub.appendChild(s); }
+    for (const w of forming) { const s = document.createElement("span"); s.className = "forming"; s.textContent = w.raw; sub.appendChild(s); }
+    if (final && words.length) say.hidden = true;
+  }
+  // ---- the subtitles that were: up the screen, smaller and fainter as they age ----------------------
+  // A reading stays the subtitle until the next sentence starts; then it moves up
+  // into the crawl, with what was heard under it, and shrinks and fades there over
+  // three minutes, the older the further up (like the opening of Star Wars).
+  const crawl = $("crawl"), plane = $("plane");
+  const CRAWL_LINES = 6, CRAWL_SECONDS = 180;
+  let keepable = false;   // the subtitle (or the heard line under it) holds a reading worth keeping
+  function archive() {
+    if (!keepable || fixing) return;
+    keepable = false;
+    const heardEl = $("heard"), said = sub.textContent.trim(), heard = !heardEl.hidden && heardEl.textContent.trim();
+    if (!said && !heard) return;
+    const line = document.createElement("div"); line.className = "line"; line.dir = "auto"; line.dataset.t = String(Date.now());
+    if (said) { const d = document.createElement("div"); for (const n of sub.childNodes) d.appendChild(n.cloneNode(true)); line.appendChild(d); }
+    if (heard) { const d = document.createElement("div"); d.className = "hd"; for (const n of heardEl.childNodes) d.appendChild(n.cloneNode(true)); line.appendChild(d); }
+    plane.appendChild(line);
+    heardEl.hidden = true; heardEl.replaceChildren();
+    while (plane.children.length > CRAWL_LINES) plane.firstElementChild.remove();
+    ageCrawl();
+  }
+  function ageCrawl() {
+    const now = Date.now(), lines = [...plane.children];
+    lines.forEach((l, i) => {
+      const age = (now - Number(l.dataset.t)) / 1000, back = lines.length - 1 - i;   // back: 0 for the newest
+      if (age >= CRAWL_SECONDS) { l.remove(); return; }
+      const t = age / CRAWL_SECONDS;
+      l.style.fontSize = `${Math.max(0.4, 0.9 - 0.08 * back - 0.3 * t).toFixed(3)}em`;
+      l.style.opacity = `${Math.max(0, (0.9 - 0.13 * back) * (1 - t * t)).toFixed(3)}`;
+    });
+    crawl.hidden = !plane.children.length;
+  }
+  setInterval(ageCrawl, 1000);
+
+  // ---- camera, on load ------------------------------------------------------------------------------
+  let rafId = 0, nextT = 0;
+  async function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return noCamera("This viewer has no camera access.");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 25 } } });
+      cam.srcObject = stream;
+      await cam.play();
+    } catch (e) {
+      return noCamera(e && e.name === "NotAllowedError" ? "Camera permission was refused." : "The camera could not be opened here.");
+    }
+    if (!cam.videoWidth) await new Promise((r) => cam.addEventListener("loadedmetadata", r, { once: true }));
+    mode = "camera"; source = cam; mirror = true;
+    sourceSize = { w: cam.videoWidth, h: cam.videoHeight }; fullCanvas.width = 0;
+    msg.hidden = true; cam.hidden = false; view.hidden = true;
+    cropCanvas.hidden = dot.hidden = $("helpBtn").hidden = say.hidden = false;
+    defaultGuide();
+    setState("idle");
+    nextT = performance.now();
+    const loop = (now) => {
+      rafId = requestAnimationFrame(loop);
+      if (now >= nextT) { nextT += 1000 / FPS; if (now - nextT > 200) nextT = now; onFrame(); }
+    };
+    rafId = requestAnimationFrame(loop);
+  }
+  function noCamera(why) {
+    msg.hidden = false;
+    msg.replaceChildren();
+    const line = document.createElement("div"); line.textContent = why;
+    const retry = document.createElement("button"); retry.textContent = "Open the camera"; retry.addEventListener("click", startCamera);
+    const alt = document.createElement("label"); alt.className = "small"; alt.textContent = "or record a clip and open it";
+    const input = document.createElement("input"); input.type = "file"; input.accept = "video/*"; input.setAttribute("capture", "user"); input.style.display = "none";
+    input.addEventListener("change", (e) => { const f = e.target.files[0]; if (f) startFile(f); });
+    alt.appendChild(input);
+    const hint = document.createElement("div"); hint.className = "small";
+    hint.textContent = window.isSecureContext ? "Check that this browser is allowed to use the camera, then try again."
+      : "A camera needs an https page: open https://thelip.ai/.";
+    msg.append(line, retry, alt, hint);
+    $("helpBtn").hidden = false;
+  }
+
+  // ---- a clip: plays at the speed thelip reads it -------------------------------------------------------
+  async function startFile(file) {
+    if (rafId) cancelAnimationFrame(rafId);
+    if (cam.srcObject) { cam.srcObject.getTracks().forEach((t) => t.stop()); cam.srcObject = null; }
+    $("sheet").hidden = true;
+    renderFaces(null);
+    mode = "file"; mirror = false;
+    const url = URL.createObjectURL(file);
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = url;
+    // In the page, out of sight: iOS Safari decodes the frames of a video it can see.
+    v.setAttribute("playsinline", ""); v.setAttribute("muted", "");
+    v.style.cssText = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none";
+    document.body.appendChild(v);
+    const cleanup = () => { v.remove(); URL.revokeObjectURL(url); };
+    showText("opening the clip…", true); setState("reading");
+    try {
+      await new Promise((res, rej) => {
+        v.onloadedmetadata = res; v.onerror = () => rej(new Error("cannot decode this video"));
+        setTimeout(() => rej(new Error("no answer from the video decoder")), 15000);
+      });
+    } catch (e) { cleanup(); return noCamera(`This video cannot be opened here (${e.message}).`); }
+    // iOS Safari loads no frame data until a video has played; a muted inline play
+    // is allowed. Whatever play() does, the clip goes on after at most a second.
+    try { await Promise.race([v.play(), new Promise((res) => setTimeout(res, 1000))]); } catch {}
+    v.pause();
+    // A recording made in a browser (MediaRecorder) often does not say how long it
+    // is until the player has looked at its end: ask it to, once.
+    if (!isFinite(v.duration)) {
+      await new Promise((res) => {
+        const t = setTimeout(res, 4000);
+        v.addEventListener("durationchange", function f() { if (isFinite(v.duration)) { clearTimeout(t); v.removeEventListener("durationchange", f); res(); } });
+        v.currentTime = 1e7;
+      });
+    }
+    if (!isFinite(v.duration) || v.duration <= 0) { cleanup(); return noCamera("This video does not say how long it is; try saving it again or another clip."); }
+    const duration = Math.min(v.duration, 120);   // two minutes at most
+    source = v; sourceSize = { w: v.videoWidth, h: v.videoHeight }; fullCanvas.width = 0;
+    msg.hidden = true; cam.hidden = true; view.hidden = false;
+    view.width = v.videoWidth; view.height = v.videoHeight; view.style.objectFit = "contain";
+    const vctx = view.getContext("2d");
+    cropCanvas.hidden = dot.hidden = $("helpBtn").hidden = false; say.hidden = true;
+    defaultGuide();
+    utter = null; last = null; preRoll = []; anyUtterance = false; recent.length = 0; lastFrames.length = 0;
+    worker.postMessage({ type: "reset" });
+    sub.replaceChildren();
+    // A seek that never reports back (it happens on iOS) does not stop the clip.
+    const seekTo = (t) => new Promise((res) => {
+      let settled = false;
+      const done = () => { if (settled) return; settled = true; clearTimeout(timer); v.removeEventListener("seeked", done); res(); };
+      const timer = setTimeout(done, 2500);
+      v.addEventListener("seeked", done); v.currentTime = t;
+    });
+    const total = Math.max(1, Math.floor(duration * FPS));
+    if (serverOn()) {
+      // With a server: the whole clip, in windows of up to MAX_SERVER frames, read
+      // there; the server finds the faces, so no oval and no motion detection needed.
+      guide.hidden = true;
+      const texts = [];
+      let blobs = [], first = 0;
+      // With the sentences kept (the reader agreed), the clip's own sound is written down too:
+      // taken out here when the browser can, else the clip goes to the server.
+      // (Decoding a long clip's sound whole would take hundreds of MB here.)
+      const sound = improve && serverHears() && v.duration <= 240 && file.size <= 250e6 ? await clipAudio(file) : null;
+      const sendClip = improve && serverHears() && !sound && file.size <= 60e6;
+      debug.server.clipSound = sound ? "browser" : sendClip ? "server" : "none";
+      const flush = async () => {
+        if (blobs.length >= MIN_SERVER) {
+          const span = [first / FPS, (first + blobs.length) / FPS];
+          const u = { full: blobs, still: 0, onServer: true, finished: true, startedAt: 0,
+                      sound: sound ? { wav: wavOf(sound.samples, sound.rate, span[0], span[1]) } : sendClip ? { clip: file, span } : null };
+          await readWithServer(u);
+          if (lastRead && lastRead.raw) texts.push(lastRead.how === "model" ? lastRead.raw.toLowerCase() : lastRead.raw);
+        }
+        first += blobs.length;
+        blobs = [];
+      };
+      for (let i = 0; i < total; i++) {
+        if (source !== v) { cleanup(); return; }
+        await seekTo(i / FPS);
+        vctx.drawImage(v, 0, 0);
+        blobs.push(fullFrame());
+        if (i % 5 === 0) showText(`reading the clip… ${Math.round((100 * i) / total)}%`, true);
+        if (blobs.length >= MAX_SERVER) await flush();
+      }
+      await flush();
+      // Each stretch's reading went up into the crawl as the next was read; the last is the subtitle.
+      if (!texts.length && !sub.textContent.trim()) showText("(the clip is too short to read)", true);
+      debug.server.clipTexts = texts;
+      debug.server.fileFrames = total;
+      setState("idle");
+      cleanup();
+      return;
+    }
+    // The finder puts the oval on the mouth before any frame is read: where it is over
+    // the first two seconds (a frame every half second; the median of them).
+    if (autoGuide && faceReady) {
+      for (let t = 0; t < Math.min(duration, 2.9); t += 0.48) {
+        await seekTo(t);
+        const found = findFaces();
+        if (found) applyFaces(await found, true);
+      }
+    }
+    // A clip no longer than a sentence (three seconds, as GRID's) is read whole, the way
+    // LipNet was trained; a longer one sentence by sentence, as the camera is.
+    const whole = total <= MAX_LOCAL;
+    for (let i = 0; i * (1 / FPS) < duration; i++) {
+      if (source !== v) { cleanup(); return; }
+      await seekTo(i / FPS);
+      vctx.drawImage(v, 0, 0);
+      if (whole) {
+        lastFrames.push(cropFrame());
+        if (i % 5 === 0) showText(`reading the clip… ${Math.round((100 * i) / total)}%`, true);
+        continue;
+      }
+      onFrame();
+      await busy;
+    }
+    if (utter && utter.onServer) { const u = utter; utter = null; u.finished = true; await queue(() => readWithServer(u)); }
+    else if (utter || !anyUtterance) {
+      const u = utter ?? { frames: [], sent: 0 };
+      utter = null;
+      if (!anyUtterance) { u.frames = lastFrames.slice(-MAX); worker.postMessage({ type: "reset" }); }
+      if (u.frames.length > 2) {
+        await queue(async () => {
+          while (u.sent < u.frames.length) { await sendFrame(u.sent, u.frames[u.sent].slice()); u.sent++; }
+          setState("reading");
+          const r = await read(0, u.frames.length - 1, true);
+          show(r.words, true);
+        });
+      }
+    }
+    setState("idle");
+    cleanup();
+  }
+  for (const id of ["file", "file2"]) $(id).addEventListener("change", (e) => { const f = e.target.files[0]; if (f) startFile(f); e.target.value = ""; });
+
+  // ---- a sentence to say, and the sheet ------------------------------------------------------------------
+  const G = { c: ["bin", "lay", "place", "set"], k: ["blue", "green", "red", "white"], p: ["at", "by", "in", "with"],
+    l: "abcdefghijklmnopqrstuvxyz".split(""), d: ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"], a: ["again", "now", "please", "soon"] };
+  const pick = (x) => x[Math.floor(Math.random() * x.length)];
+  const langName = () => (LANGS.find(([c]) => c === language) || ["en", "English"])[1];
+  const newSentence = () => { $("sentence").textContent = serverOn() ? (hasModel(language) ? `anything, in ${langName()}` : `a phrase in ${langName()}`) : [pick(G.c), pick(G.k), pick(G.p), pick(G.l), pick(G.d), pick(G.a)].join(" "); say.hidden = false; };
+  say.addEventListener("click", newSentence);
+  $("helpBtn").addEventListener("click", () => { $("sheet").hidden = false; $("consent").hidden = true; });
+  $("serverUse").addEventListener("click", () => {
+    const v = $("serverUrl").value.trim().replace(/\/$/, "");
+    if (!/^https?:\/\//.test(v)) { serverInfo = { ok: false, error: "the address starts with http:// or https://" }; renderServer(); return; }
+    server = v; serverExplicit = true; try { localStorage.setItem("thelip.server", v); } catch {}
+    checkServer();
+  });
+  $("serverOff").addEventListener("click", () => { server = null; serverToken = null; serverInfo = null; serverExplicit = false; try { localStorage.removeItem("thelip.server"); localStorage.removeItem("thelip.token"); } catch {} renderFaces(null); renderServer(); newSentence(); discoverServer(); });
+  $("auto").addEventListener("change", (e) => setAuto(e.target.checked, true));
+  $("lang").addEventListener("change", (e) => { setLanguage(e.target.value); newSentence(); });
+  $("closeSheet").addEventListener("click", () => { $("sheet").hidden = true; askConsent(); });
+
+  const debug = { frames: 0, started: 0, finished: 0, reads: 0, lastMotion: 0, quiet: 0, lastWords: null, trace: [], server: { sent: 0, lastText: null, lastError: null, lastFeedback: null, lastHeard: null, lastHearError: null } };
+  window.lipLive = { get ready() { return ready; }, get text() { return sub.textContent; }, get heard() { return $("heard").hidden ? null : $("heard").textContent; }, get server() { return serverOn() ? server : null; },
+    get lastRead() { return lastRead; }, get lastHeard() { return lastHeard; }, get mic() { return mic ? mic.ctx.state : null; }, get language() { return language; },
+    get profile() { return storedProfile(); }, get phrases() { return phrases; }, get crawl() { return [...plane.children].map((l) => l.textContent.trim()); },
+    get auto() { return autoGuide; }, get improve() { return improve; }, get consent() { return consent; }, get faceReady() { return faceReady; }, get guide() { return guideBox && { x: Math.round(guideBox.x), y: Math.round(guideBox.y), w: Math.round(guideBox.w), h: Math.round(guideBox.h) }; },
+    get mouths() { return mouths.map((m) => ({ x: Math.round(m.box.x), y: Math.round(m.box.y), w: Math.round(m.box.w), h: Math.round(m.box.h), moving: !!(m.el && m.el.classList.contains("moving")) })); },
+    startFile, openFix, debug };
+  // The oval finds the mouth unless it was placed by hand (and kept so), or the
+  // address gives it (#gX-Y-W-H: tests, and anyone who wants it fixed).
+  try { autoGuide = localStorage.getItem("thelip.auto") !== "0"; } catch {}
+  if (/^#g\d+-\d+-\d+-\d+$/.test(location.hash)) autoGuide = false;
+  loadServer();
+  renderTally();
+  renderAuto();
+  bootFaces();
+  bootWorker();
+})();
+</script>

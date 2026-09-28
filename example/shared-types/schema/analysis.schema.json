@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lipreader.dev/schema/analysis.schema.json",
+  "title": "AnalysisResult",
+  "description": "What one analysis of one video produced: anonymous person tracks, timestamped transcript segments attributed to them, and what was used to produce them. Every transcript is probabilistic; `notice` says so and must be shown to users.",
+  "type": "object",
+  "required": ["version", "video", "mode", "language", "tracks", "segments", "models", "timing", "notice"],
+  "properties": {
+    "version": { "type": "string", "const": "1" },
+    "video": {
+      "type": "object",
+      "required": ["duration", "fps", "width", "height"],
+      "properties": {
+        "source": { "type": "string", "description": "file name or URL as given; never a path on the server" },
+        "duration": { "type": "number", "minimum": 0 },
+        "fps": { "type": "number", "exclusiveMinimum": 0 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "sampledFps": { "type": "number", "description": "the frame rate the pipeline actually looked at" }
+      }
+    },
+    "mode": { "$ref": "#/$defs/Mode" },
+    "language": {
+      "type": "object",
+      "required": ["requested", "used", "detection"],
+      "properties": {
+        "requested": { "type": "string", "description": "BCP-47 code or \"auto\"" },
+        "used": { "type": ["string", "null"], "description": "the language the models actually read, null when nothing could be read" },
+        "detection": {
+          "type": "string",
+          "enum": ["requested", "assumed", "audio-detected", "unavailable"],
+          "description": "assumed = no visual language identification exists, the only available model's language was used; audio-detected = an ASR model identified it from sound (never in visual-only mode)"
+        },
+        "note": { "type": "string" }
+      }
+    },
+    "tracks": { "type": "array", "items": { "$ref": "#/$defs/PersonTrack" } },
+    "segments": { "type": "array", "items": { "$ref": "#/$defs/TranscriptSegment" } },
+    "models": {
+      "type": "object",
+      "properties": {
+        "faceDetector": { "type": "string" },
+        "vsr": { "$ref": "#/$defs/ModelInfo" },
+        "asr": { "$ref": "#/$defs/ModelInfo" }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "required": ["processingSeconds", "realtimeFactor"],
+      "properties": {
+        "processingSeconds": { "type": "number" },
+        "realtimeFactor": { "type": "number", "description": "processing seconds per second of video; < 1 is faster than real time" },
+        "stages": { "type": "object", "additionalProperties": { "type": "number" } }
+      }
+    },
+    "notice": { "type": "string" },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "Mode": { "type": "string", "enum": ["visual", "audiovisual", "audio-attributed"] },
+    "Box": {
+      "type": "object",
+      "required": ["x", "y", "w", "h"],
+      "properties": {
+        "x": { "type": "number" }, "y": { "type": "number" }, "w": { "type": "number" }, "h": { "type": "number" }
+      },
+      "description": "pixels in the source frame; x,y top-left"
+    },
+    "ModelInfo": {
+      "type": "object",
+      "required": ["name", "license"],
+      "properties": {
+        "name": { "type": "string" },
+        "license": { "type": "string" },
+        "languages": { "type": "array", "items": { "type": "string" } },
+        "vocabulary": { "type": "string", "description": "\"open\" or a description of a closed vocabulary" },
+        "note": { "type": "string" }
+      }
+    },
+    "Word": {
+      "type": "object",
+      "required": ["text", "start", "end", "confidence", "uncertain"],
+      "properties": {
+        "text": { "type": "string" },
+        "start": { "type": "number" },
+        "end": { "type": "number" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "uncertain": { "type": "boolean", "description": "true when confidence is below the threshold; renderers show the word marked, never as certain text" },
+        "raw": { "type": "string", "description": "what the model emitted before dictionary correction, when different" }
+      }
+    },
+    "TranscriptSegment": {
+      "type": "object",
+      "required": ["id", "trackId", "start", "end", "text", "words", "language", "confidence", "mode", "model"],
+      "properties": {
+        "id": { "type": "string" },
+        "trackId": { "type": "integer" },
+        "start": { "type": "number" },
+        "end": { "type": "number" },
+        "text": { "type": "string", "description": "words joined; uncertain words wrapped as [word?]" },
+        "words": { "type": "array", "items": { "$ref": "#/$defs/Word" } },
+        "language": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "mode": { "$ref": "#/$defs/Mode" },
+        "model": { "type": "string" }
+      }
+    },
+    "SpeakingSpan": {
+      "type": "object",
+      "required": ["start", "end", "probability"],
+      "properties": {
+        "start": { "type": "number" }, "end": { "type": "number" },
+        "probability": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "PersonTrack": {
+      "type": "object",
+      "required": ["trackId", "label", "firstSeen", "lastSeen", "keyframes", "speaking", "confidence"],
+      "description": "one visible person, identified only within this video by an arbitrary number; no identity, no embedding that could be matched elsewhere",
+      "properties": {
+        "trackId": { "type": "integer" },
+        "label": { "type": "string" },
+        "firstSeen": { "type": "number" },
+        "lastSeen": { "type": "number" },
+        "keyframes": {
+          "type": "array",
+          "description": "where the face was, sampled; enough to draw a box that follows the person",
+          "items": {
+            "type": "object",
+            "required": ["t", "box"],
+            "properties": { "t": { "type": "number" }, "box": { "$ref": "#/$defs/Box" }, "mouth": { "$ref": "#/$defs/Box" } }
+          }
+        },
+        "speaking": { "type": "array", "items": { "$ref": "#/$defs/SpeakingSpan" } },
+        "detectedLanguage": { "type": ["string", "null"] },
+        "segmentIds": { "type": "array", "items": { "type": "string" } },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1, "description": "how sure the tracker is this was one person throughout" }
+      }
+    }
+  }
+}

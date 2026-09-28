@@ -5,9 +5,35 @@
 //! pixels; the only allocations are the result buffers, whose size is
 //! data-dependent.
 
-use image::{Rgba, RgbaImage};
+use image::{Pixel, Rgba, RgbaImage};
 
 use crate::color::{is_color_pixel, is_text_pixel};
+
+/// Pixels `x0..=x1` of row `y`, with their x coordinate, read straight from
+/// the image buffer.
+///
+/// `get_pixel` bounds-checks every access and recomputes the row offset
+/// each time; scanning a row through one slice does neither, which is most
+/// of the cost of a full-frame scan. The caller guarantees `y < height` and
+/// `x0 <= x1 < width`.
+#[inline]
+pub(crate) fn row_pixels(
+    image: &RgbaImage,
+    y: u32,
+    x0: u32,
+    x1: u32,
+) -> impl Iterator<Item = (u32, &Rgba<u8>)> {
+    let width = image.width() as usize;
+    let start = (y as usize * width + x0 as usize) * 4;
+    let end = (y as usize * width + x1 as usize + 1) * 4;
+    image.as_raw()[start..end]
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|pixel| Rgba::from_slice(pixel.as_slice()))
+        .enumerate()
+        .map(move |(offset, pixel)| (x0 + offset as u32, pixel))
+}
 
 /// A generic rectangle in image coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,11 +83,17 @@ where
     F: Fn(&Rgba<u8>) -> bool,
 {
     let mut result = Vec::new();
+    if y >= image.height() || image.width() == 0 {
+        return result;
+    }
     let mut start = None;
-    let x1 = x1.min(image.width().saturating_sub(1));
+    let x1 = x1.min(image.width() - 1);
+    if x0 > x1 {
+        return result;
+    }
 
-    for x in x0..=x1 {
-        let is_target = predicate(image.get_pixel(x, y));
+    for (x, pixel) in row_pixels(image, y, x0, x1) {
+        let is_target = predicate(pixel);
         if is_target {
             if start.is_none() {
                 start = Some(x);
@@ -226,10 +258,13 @@ pub fn find_text_block(image: &RgbaImage, region: Rect) -> Option<Rect> {
 
     let mut bounds: Option<(u32, u32, u32, u32)> = None;
     let mut count = 0u32;
+    if region.x >= x_end {
+        return None;
+    }
 
     for y in region.y..y_end {
-        for x in region.x..x_end {
-            if !is_text_pixel(image.get_pixel(x, y)) {
+        for (x, pixel) in row_pixels(image, y, region.x, x_end - 1) {
+            if !is_text_pixel(pixel) {
                 continue;
             }
             count += 1;
@@ -583,28 +618,86 @@ pub fn find_color_regions(
 /// pixels so alpha-blended overlays do not skew the histogram. Shared by
 /// every detector that looks for a solid-color UI panel so they don't each
 /// reimplement the same histogram.
+///
+/// Ties go to the lowest bucket in `(r, g, b)` order, so the answer is
+/// deterministic (a hash map made it depend on iteration order). A `step`
+/// of zero has no buckets and returns `None`.
 pub fn dominant_color_bucket(image: &RgbaImage, region: Rect, step: u8) -> Option<(u8, u8, u8)> {
-    use std::collections::HashMap;
-    let mut counts: HashMap<(u8, u8, u8), u32> = HashMap::new();
+    if step == 0 {
+        return None;
+    }
     let x_end = region.x.saturating_add(region.w).min(image.width());
     let y_end = region.y.saturating_add(region.h).min(image.height());
-
-    for y in region.y..y_end {
-        for x in region.x..x_end {
-            let pixel = image.get_pixel(x, y);
-            if pixel[3] < 200 {
-                continue;
-            }
-            let bucket = (pixel[0] / step, pixel[1] / step, pixel[2] / step);
-            *counts.entry(bucket).or_insert(0) += 1;
-        }
+    if region.x >= x_end || region.y >= y_end {
+        return None;
     }
 
+    // A dense histogram indexed by bucket: one increment per pixel, no
+    // hashing. Buckets per channel is 256/step rounded up, so a step of 8
+    // or more fits in at most 32^3 counters.
+    let per_channel = 255 / step as usize + 1;
+    let index = |pixel: &Rgba<u8>| {
+        let (r, g, b) = (
+            (pixel[0] / step) as usize,
+            (pixel[1] / step) as usize,
+            (pixel[2] / step) as usize,
+        );
+        (r * per_channel + g) * per_channel + b
+    };
+
+    if per_channel.pow(3) <= DENSE_HISTOGRAM_LIMIT {
+        let mut counts = vec![0u32; per_channel.pow(3)];
+        let mut any = false;
+        for y in region.y..y_end {
+            for (_, pixel) in row_pixels(image, y, region.x, x_end - 1) {
+                if pixel[3] >= 200 {
+                    counts[index(pixel)] += 1;
+                    any = true;
+                }
+            }
+        }
+        if !any {
+            return None;
+        }
+        // First maximum in index order, i.e. the lowest bucket on ties.
+        let (best, _) =
+            counts.iter().enumerate().fold(
+                (0, 0u32),
+                |best, (i, &c)| if c > best.1 { (i, c) } else { best },
+            );
+        let b = best % per_channel;
+        let g = (best / per_channel) % per_channel;
+        let r = best / (per_channel * per_channel);
+        return Some((r as u8, g as u8, b as u8));
+    }
+
+    // Very fine steps would need millions of counters; count sparsely.
+    use std::collections::BTreeMap;
+    let mut counts: BTreeMap<(u8, u8, u8), u32> = BTreeMap::new();
+    for y in region.y..y_end {
+        for (_, pixel) in row_pixels(image, y, region.x, x_end - 1) {
+            if pixel[3] >= 200 {
+                *counts
+                    .entry((pixel[0] / step, pixel[1] / step, pixel[2] / step))
+                    .or_insert(0) += 1;
+            }
+        }
+    }
     counts
         .into_iter()
-        .max_by_key(|(_, count)| *count)
+        .fold(
+            None,
+            |best: Option<((u8, u8, u8), u32)>, (bucket, count)| match best {
+                Some((_, top)) if top >= count => best,
+                _ => Some((bucket, count)),
+            },
+        )
         .map(|(bucket, _)| bucket)
 }
+
+/// Largest dense histogram [`dominant_color_bucket`] will allocate
+/// (a step of 3 or more stays under it).
+const DENSE_HISTOGRAM_LIMIT: usize = 1 << 21;
 
 /// Find the largest rectangle within `region` whose pixels quantize to
 /// `bucket` (see [`dominant_color_bucket`]). Used to locate a solid-color
@@ -843,6 +936,65 @@ mod tests {
         let rects = group_segments(rows, 4, 1);
         assert_eq!(rects.len(), 1, "split row forked the region: {rects:?}");
         assert_eq!((rects[0].x, rects[0].w, rects[0].h), (10, 30, 8));
+    }
+
+    #[test]
+    fn segment_row_is_safe_outside_the_image() {
+        let image = RgbaImage::from_pixel(10, 4, Rgba([255, 0, 0, 255]));
+        assert!(
+            segment_row(&image, 99, 0, 9, 1, |_| true).is_empty(),
+            "row past the bottom"
+        );
+        assert!(
+            segment_row(&image, 1, 8, 3, 1, |_| true).is_empty(),
+            "x0 past x1"
+        );
+        assert_eq!(
+            segment_row(&image, 1, 0, 500, 1, |_| true),
+            vec![(0, 9)],
+            "x1 clamped"
+        );
+    }
+
+    #[test]
+    fn dominant_color_bucket_is_deterministic_and_rejects_zero_step() {
+        let mut image = RgbaImage::from_pixel(20, 10, Rgba([200, 10, 10, 255]));
+        // Exactly half the region is blue: a tie that the answer must break
+        // the same way every time (lowest bucket first).
+        for y in 0..10 {
+            for x in 10..20 {
+                image.put_pixel(x, y, Rgba([10, 10, 200, 255]));
+            }
+        }
+        let region = Rect {
+            x: 0,
+            y: 0,
+            w: 20,
+            h: 10,
+        };
+        for _ in 0..5 {
+            assert_eq!(dominant_color_bucket(&image, region, 10), Some((1, 1, 20)));
+        }
+        assert_eq!(dominant_color_bucket(&image, region, 0), None);
+        // A fine step takes the sparse path and must agree with the dense one.
+        assert_eq!(
+            dominant_color_bucket(&image, region, 1),
+            Some((10, 10, 200))
+        );
+        let transparent = RgbaImage::new(8, 8);
+        assert_eq!(
+            dominant_color_bucket(
+                &transparent,
+                Rect {
+                    x: 0,
+                    y: 0,
+                    w: 8,
+                    h: 8
+                },
+                10
+            ),
+            None
+        );
     }
 
     #[test]

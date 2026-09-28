@@ -1,0 +1,19 @@
+# thelip-train, on a Linux GPU machine (CUDA): PyTorch with CUDA from PyPI,
+# Lightning for Auto-AVSR's trainer, faster-whisper for transcripts, yt-dlp
+# for fetching, mediapipe + OpenCV + scikit-image for the mouth crops.
+torch
+torchvision
+torchaudio
+pytorch-lightning>=2.0
+sentencepiece
+numpy<2
+mediapipe>=0.10.14
+opencv-python-headless
+scikit-image
+scipy
+six
+av
+gdown
+yt-dlp
+faster-whisper
+huggingface_hub
