@@ -82,7 +82,9 @@ def main() -> None:
         except (EOFError, ValueError):
             return
         try:
-            answer(transcriber.hear(wav, str(header.get("language", "en"))))
+            span = [header.get(k) for k in ("start", "end")]
+            span = [float(v) if isinstance(v, (int, float)) else None for v in span]
+            answer(transcriber.hear(wav, str(header.get("language", "en")), span[0], span[1]))
         except Exception as e:  # noqa: BLE001
             answer({"error": f"{type(e).__name__}: {e}"})
 

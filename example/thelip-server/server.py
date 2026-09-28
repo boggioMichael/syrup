@@ -29,7 +29,8 @@ Routes
     GET  /phrases?profile=&language=   the phrases learned for that reader and language
     POST /feedback          json: {"id": ..., "raw": ..., "corrected": ...}
                             -> {"ok": true}; the correction joins the kept crops
-    POST /hear              multipart: audio=<wav>, language=<code>, utt=<the read's utt>, improve=1
+    POST /hear              multipart: audio=<wav, or a clip with its sound>, language=<code>,
+                            utt=<the read's utt>, improve=1, start= and end= (seconds, optional)
                             -> {"heard": "hello there", "confidence": 0.8, "seconds": 2.1, "id": ...}
                             what the microphone heard (faster-whisper), written to the sample the
                             read with the same `utt` kept; the sound itself is dropped
@@ -572,15 +573,21 @@ def create_app(reader: Reader, token: Optional[str] = None, transcriber: Optiona
         if audio is None or not hasattr(audio, "read"):
             return JSONResponse({"error": "no audio"}, status_code=400)
         data = await audio.read()
-        if len(data) > 4_000_000:
-            return JSONResponse({"error": "at most 4 MB of audio"}, status_code=413)
+        if len(data) > 60_000_000:
+            return JSONResponse({"error": "at most 60 MB (a clip's sound is sent as the clip when the browser cannot take it out)"}, status_code=413)
+        span = []
+        for key in ("start", "end"):
+            try:
+                span.append(float(form.get(key)) if form.get(key) not in (None, "") else None)
+            except ValueError:
+                span.append(None)
         language = str(form.get("language", "en")).lower()[:8]
         if language not in LANGUAGES:
             return JSONResponse({"error": f"unknown language {language!r}"}, status_code=400)
         utt = str(form.get("utt", ""))[:32]
         started = time.time()
         try:
-            result = await _run(transcriber.hear, data, language)
+            result = await _run(transcriber.hear, data, language, span[0], span[1])
         except Exception as e:  # noqa: BLE001  (a bad wav, a model that failed to load)
             return JSONResponse({"error": f"could not hear: {type(e).__name__}: {e}"}, status_code=400)
         sample_id = None

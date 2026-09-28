@@ -64,6 +64,20 @@
   .sheet select option { color: #000; }
   .sheet .status.on { color: #7BE495; }
   .sheet .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  /* The subtitles that were: up the screen and away, smaller and fainter as they age (a Star Wars crawl). */
+  .crawl { width: 100%; max-width: 760px; max-height: 20vh; overflow: hidden; perspective: 260px; perspective-origin: 50% 100%; pointer-events: none;
+    display: flex; align-items: flex-end; justify-content: center;
+    -webkit-mask-image: linear-gradient(to top, #000 40%, transparent); mask-image: linear-gradient(to top, #000 40%, transparent); }
+  .plane { width: 100%; transform: rotateX(30deg); transform-origin: 50% 100%; display: flex; flex-direction: column; align-items: center; gap: .3em;
+    font: 700 clamp(18px, 5.4vw, 30px)/1.15 system-ui, sans-serif; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+  .plane .line { transition: opacity 1s linear, font-size .6s ease; text-wrap: balance; }
+  .plane .hd { font-weight: 500; font-size: .6em; color: var(--dim); }
+  .plane .hit, .plane .agree { color: var(--ok); }
+  .plane .wrong { color: var(--bad); }
+  .plane .forming, .plane .u { color: var(--dim); font-weight: 500; }
+  .plane .miss { color: var(--ink); text-decoration: underline 2px var(--bad); text-underline-offset: 3px; }
+  .plane .tag { font: 600 max(10px, .36em) system-ui, sans-serif; letter-spacing: .04em; color: var(--dim); vertical-align: middle; margin-inline-end: 8px; text-transform: uppercase; }
+  .plane .hd .tag { font-size: max(10px, .6em); }
   @media (prefers-reduced-motion: no-preference) { .dot[data-state="listening"] { animation: pulse 1s infinite; } }
   @keyframes pulse { 50% { opacity: .35; } }
 </style>
@@ -77,6 +91,7 @@
   <div class="dot" id="dot" data-state="idle" hidden></div>
   <button class="help" id="helpBtn" aria-label="about" hidden>?</button>
   <div class="bottom">
+    <div class="crawl" id="crawl" hidden><div class="plane" id="plane"></div></div>
     <div class="say" id="say" hidden>say <b id="sentence">set blue with e five now</b></div>
     <div class="sub" id="sub"></div>
     <div class="heard" id="heard" hidden></div>
@@ -84,7 +99,7 @@
   <div class="msg" id="msg"><div>Loading thelip&hellip;</div></div>
   <div class="sheet" id="sheet" hidden>
     <h1>thelip<span>.syrup</span></h1>
-    <div>Lips in the dashed oval, face still, then mouth a sentence. The words appear below as they are read. No audio is used and nothing leaves the phone, unless a server is set below (frames go there) and you turn on "keep my sentences" (the microphone too: then say the sentence out loud, so that it is written down and kept with what your lips did).</div>
+    <div>Lips in the dashed oval, face still, then mouth a sentence. The words appear below as they are read. No audio is used and nothing leaves the phone, unless a server is set below (frames go there) and you turn on "keep my sentences" (the microphone too, and an opened clip's sound: then say the sentence out loud, so that it is written down and kept with what your lips did).</div>
     <div><b>It knows 51 words, in one sentence shape:</b></div>
     <div class="mono">command &middot; colour &middot; preposition &middot; letter &middot; digit &middot; adverb<br>bin lay place set &middot; blue green red white &middot; at by in with &middot; a&ndash;z (no w) &middot; zero&ndash;nine &middot; again now please soon</div>
     <div>Drag the oval to your mouth; pinch to resize. Tap the sentence for another one.</div>
@@ -98,7 +113,7 @@
     <div class="status" id="langStatus"></div>
     <div><b>Help thelip improve</b></div>
     <label class="toggle"><input type="checkbox" id="improve"> Keep my sentences for training</label>
-    <div>Off, nothing is kept anywhere and the microphone stays off. On, the microphone is on too: the server hears each sentence, writes down what you said (speech recognition, which is far more reliable than lips) and keeps that text with what its model saw &mdash; 96&times;96 grey crops of the mouth, not the frames, not the face, not the sound, which is dropped once it is written down. Under the subtitle you see what was heard against what was read. That is the material for training a model on real phones and real speakers; if speech recognition got it wrong, tap the subtitle and fix it. In a language with no lip-reading model, it is also how the server learns your phrases: say one with sound once, and your lips alone read it after that. A random id this page keeps for itself goes with those sentences, so that only your own phrases are matched.</div>
+    <div>Off, nothing is kept anywhere and the microphone stays off. On, the microphone is on too: the server hears each sentence, writes down what you said (speech recognition, which is far more reliable than lips) and keeps that text with what its model saw &mdash; 96&times;96 grey crops of the mouth, not the frames, not the face, not the sound, which is dropped once it is written down. Under the subtitle you see what was heard against what was read. That is the material for training a model on real phones and real speakers; if speech recognition got it wrong, tap the subtitle and fix it. An opened clip's own sound is written down the same way, stretch by stretch. In a language with no lip-reading model, it is also how the server learns your phrases: say one with sound once (live, or in a clip), and your lips alone read it after that. A random id this page keeps for itself goes with those sentences, so that only your own phrases are matched.</div>
     <div class="status" id="micStatus"></div>
     <div class="status" id="tally"></div>
     <div id="speed"></div>
@@ -552,7 +567,7 @@ self.onmessage = (e) => {
     const l = langInfo(language);
     const n = phrases.language === language ? phrases.count : 0;
     $("langStatus").textContent = !serverOn() ? "" : !l ? "" : l.available ? `${l.quality}${l.loaded ? "" : " — loads on first use"}`
-      : `No lip-reading model for this language yet (${l.status || "none published"}). Meanwhile it reads your own phrases: say a sentence with "keep my sentences" on, the microphone writes it down, and the next time your lips alone read it. ${n ? `${n} phrase${n === 1 ? "" : "s"} learned so far.` : "None learned yet."}`;
+      : `No lip-reading model for this language yet (${l.status || "none published"}). Meanwhile it reads your own phrases: say a sentence with "keep my sentences" on (or open a clip with its sound), what is heard is written down, and the next time your lips alone read it. ${n ? `${n} phrase${n === 1 ? "" : "s"} learned so far.` : "None learned yet."}`;
   }
   function setLanguage(code) {
     language = code; try { localStorage.setItem("thelip.language", code); } catch {}
@@ -711,7 +726,28 @@ self.onmessage = (e) => {
     if (!parts.length) return null;
     let n = 0; for (const p of parts) n += p.length;
     const all = new Float32Array(n); let o = 0; for (const p of parts) { all.set(p, o); o += p.length; }
-    const ratio = mic.rate / MIC_RATE, out = new Int16Array(Math.floor(n / ratio));
+    return wavOf(all, mic.rate);
+  }
+  // A clip's own sound, mono, when the browser can take it out of the file
+  // (Chrome can for most; Safari for some): null otherwise, and the clip
+  // itself goes to the server, which takes the sound out there.
+  async function clipAudio(file) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    let ctx = null;
+    try {
+      const data = await file.arrayBuffer();
+      ctx = new Ctx();
+      const buf = await new Promise((res, rej) => { const p = ctx.decodeAudioData(data, res, rej); if (p && p.then) p.then(res, rej); });
+      const n = buf.length, ch = buf.numberOfChannels, mono = new Float32Array(n);
+      for (let c = 0; c < ch; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) mono[i] += d[i] / ch; }
+      return { samples: mono, rate: buf.sampleRate };
+    } catch { return null; } finally { try { ctx && ctx.close(); } catch {} }
+  }
+  function wavOf(all, rate, t0 = 0, t1 = Infinity) {
+    all = all.subarray(Math.max(0, Math.floor(t0 * rate)), Math.min(all.length, Math.ceil(t1 * rate)));
+    const n = all.length;
+    const ratio = rate / MIC_RATE, out = new Int16Array(Math.floor(n / ratio));
     for (let i = 0; i < out.length; i++) {
       const a = Math.floor(i * ratio), b = Math.max(a + 1, Math.floor((i + 1) * ratio));
       let sum = 0; for (let k = a; k < b; k++) sum += all[k];
@@ -725,12 +761,13 @@ self.onmessage = (e) => {
     new Int16Array(buf, 44).set(out);
     return new Blob([buf], { type: "audio/wav" });
   }
-  async function hearOnServer(blob, utt) {
+  async function hearOnServer(blob, utt, span) {
     const body = new FormData();
     body.append("language", language);
     body.append("utt", utt);
     if (improve) body.append("improve", "1");
-    body.append("audio", blob, "u.wav");
+    if (span) { body.append("start", String(span[0])); body.append("end", String(span[1])); }
+    body.append("audio", blob, blob.name || "u.wav");
     const r = await fetch(server.replace(/\/$/, "") + "/hear", { method: "POST", body, headers: auth() });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
@@ -775,6 +812,7 @@ self.onmessage = (e) => {
       const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = "👄 lips"; sub.appendChild(tag);
       lipsWords.forEach((w, i) => { const s = document.createElement("span"); s.className = al.lips[i] ? "hit" : "wrong"; s.textContent = w + " "; sub.appendChild(s); });
     }
+    keepable = true;
     const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = "🎤 heard"; el.appendChild(tag);
     heardWords.forEach((w, i) => { const s = document.createElement("span"); s.className = al.heard[i] ? "hit" : "miss"; s.textContent = w; el.append(s, " "); });
     const score = document.createElement("span"); score.className = "agree"; score.textContent = `— ${al.hits} of ${heardWords.length}`; el.appendChild(score);
@@ -976,9 +1014,10 @@ self.onmessage = (e) => {
     showText("…", true); showHeard(null);
     const utt = uttId();
     lastHeard = null;
-    // The sound of the same stretch goes in parallel, when the microphone is on.
-    const wav = improve && mic && serverHears() && mode === "camera" ? micWav(u.startedAt - 400, (u.endedAt || performance.now()) + 300) : null;
-    const hearing = wav ? hearOnServer(wav, utt).then((h) => { lastHeard = h; debug.server.lastHeard = h; return h; }).catch((e) => { debug.server.lastHearError = e.message; return null; }) : null;
+    // The sound of the same stretch goes in parallel: the microphone's, or a clip's own.
+    const wav = u.sound ? u.sound.wav : improve && mic && serverHears() && mode === "camera" ? micWav(u.startedAt - 400, (u.endedAt || performance.now()) + 300) : null;
+    const heardFrom = wav ? hearOnServer(wav, utt) : u.sound && u.sound.clip ? hearOnServer(u.sound.clip, utt, u.sound.span) : null;
+    const hearing = heardFrom ? heardFrom.then((h) => { lastHeard = h; debug.server.lastHeard = h; return h; }).catch((e) => { debug.server.lastHearError = e.message; return null; }) : null;
     let lips = "";
     try {
       const keep = Math.max(0, Math.min(u.full.length, u.full.length - u.still + POST));
@@ -993,8 +1032,8 @@ self.onmessage = (e) => {
       const learning = !!(improve && hearing);
       if (r.how === "still") showText("(the lips did not move — nothing to read)", true);
       else if (r.how === "learned") { showText(lips, false); showNote("↺ one of your phrases"); }
-      else if (r.how === "unmatched") showText(learning ? "(a new phrase — learned from the microphone)" : "(not one of your phrases)", true);
-      else if (r.how === "none") showText(learning ? "(your first phrase in this language — learned from the microphone)" : "(no lip-reading for this language yet — see ? for how it learns your phrases)", true);
+      else if (r.how === "unmatched") showText(learning ? "(a new phrase — learned from its sound)" : "(not one of your phrases)", true);
+      else if (r.how === "none") showText(learning ? "(your first phrase in this language — learned from its sound)" : "(no lip-reading for this language yet — see ? for how it learns your phrases)", true);
       else showText(lips ? lips.toLowerCase() : "(nothing read)", false);
       sub.classList.toggle("tappable", !!lips);
     } catch (e) {
@@ -1037,12 +1076,18 @@ self.onmessage = (e) => {
     input.focus(); input.select();
   }
   sub.addEventListener("click", (e) => { if (sub.classList.contains("tappable") && !e.target.closest(".fix")) openFix(); });
+  // A status ("…", "reading the clip…") or a new sentence takes the subtitle's
+  // place: a reading that was there moves up into the crawl first.
   function showText(text, dim) {
+    if (dim) archive();
     sub.replaceChildren();
     const s = document.createElement("span"); if (dim) s.className = "forming"; s.textContent = text; sub.appendChild(s);
+    keepable = !dim && !!text;
     if (!dim) say.hidden = true;
   }
   function show(words, final) {
+    if (!final && !words.length) archive();
+    keepable = !!(final && words.length);
     const settled = final ? words : words.slice(0, Math.max(0, words.length - 1));
     const forming = final ? [] : words.slice(-1);
     sub.replaceChildren();
@@ -1050,6 +1095,38 @@ self.onmessage = (e) => {
     for (const w of forming) { const s = document.createElement("span"); s.className = "forming"; s.textContent = w.raw; sub.appendChild(s); }
     if (final && words.length) say.hidden = true;
   }
+  // ---- the subtitles that were: up the screen, smaller and fainter as they age ----------------------
+  // A reading stays the subtitle until the next sentence starts; then it moves up
+  // into the crawl, with what was heard under it, and shrinks and fades there over
+  // three minutes, the older the further up (like the opening of Star Wars).
+  const crawl = $("crawl"), plane = $("plane");
+  const CRAWL_LINES = 6, CRAWL_SECONDS = 180;
+  let keepable = false;   // the subtitle (or the heard line under it) holds a reading worth keeping
+  function archive() {
+    if (!keepable || fixing) return;
+    keepable = false;
+    const heardEl = $("heard"), said = sub.textContent.trim(), heard = !heardEl.hidden && heardEl.textContent.trim();
+    if (!said && !heard) return;
+    const line = document.createElement("div"); line.className = "line"; line.dir = "auto"; line.dataset.t = String(Date.now());
+    if (said) { const d = document.createElement("div"); for (const n of sub.childNodes) d.appendChild(n.cloneNode(true)); line.appendChild(d); }
+    if (heard) { const d = document.createElement("div"); d.className = "hd"; for (const n of heardEl.childNodes) d.appendChild(n.cloneNode(true)); line.appendChild(d); }
+    plane.appendChild(line);
+    heardEl.hidden = true; heardEl.replaceChildren();
+    while (plane.children.length > CRAWL_LINES) plane.firstElementChild.remove();
+    ageCrawl();
+  }
+  function ageCrawl() {
+    const now = Date.now(), lines = [...plane.children];
+    lines.forEach((l, i) => {
+      const age = (now - Number(l.dataset.t)) / 1000, back = lines.length - 1 - i;   // back: 0 for the newest
+      if (age >= CRAWL_SECONDS) { l.remove(); return; }
+      const t = age / CRAWL_SECONDS;
+      l.style.fontSize = `${Math.max(0.4, 0.9 - 0.08 * back - 0.3 * t).toFixed(3)}em`;
+      l.style.opacity = `${Math.max(0, (0.9 - 0.13 * back) * (1 - t * t)).toFixed(3)}`;
+    });
+    crawl.hidden = !plane.children.length;
+  }
+  setInterval(ageCrawl, 1000);
 
   // ---- camera, on load ------------------------------------------------------------------------------
   let rafId = 0, nextT = 0;
@@ -1151,13 +1228,22 @@ self.onmessage = (e) => {
       // there; the server finds the faces, so no oval and no motion detection needed.
       guide.hidden = true;
       const texts = [];
-      let blobs = [];
+      let blobs = [], first = 0;
+      // With "keep my sentences" on, the clip's own sound is written down too:
+      // taken out here when the browser can, else the clip goes to the server.
+      // (Decoding a long clip's sound whole would take hundreds of MB here.)
+      const sound = improve && serverHears() && v.duration <= 240 && file.size <= 250e6 ? await clipAudio(file) : null;
+      const sendClip = improve && serverHears() && !sound && file.size <= 60e6;
+      debug.server.clipSound = sound ? "browser" : sendClip ? "server" : "none";
       const flush = async () => {
         if (blobs.length >= MIN_SERVER) {
-          const u = { full: blobs, still: 0, onServer: true, finished: true, startedAt: 0 };
+          const span = [first / FPS, (first + blobs.length) / FPS];
+          const u = { full: blobs, still: 0, onServer: true, finished: true, startedAt: 0,
+                      sound: sound ? { wav: wavOf(sound.samples, sound.rate, span[0], span[1]) } : sendClip ? { clip: file, span } : null };
           await readWithServer(u);
           if (lastRead && lastRead.raw) texts.push(lastRead.how === "model" ? lastRead.raw.toLowerCase() : lastRead.raw);
         }
+        first += blobs.length;
         blobs = [];
       };
       for (let i = 0; i < total; i++) {
@@ -1169,8 +1255,9 @@ self.onmessage = (e) => {
         if (blobs.length >= MAX_SERVER) await flush();
       }
       await flush();
-      if (texts.length > 1) showText(texts.join(" "), false);
-      else if (!texts.length && !sub.textContent.trim()) showText("(the clip is too short to read)", true);
+      // Each stretch's reading went up into the crawl as the next was read; the last is the subtitle.
+      if (!texts.length && !sub.textContent.trim()) showText("(the clip is too short to read)", true);
+      debug.server.clipTexts = texts;
       debug.server.fileFrames = total;
       setState("idle");
       cleanup();
@@ -1224,7 +1311,7 @@ self.onmessage = (e) => {
   const debug = { frames: 0, started: 0, finished: 0, reads: 0, lastMotion: 0, quiet: 0, lastWords: null, trace: [], server: { sent: 0, lastText: null, lastError: null, lastFeedback: null, lastHeard: null, lastHearError: null } };
   window.lipLive = { get ready() { return ready; }, get text() { return sub.textContent; }, get heard() { return $("heard").hidden ? null : $("heard").textContent; }, get server() { return serverOn() ? server : null; },
     get lastRead() { return lastRead; }, get lastHeard() { return lastHeard; }, get mic() { return mic ? mic.ctx.state : null; }, get language() { return language; },
-    get profile() { return storedProfile(); }, get phrases() { return phrases; }, startFile, openFix, debug };
+    get profile() { return storedProfile(); }, get phrases() { return phrases; }, get crawl() { return [...plane.children].map((l) => l.textContent.trim()); }, startFile, openFix, debug };
   loadServer();
   renderTally();
   bootWorker();

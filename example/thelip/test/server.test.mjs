@@ -133,6 +133,14 @@ try {
     const learnedList = await (await fetch(`http://127.0.0.1:8797/phrases?profile=${profile}&language=ar`)).json();
     check("what the microphone heard became one of the reader's phrases", learnedList.phrases.length >= 1 && /^FAKE HEARD/.test(learnedList.phrases[0].text), JSON.stringify(learnedList));
     check("the page counts it", (await page2.evaluate(() => window.lipLive.phrases.count)) >= 1, JSON.stringify(await page2.evaluate(() => window.lipLive.phrases)));
+    // The subtitles that were stay on screen, higher, smaller and fainter the older they are.
+    await page2.waitForFunction(() => window.lipLive.crawl.length >= 2, null, { timeout: 60000 }).catch(() => {});
+    // (The size and opacity each line is set to; the screen gets there in a second.)
+    const crawl = await page2.$$eval("#plane .line", (els) => els.map((e) => ({ text: e.textContent.trim(), size: parseFloat(e.style.fontSize), opacity: parseFloat(e.style.opacity), top: e.getBoundingClientRect().top })));
+    check("earlier readings move up into a crawl, each older one higher, smaller and fainter",
+          crawl.length >= 2 && crawl.every((l) => /fake|heard/i.test(l.text)) && crawl.every((l, i) => i === 0 || (l.size > crawl[i - 1].size && l.opacity > crawl[i - 1].opacity && l.top > crawl[i - 1].top)),
+          JSON.stringify(crawl));
+    await page2.screenshot({ path: path.join(here, "crawl.png") });
     await page2.evaluate(() => { const s = document.querySelector("#lang"); s.value = "es"; s.dispatchEvent(new Event("change", { bubbles: true })); });
 
     // Opening a clip with a server: the whole clip goes to it, whatever the oval sees.
@@ -147,6 +155,10 @@ try {
     const fileRead = await page2.evaluate(() => ({ text: window.lipLive.debug.server.lastText, frames: window.lipLive.debug.server.fileFrames, shown: window.lipLive.text }));
     const sent = Number((fileRead.text.match(/OF (\d+) FRAMES/) || [])[1]);
     check("an opened clip is read on the server, all of it (~3 s = ~74 frames)", sent >= 70 && sent <= 76 && fileRead.frames >= 70 && /fake es reading/.test(fileRead.shown), JSON.stringify(fileRead));
+    // This clip has no sound track the browser can take out: the clip itself goes to be heard.
+    await page2.waitForFunction(() => window.lipLive.lastHeard && /CLIP/.test(window.lipLive.lastHeard.heard || ""), null, { timeout: 20000 }).catch(() => {});
+    const clipHeard = await page2.evaluate(() => ({ how: window.lipLive.debug.server.clipSound, heard: window.lipLive.lastHeard, err: window.lipLive.debug.server.lastHearError }));
+    check("a clip whose sound the browser cannot take out goes to the server to be heard, for its stretch", clipHeard.how === "server" && clipHeard.heard && /^FAKE HEARD CLIP [23]\.\ds$/.test(clipHeard.heard.heard), JSON.stringify(clipHeard));
 
     // Two people in a clip (the fake server sees two faces in a frame twice as wide as tall;
     // the left one's brightness moves like a speaking mouth, the right one's does not).
@@ -185,6 +197,31 @@ try {
     await page2.waitForFunction(() => window.lipLive.debug.server.fileFrames, null, { timeout: 90000 }).catch(() => {});
     const recFrames = await page2.evaluate(() => window.lipLive.debug.server.fileFrames);
     check("a browser recording without a stated duration is read for its real length", recorded.stated === "Infinity" && recFrames >= 40 && recFrames <= 150, JSON.stringify({ recorded, recFrames }));
+
+    // A clip with its own sound, in a language with no lip-reading model (Hebrew's case on
+    // thelip's server): its sound is written down and labels it, and the same clip opened
+    // again is read from that phrase, without the sound being needed.
+    const voiced = path.join(os.tmpdir(), "thelip-voiced.webm");
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=96x96:d=3:r=25,format=yuv420p,geq=lum='128+60*sin(2*PI*T*1.7)':cb=128:cr=128",
+      "-f", "lavfi", "-i", "sine=frequency=330:duration=3", "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "30", "-c:a", "libopus", "-shortest", voiced]);
+    const voicedB64 = fs.readFileSync(voiced).toString("base64");
+    await page2.evaluate(() => { const s = document.querySelector("#lang"); s.value = "ar"; s.dispatchEvent(new Event("change", { bubbles: true })); });
+    const openVoiced = async () => {
+      await page2.evaluate(async (b64) => {
+        Object.assign(window.lipLive.debug.server, { fileFrames: null, lastHow: null, clipSound: null });
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        window.lipLive.startFile(new File([bytes], "voiced.webm", { type: "video/webm" }));
+      }, voicedB64);
+      await page2.waitForFunction(() => window.lipLive.debug.server.fileFrames, null, { timeout: 90000 }).catch(() => {});
+      return page2.evaluate(() => ({ how: window.lipLive.debug.server.lastHow, text: window.lipLive.debug.server.lastText, sound: window.lipLive.debug.server.clipSound,
+                                     heard: window.lipLive.lastHeard, shown: window.lipLive.text }));
+    };
+    const first = await openVoiced();
+    check("a clip's own sound is taken out in the browser and heard for the clip's stretch", first.sound === "browser" && first.heard && /^FAKE HEARD [23]\.\ds$/.test(first.heard.heard), JSON.stringify(first));
+    await new Promise((r) => setTimeout(r, 500));
+    const again = await openVoiced();
+    check("the same clip opened again is read from the phrase its sound taught", again.how === "learned" && again.text === first.heard.heard, JSON.stringify(again));
+    await page2.evaluate(() => { const s = document.querySelector("#lang"); s.value = "es"; s.dispatchEvent(new Event("change", { bubbles: true })); });
 
     // A server a link set (a throwaway tunnel, usually) that has died: thelip's server takes its place.
     await page2.evaluate(() => { localStorage.setItem("thelip.server", "http://127.0.0.1:8799"); localStorage.setItem("thelip.token", "old"); });

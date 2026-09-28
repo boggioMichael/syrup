@@ -160,10 +160,13 @@ def main() -> int:
     check("the speech worker starts and hears over the pipe", ear.hear(wav(1.0), "en")["heard"] == "FAKE HEARD 1.0s" and ear.proc is not None)
     ear.proc.kill(); ear.proc.wait()
     check("a speech worker that died is started again", ear.hear(wav(0.5), "he")["heard"] == "FAKE HEARD 0.5s")
+    check("a clip that is not a WAV goes to the worker whole, which decodes it and cuts the stretch",
+          ear.hear(b"\x00\x00\x00\x18ftypmp42 a clip", "he", 0.5, 2.0)["heard"] == "FAKE HEARD CLIP 1.5s")
+    check("a WAV is cut to the stretch too", ear.hear(wav(3.0), "en", 1.0, 2.5)["heard"] == "FAKE HEARD 1.5s")
     try:
-        ear.hear(b"not a wav", "en"); check("a bad wav is refused before the worker", False)
+        ear.hear(b"RIFF\x00\x00\x00\x00WAVEbroken", "en"); check("a broken WAV is refused before the worker", False)
     except Exception:  # noqa: BLE001
-        check("a bad wav is refused before the worker", True)
+        check("a broken WAV is refused before the worker", True)
     ear.stop()
     check("stop ends the speech worker", ear.proc is None)
 
@@ -262,9 +265,12 @@ def main() -> int:
         data = data.replace(b"Content-Type: image/jpeg", b"Content-Type: audio/wav")
         status, _, body = call("POST", "/hear", data, ctype, auth)
         check("silence is reported as silence, with its level, and not transcribed", status == 200 and body["silent"] is True and body["heard"] == "" and body["level_db"] <= -100, body)
-        ctype, data = multipart([("language", "en")], [("audio", "u.wav", b"not a wav at all")])
+        ctype, data = multipart([("language", "he"), ("start", "0.4"), ("end", "2.4")], [("audio", "clip.mov", b"\x00\x00\x00\x14ftypqt  a clip")])
         status, _, body = call("POST", "/hear", data, ctype, auth)
-        check("a file that is not a wav is 400", status == 400, body)
+        check("a clip's own sound is heard, the stretch between start and end", status == 200 and body["heard"] == "FAKE HEARD CLIP 2.0s", body)
+        ctype, data = multipart([("language", "en")], [("audio", "u.wav", b"RIFF\x00\x00\x00\x00WAVEbroken")])
+        status, _, body = call("POST", "/hear", data, ctype, auth)
+        check("a broken WAV is 400", status == 400, body)
 
         # A language with no model, read from the phrases this reader kept with the microphone on.
         P = "f" * 32

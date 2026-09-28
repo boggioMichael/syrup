@@ -27,6 +27,17 @@ RATE = 16000
 SILENT_DB = -60.0   # a room with nobody speaking is about -50 to -60 dB; a muted or broken microphone gives far less
 
 
+def is_wav(data: bytes) -> bool:
+    return len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WAVE"
+
+
+def cut(audio: np.ndarray, start: Optional[float], end: Optional[float]) -> np.ndarray:
+    """The samples of [start, end] seconds (either may be None)."""
+    a = int(max(0.0, start or 0.0) * RATE)
+    b = len(audio) if end is None else int(max(0.0, end) * RATE)
+    return audio[a:max(a, b)]
+
+
 def level_db(audio: np.ndarray) -> float:
     """RMS level of float samples in dB below full scale (-120 for digital silence)."""
     if audio.size == 0:
@@ -110,12 +121,22 @@ class Transcriber:
             self.stop()
             raise RuntimeError(f"the speech worker did not start: {info.get('error') or line[:300]!r}")
 
-    def _ask(self, wav: bytes, language: str) -> dict:
+    def _decode(self, data: bytes) -> np.ndarray:
+        """Any audio or video file's sound, mono at 16 kHz. In the worker: PyAV,
+        through faster-whisper. Faked (tests): three seconds of a tone."""
+        if self.fake:
+            return (0.3 * np.sin(2 * np.pi * 440 * np.arange(RATE * 3) / RATE)).astype(np.float32)
+        from faster_whisper.audio import decode_audio
+
+        return np.asarray(decode_audio(io.BytesIO(data), sampling_rate=RATE), dtype=np.float32)
+
+    def _ask(self, wav: bytes, language: str, start: Optional[float] = None, end: Optional[float] = None) -> dict:
         for attempt in (1, 2):
             if self.proc is None or self.proc.poll() is not None:
                 self._start()
             try:
-                self.proc.stdin.write(json.dumps({"language": language, "bytes": len(wav)}).encode("utf-8") + b"\n" + wav)
+                header = {"language": language, "bytes": len(wav), "start": start, "end": end}
+                self.proc.stdin.write(json.dumps(header).encode("utf-8") + b"\n" + wav)
                 self.proc.stdin.flush()
                 line = self.proc.stdout.readline()
                 if line:
@@ -170,21 +191,33 @@ class Transcriber:
         self.models[name] = WhisperModel(name, **kw)
         return self.models[name]
 
-    def hear(self, wav: bytes, language: str) -> dict:
+    def hear(self, data: bytes, language: str, start: Optional[float] = None, end: Optional[float] = None) -> dict:
         """-> {"heard": text, "confidence": 0..1, "seconds": float, "model": name,
                "level_db": RMS of the sound in dB below full scale, "silent": bool}
-        A sound below SILENT_DB is not transcribed: nothing was said aloud, or
-        the microphone gave nothing (the page tells the two apart for the reader)."""
-        audio, seconds = wav_to_float(wav)   # a bad file is refused here, before any model
+        `data` is a WAV, or any audio or video file (a clip with its sound),
+        decoded in the worker; `start` and `end`, in seconds, cut the stretch
+        to hear. A sound below SILENT_DB is not transcribed: nothing was said
+        aloud, or the microphone gave nothing (the page tells the two apart)."""
+        container = not is_wav(data)
+        if container and not self.in_process and not self.fake:
+            with self.lock:   # the worker decodes it (PyAV), cuts it and measures it
+                return self._ask(data, language, start, end)
+        if container:
+            audio = self._decode(data)
+        else:
+            audio, _ = wav_to_float(data)   # a bad file is refused here, before any model
+        audio = cut(audio, start, end)
+        seconds = len(audio) / RATE
         level = level_db(audio)
         extra = {"level_db": level, "silent": bool(level < SILENT_DB)}
         if self.fake:
             said = seconds >= 0.2 and not extra["silent"]
-            return dict({"heard": f"FAKE HEARD {seconds:.1f}s" if said else "", "confidence": 0.9 if said else 0.0,
+            what = "CLIP " if container else ""
+            return dict({"heard": f"FAKE HEARD {what}{seconds:.1f}s" if said else "", "confidence": 0.9 if said else 0.0,
                          "seconds": round(seconds, 2), "model": "fake"}, **extra)
         if not self.in_process:
             with self.lock:
-                return dict(self._ask(wav, language), **extra)
+                return dict(self._ask(data, language, start, end), **extra)
         if seconds < 0.2 or extra["silent"]:
             return dict({"heard": "", "confidence": 0.0, "seconds": round(seconds, 2), "model": self.model_name(language)}, **extra)
         with self.lock:
