@@ -67,7 +67,8 @@ Windows 11 it can be turned back on afterwards
 Rust toolchain is `windows-gnu` and the `x86_64-w64-mingw32-gcc` it found on
 your PATH is llvm-mingw's clang, which has no libgcc. Build with the
 toolchain that matches llvm-mingw, `cargo +stable-x86_64-pc-windows-gnullvm
-build --release`, or with the MSVC one.
+build --release`, or with the MSVC one. `coach.cmd` tries the gnullvm
+toolchain by itself when it is installed.
 
 Other commands, on any system:
 
