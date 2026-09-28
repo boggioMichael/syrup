@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>if(location.protocol==="http:"&&!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname))location.replace("https://"+location.host+location.pathname+location.search+location.hash)</script>
 <style>[hidden]{display:none!important} :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>
 <meta charset="utf-8">
 <title>thelip.syrup</title>
@@ -675,7 +676,9 @@ self.onmessage = (e) => {
     const input = document.createElement("input"); input.type = "file"; input.accept = "video/*"; input.setAttribute("capture", "user"); input.style.display = "none";
     input.addEventListener("change", (e) => { const f = e.target.files[0]; if (f) startFile(f); });
     alt.appendChild(input);
-    const hint = document.createElement("div"); hint.className = "small"; hint.textContent = "A camera needs an https page: thelip.syrup on GitHub Pages has it.";
+    const hint = document.createElement("div"); hint.className = "small";
+    hint.textContent = window.isSecureContext ? "Check that this browser is allowed to use the camera, then try again."
+      : "A camera needs an https page: open https://thelip.ai/.";
     msg.append(line, retry, alt, hint);
     $("helpBtn").hidden = false;
   }
