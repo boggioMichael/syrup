@@ -54,3 +54,7 @@ __pycache__/
 /example/minesweeper-coach/target/
 /example/minesweeper-coach/dump/
 /example/minesweeper-coach/build.log
+/example/minesweeper-coach/frames/
+/example/minesweeper-coach/*.out
+/example/minesweeper-coach/*.err
+/example/minesweeper-coach/expected.txt

@@ -399,7 +399,7 @@ mod tests {
             edge.0[3] > 240 && edge.0[1] > 150 && edge.0[0] < 80,
             "{edge:?}"
         );
-        let inside = at(0, 0, 0.5, 0.5);
+        let inside = at(0, 0, 0.3, 0.3);
         assert!((100..200).contains(&inside.0[3]), "{inside:?}");
         // The mine's cross runs through its centre.
         assert!(at(2, 0, 0.5, 0.5).0[0] > 180);

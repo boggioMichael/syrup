@@ -62,6 +62,7 @@ was found.
 | `example/thelip-server/` | any words for thelip.ai: Auto-AVSR's models on your computer, behind a tunnel; Hebrew and better English from thelip-train | routes, languages, learning loop and the worker tested against `--fake`; the English model ran on the owner's PC |
 | `example/thelip-train/` | the training pipeline: licensed video → labels → mouth crops → Auto-AVSR fine-tuning → export, under a budget | CPU stages tested on GRID clips in CI; the GPU stages not run yet |
 | `example/ios/` | the SwiftUI app (Vision, AVFoundation, Core ML, remote backend) | written without a compiler; not built here |
+| `example/minesweeper-coach/` | **a Minesweeper coach** (Rust): watches the game on the screen and says what to do next — the next sure move and why, or the best odds — with the cells marked over the board; never clicks | 34 tests; its advice wins 91% / 81% / 42% of beginner / intermediate / expert games with 0 wrong proofs; reads minesweeper.online screenshots cell for cell; builds on Windows |
 | `example/shared-types/`, `example/ml/`, `example/docs/` | the JSON contract, model scripts behind licence gates, and the design, model survey, benchmarks, API and setup docs | — |
 | `docs/` | the GitHub Pages site, thelip.ai: the thelip.syrup page and the demo GIFs | published to the `gh-pages` branch by `.github/workflows/pages.yml` |
 
@@ -150,7 +151,8 @@ and is available directly.
   can succeed at all, so blurred input is reported as *blurred* rather than
   silently producing wrong text.
 - **Capture** — live window capture by title on Windows (works while the
-  window is occluded); portable stubs elsewhere.
+  window is occluded), or the whole screen with where it sits on the
+  desktop; portable stubs elsewhere.
 - **Debug drawing** — rectangles and a dependency-free 5×7 bitmap font for
   annotating frames with what a detector saw.
 - **Timing** — FPS and moving-average measurement.
@@ -193,6 +195,18 @@ doubt), and a native iOS app. English runs today (LipNet, GRID's
 vocabulary); the other languages are surveyed with their licences and wired
 as adapters, not pretended. Measured numbers, tests and the honest status
 of every piece: [`example/README.md`](example/README.md).
+
+## Example project: a Minesweeper coach
+
+[`example/minesweeper-coach`](example/minesweeper-coach) watches a
+Minesweeper game on your screen and talks you through it, the way a friend
+looking over your shoulder would: *"This 1 already has its mine, so the
+green cells around it are safe"*, *"No sure move. Your best bet is the
+yellow cell: about 7 percent risk"*. The board is found and read off the
+screen with syrup's connected components, at any size and anywhere on
+the screen. Every hidden cell's chance of a mine is counted exactly. Its
+marks are drawn over the board in a click-through window that keeps out of
+screen captures, and the voice is the system's own. It never clicks.
 
 ## thelip.syrup
 

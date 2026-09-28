@@ -48,7 +48,7 @@
 //! - [`ocr`]: text recognition via a Tesseract subprocess, or the OCR engine
 //!   built into Windows.
 //! - [`quality`]: is a region sharp enough for OCR to stand a chance?
-//! - [`capture`]: window capture by title (Windows; stubs elsewhere).
+//! - [`capture`]: window capture by title, or the whole screen (Windows; stubs elsewhere).
 //! - [`draw`]: debug-overlay primitives — rectangles and a small bitmap font.
 //! - [`timing`]: FPS and moving-average measurement.
 //!

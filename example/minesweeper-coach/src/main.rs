@@ -34,12 +34,13 @@ it sees leaves the computer.
 
   mines-coach replay [--quiet | --chatty] [--preview DIR] FRAMES...
       The coach over saved screenshots, in order: what it would have said, and
-      (with --preview) each frame with its marks. A frame's time is the last
-      number in its name, in milliseconds (frame-000012345.png); otherwise
-      they are a second apart.
+      (with --preview) each frame with its marks. Frames saved by --dump carry
+      their time in their names (frame-000012345.png is 12.345 s); others are
+      taken a second apart.
 
-  mines-coach demo [SEED] [--level beginner|intermediate|expert] [--preview DIR]
-      A game played by doing what the coach says, with what it says.
+  mines-coach demo [SEED] [--level beginner|intermediate|expert] [--preview DIR] [--frames DIR]
+      A game played by doing what the coach says, with what it says; --preview
+      saves each position with its marks, --frames each position as drawn.
 
   mines-coach read IMAGES...
       Just the board read off each image (and checked against IMAGE.txt if there is one).
@@ -57,6 +58,7 @@ struct Options {
     fps: f64,
     dump: Option<PathBuf>,
     preview: Option<PathBuf>,
+    frames: Option<PathBuf>,
     level: String,
     rest: Vec<String>,
 }
@@ -71,6 +73,7 @@ fn parse(args: &[String]) -> Result<(String, Options), String> {
         fps: 8.0,
         dump: None,
         preview: None,
+        frames: None,
         level: "beginner".into(),
         rest: Vec::new(),
     };
@@ -96,6 +99,7 @@ fn parse(args: &[String]) -> Result<(String, Options), String> {
             }
             "--dump" => o.dump = Some(value("--dump")?.into()),
             "--preview" => o.preview = Some(value("--preview")?.into()),
+            "--frames" => o.frames = Some(value("--frames")?.into()),
             "--level" => o.level = value("--level")?,
             "-h" | "--help" | "help" => command = Some("help".to_string()),
             flag if flag.starts_with("--") => return Err(format!("unknown option {flag}")),
@@ -310,17 +314,11 @@ fn live(o: &Options) -> Result<(), String> {
     }
 }
 
-/// The time a frame was taken, from the last number in its name (milliseconds).
+/// The time a frame saved by `--dump` was taken: `frame-000012345.png` is 12.345 s.
 fn frame_time(path: &Path) -> Option<f64> {
     let stem = path.file_stem()?.to_str()?;
-    let tail: Vec<char> = stem
-        .chars()
-        .rev()
-        .skip_while(|c| !c.is_ascii_digit())
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
-    let digits: String = tail.into_iter().rev().collect();
-    digits.parse::<u64>().ok().map(|ms| ms as f64 / 1000.0)
+    let ms: u64 = stem.strip_prefix("frame-")?.parse().ok()?;
+    Some(ms as f64 / 1000.0)
 }
 
 fn replay(o: &Options) -> Result<(), String> {
@@ -423,7 +421,7 @@ fn demo(o: &Options) -> Result<(), String> {
         "expert" => Game::expert(seed),
         other => return Err(format!("unknown level {other}")),
     };
-    if let Some(dir) = &o.preview {
+    for dir in [&o.preview, &o.frames].into_iter().flatten() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let mut coach = Coach::new(settings(o));
@@ -432,9 +430,18 @@ fn demo(o: &Options) -> Result<(), String> {
     let mut t = 0.0;
     let mut next_move = 1.0;
     let mut shots = 0;
+    let mut drawn: Option<Board> = None;
     while t < 1800.0 {
         let view = game.view();
         let (img, grid) = draw_page(&view, 32, 24, 24, (24, 24));
+        if let Some(dir) = &o.frames
+            && drawn.as_ref() != Some(&view)
+        {
+            let n = std::fs::read_dir(dir).map(|d| d.count()).unwrap_or(0);
+            img.save(dir.join(format!("position-{n:03}.png")))
+                .map_err(|e| e.to_string())?;
+            drawn = Some(view.clone());
+        }
         let reading = reader::read_near(&img, &grid).ok_or("the drawn board was not found")?;
         let update = coach.see(Some(&reading), t);
         if let Some(line) = &update.say {

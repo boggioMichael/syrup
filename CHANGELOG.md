@@ -26,6 +26,22 @@
   `mouth_patch`, a small normalised picture of the mouth for matching.
 - `sequence`: dynamic time warping and a nearest-example matcher.
 
+### Example project: a Minesweeper coach (`example/minesweeper-coach`)
+- Watches the game on the screen (`syrup::capture::capture_screen`, new:
+  every monitor, with the picture's place on the desktop), finds and reads
+  the board with syrup's connected components at any cell size, and says
+  what to do next through the system's voice, with the cells marked in a
+  click-through window that keeps out of screen captures. It never clicks.
+- The solver proves cells by the rules a person uses (each with its
+  reason) and then by counting every way the numbers and the mines left can
+  be satisfied, which also gives each hidden cell's exact chance of a mine.
+  A board partly out of view is solved without taking the edge of the view
+  for the board's edge.
+- Measured: 91.3% / 80.8% / 42.0% of beginner / intermediate / expert
+  games won by its advice, 0 wrong proofs; three screenshots of
+  minesweeper.online read cell for cell. 34 tests, run on Linux and
+  Windows.
+
 ### Example projects: lipreader (`example/`)
 - `lipreader` (Python): many faces, IoU/Hungarian tracking with shot-cut
   detection, mouth localisation per face, speaking activity, batched visual

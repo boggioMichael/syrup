@@ -17,6 +17,7 @@ example/
                       French, Portuguese, Mandarin) on your computer, behind a tunnel; trained models served too
   thelip-train/       training the models: English adapted to phones, the first Hebrew one; licensed video, a budget
   ios/                the SwiftUI app (Vision + AVFoundation + Core ML), written without a compiler here
+  minesweeper-coach/  a different one, in Rust: a Minesweeper coach that watches the screen and talks
   shared-types/       the JSON schema and TypeScript types every part agrees on
   ml/                 model scripts: get LipNet, fetch research checkpoints behind their licences, export/convert
   docs/               architecture, models, benchmarks, API, setup, decisions
