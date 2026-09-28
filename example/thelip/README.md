@@ -16,31 +16,65 @@ to https by the page itself, because a camera needs a secure page.
   decoding, the GRID corrector. Matches the numpy network to 2e-6
   (`test/engine.test.mjs`).
 - `worker.js` — the Web Worker protocol (init, frame, read, reset).
+- `faces.js`, `face-worker.js`, `blazeface.bin` — the face finder, in a
+  worker of its own: BlazeFace (short range), MediaPipe's face detector
+  (Apache 2.0), run from its own weights with no TFLite runtime: the
+  network's 90 ops in plain JavaScript on a 128x128 letterboxed frame,
+  MediaPipe's anchors, decoding and weighted non-maximum suppression.
+  `tools/export_blazeface.py` turns MediaPipe's model file into
+  `blazeface.bin` (212 KB of float16 weights); `test/faces.test.mjs`
+  checks it against MediaPipe's own detector (`tools/faces_reference.py`):
+  the same faces, scores and keypoints to four decimals at the network's
+  own size, within a pixel of its input on letterboxed frames; 35 ms a
+  look in Node here.
 - `src/page.html` — the page, and nothing else on it: the camera opens
-  when the page opens, a dashed oval marks where the lips go (drag to
-  move, pinch to resize), an utterance is detected from lip motion and
-  read as soon as the lips go still, the words appear as subtitles at the
-  bottom (forming word by word on a fast device), a tiny strip shows what
-  thelip sees, and a "?" holds the vocabulary, the credits and a way to
-  open a recorded clip instead. Where the camera is refused (a claude.ai
+  when the page opens, and an oval finds the mouth by itself (red while
+  it follows it; drag it to place it by hand, pinch to resize, and it
+  stays); an utterance is detected from lip motion and read as soon as
+  the lips go still, the words appear as subtitles at the bottom (forming
+  word by word on a fast device), a tiny strip shows what thelip sees,
+  and a "?" holds the vocabulary, the credits and a way to open a
+  recorded clip instead. Where the camera is refused (a claude.ai
   artifact, a plain-http page) it says so and offers the clip.
+- The oval: 0.85 of the face's width, on the median of the mouth
+  keypoint's last two seconds of sightings (a few a second), moving only
+  when the mouth really moved, so that what starts a sentence is the lips.
+  A speaking mouth's centre drops as the jaw opens, and LipNet reads best
+  from an oval between closed and open: on GRID's ten sample clips
+  (`docs/test/grid`), each read whole through the oval the finder placed,
+  60 of 60 words at 0.85 and 0.9 of the face, 58 at 0.8, 59 at 0.94, and
+  54 at 0.85 from the first frame alone, mouth closed
+  (`tools/oval_check.mjs`). The page itself, opening those clips with no
+  oval given: 60 of 60 (`test/page.test.mjs`). Other faces' mouths get
+  ovals of their own; with a server, which reads every face, their motion
+  starts a sentence too.
+- Subtitles stay: when the next sentence starts, a reading moves up into
+  a crawl above the subtitle, with what was heard under it, tilted back
+  like the opening of Star Wars, smaller and fainter the older it is, gone
+  after three minutes (six at most).
 - Server mode: with `?server=<address>` (or the address typed in the "?"
   sheet) the page sends each sentence's frames (320 px JPEGs, 25 fps) to
   [`../thelip-server`](../thelip-server) and shows its answer — any English
   words, a few seconds late, nothing read locally meanwhile. The address is
-  kept in the browser; "Stop" forgets it. `test/server.test.mjs` covers it
-  against the server's `--fake` mode.
+  kept in the browser; "Stop" forgets it. With "keep my sentences" on, the
+  sound of each sentence goes too, to be written down (speech recognition)
+  and kept as its label: the microphone's, or an opened clip's own —
+  taken out of the file in the browser when it can (`decodeAudioData`),
+  else the clip itself goes and the server takes the stretch's sound out.
+  `test/server.test.mjs` covers it against the server's `--fake` mode.
 - `build.py` — inlines everything into one file: `thelip.syrup.html` (page
   content, for a claude.ai artifact) or, with `--standalone`, a complete
   document for hosting (`docs/index.html`).
 - `test/page.test.mjs` — the built page in Chromium reads a silent GRID
-  clip through the clip path; `test/camera.test.mjs` — Chromium's fake
-  camera plays the clip on a loop and the page, opening the camera on
-  load, reads the sentence live.
+  clip through the clip path, with the oval placed by hand and then by
+  the finder (all ten GRID clips; two people in one clip);
+  `test/camera.test.mjs` — Chromium's fake camera plays the clip on a
+  loop: the oval finds the mouth in it, dragging places it by hand, and
+  the page, opening the camera on load, reads the sentence live.
 
 ```sh
 python3 ../ml/conversion/export_thelip_weights.py --out thelip-weights.bin --reference sbwe5n
-node test/engine.test.mjs
+node test/engine.test.mjs && node test/faces.test.mjs
 python3 build.py && python3 build.py --standalone --out ../../docs/index.html
 NODE_PATH=$(npm root -g) node test/page.test.mjs && NODE_PATH=$(npm root -g) node test/camera.test.mjs
 ```
@@ -51,8 +85,11 @@ artifact gets the "record a clip" flow instead, which plays the recording
 at the speed thelip reads it with the subtitle forming underneath. Speed
 measured here: 37–42 ms per frame in Node/Chromium on a 2.1 GHz Xeon
 core (37 ms with doubles, which V8 runs faster than float32 stores); a recent phone is comparable or faster. 64/66 words on the GRID
-sample clips with the int8 weights; a new face and a phone camera are
-harder than the lab data.
+sample clips with the int8 weights (the Python pipeline, which finds the
+mouth its own way); 60/60 on the ten in `docs/test/grid` through the
+page's own oval; a new face and a phone camera are harder than the lab
+data. A clip of three seconds or less (GRID's length) is read whole, the
+way LipNet was trained; a longer one sentence by sentence, as the camera.
 
 ## The domain
 

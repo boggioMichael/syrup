@@ -19,6 +19,26 @@ try {
     "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", `--use-file-for-fake-video-capture=${path.join(here, "sbwe5n.y4m")}`,
   ] });
   const context = await browser.newContext({ viewport: { width: 390, height: 800 }, permissions: ["camera"] });
+  // No oval given: the page finds the mouth in the camera's picture by itself and puts
+  // the oval there (the fake camera is GRID's sbwe5n: the mouth by hand at (127,176) 113x57).
+  const auto = await context.newPage();
+  auto.on("pageerror", (e) => console.error("page error:", e.message));
+  await auto.goto(`http://127.0.0.1:8794${pagePath}`);
+  await auto.waitForFunction(() => window.lipLive && window.lipLive.ready && window.lipLive.faceReady, null, { timeout: 60000 });
+  await auto.waitForFunction(() => { const g = window.lipLive.guide; return document.querySelector("#guide").classList.contains("auto") && g && Math.hypot(g.x + g.w / 2 - 183.5, g.y + g.h / 2 - 204.5) < 10; }, null, { timeout: 20000 }).catch(() => {});
+  const g = await auto.evaluate(() => window.lipLive.guide), following = await auto.$eval("#guide", (e) => e.classList.contains("auto"));
+  const off = g ? Math.hypot(g.x + g.w / 2 - 183.5, g.y + g.h / 2 - 204.5) : Infinity;
+  if (!following || off >= 10) { console.error(`FAIL: the oval did not find the mouth in the camera's picture: ${JSON.stringify(g)}`); process.exit(1); }
+  console.log(`ok   the oval found the mouth in the camera's picture by itself: ${JSON.stringify(g)} (${off.toFixed(1)} px from the one placed by hand)`);
+  // Dragging it places it by hand: it stays there, and the choice is kept.
+  const box = await auto.$eval("#guide", (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await auto.mouse.move(box.x, box.y); await auto.mouse.down(); await auto.mouse.move(box.x + 40, box.y + 30, { steps: 5 }); await auto.mouse.up();
+  await new Promise((r) => setTimeout(r, 800));
+  const moved = await auto.evaluate(() => ({ auto: window.lipLive.auto, kept: localStorage.getItem("thelip.auto"), guide: window.lipLive.guide, following: document.querySelector("#guide").classList.contains("auto") }));
+  if (moved.auto || moved.kept !== "0" || moved.following || Math.abs(moved.guide.x - g.x) < 10) { console.error(`FAIL: dragging did not place the oval by hand: ${JSON.stringify(moved)}`); process.exit(1); }
+  console.log(`ok   dragging the oval places it by hand, and it stays: ${JSON.stringify(moved.guide)}`);
+  await auto.evaluate(() => localStorage.removeItem("thelip.auto"));
+  await auto.close();
   const page = await context.newPage();
   page.on("pageerror", (e) => console.error("page error:", e.message));
   await page.goto(`http://127.0.0.1:8794${pagePath}#g127-176-113-57`);
@@ -40,6 +60,7 @@ try {
   if (!hit) { console.error("FAIL: the sentence was not read from the live camera"); process.exit(1); }
   console.log(`ok   read live from the camera: "${hit}"`);
   await page.screenshot({ path: path.join(here, "camera.png") });
+
   console.log("ALL PASSED");
 } finally {
   if (browser) await browser.close();

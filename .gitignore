@@ -23,6 +23,7 @@ __pycache__/
 /example/chrome-extension/dist/
 /example/shared-types/dist/
 /example/thelip/*.bin
+!/example/thelip/blazeface.bin
 /example/thelip/*.f32
 /example/thelip/thelip.syrup.html
 /example/thelip/test/page.png
@@ -48,3 +49,5 @@ __pycache__/
 /example/thelip/test/server.png
 /example/thelip/test/faces.png
 /example/thelip/test/crawl.png
+/example/thelip/test/auto.png
+/example/thelip/test/two-camera.png

@@ -10,6 +10,10 @@
   .mirror { transform: scaleX(-1); }
   .guide { position: absolute; border: 1.5px dashed rgba(255,255,255,.7); border-radius: 50%; touch-action: none; }
   .guide::after { content: ""; position: absolute; inset: -18%; border-radius: 12px; }
+  .guide.auto { border-style: solid; border-color: rgba(255,107,98,.85); }
+  .mouths { position: absolute; inset: 0; pointer-events: none; }
+  .mouths .mouth { position: absolute; border: 1.5px dashed rgba(255,255,255,.45); border-radius: 50%; }
+  .mouths .mouth.moving { border-color: rgba(255,107,98,.85); border-style: solid; }
   .sees { position: absolute; left: 12px; top: calc(12px + env(safe-area-inset-top, 0px)); width: 100px; height: 50px; opacity: .8; border-radius: 4px; image-rendering: pixelated; }
   .dot { position: absolute; left: 120px; top: calc(12px + env(safe-area-inset-top, 0px)); width: 10px; height: 10px; border-radius: 50%; background: var(--dim); }
   .dot[data-state="listening"] { background: var(--lip); }
@@ -80,6 +84,7 @@
   <video id="cam" class="mirror" playsinline muted autoplay hidden></video>
   <canvas id="view" class="view" hidden></canvas>
   <div class="guide" id="guide" hidden></div>
+  <div class="mouths" id="mouths"></div>
   <div class="faces" id="faces"></div>
   <canvas id="crop" class="sees" width="100" height="50" hidden></canvas>
   <div class="dot" id="dot" data-state="idle" hidden></div>
@@ -93,10 +98,12 @@
   <div class="msg" id="msg"><div>Loading thelip&hellip;</div></div>
   <div class="sheet" id="sheet" hidden>
     <h1>thelip<span>.syrup</span></h1>
-    <div>Lips in the dashed oval, face still, then mouth a sentence. The words appear below as they are read. No audio is used and nothing leaves the phone, unless a server is set below (frames go there) and you turn on "keep my sentences" (the microphone too, and an opened clip's sound: then say the sentence out loud, so that it is written down and kept with what your lips did).</div>
+    <div>The oval finds your mouth by itself (red while it follows it); face the camera, keep still, then mouth a sentence. The words appear below as they are read. No audio is used and nothing leaves the phone, unless a server is set below (frames go there) and you turn on "keep my sentences" (the microphone too, and an opened clip's sound: then say the sentence out loud, so that it is written down and kept with what your lips did).</div>
     <div><b>It knows 51 words, in one sentence shape:</b></div>
     <div class="mono">command &middot; colour &middot; preposition &middot; letter &middot; digit &middot; adverb<br>bin lay place set &middot; blue green red white &middot; at by in with &middot; a&ndash;z (no w) &middot; zero&ndash;nine &middot; again now please soon</div>
-    <div>Drag the oval to your mouth; pinch to resize. Tap the sentence for another one.</div>
+    <div>Tap the sentence for another one. To place the oval by hand, drag it to your mouth (pinch to resize); it then stays where you put it until you turn this back on:</div>
+    <label class="toggle"><input type="checkbox" id="auto" checked> Find the mouth by itself</label>
+    <div class="status" id="autoStatus"></div>
     <div class="row"><label>Open a clip<input type="file" id="file2" accept="video/*"></label><label>Record a clip<input type="file" id="file" accept="video/*" capture="user"></label></div>
     <div><b>Any words &mdash; with a server</b></div>
     <div>The page looks for thelip's own server when it opens; when it answers, every sentence's frames go there and come back read by an open-vocabulary model in a few seconds &mdash; English (LRS3, 19% word error rate in the lab), Spanish, French, Portuguese, Mandarin. Languages with no lip-reading model yet, Hebrew among them, read the phrases you taught it (below). Several people in the picture are read each on their own, even when they speak at once (their voices would mix, their lips do not): a frame around each face, red while it speaks, and what it said under it. You can also run <span class="mono">example/thelip-server</span> from the syrup repository on your own computer and put its address here.</div>
@@ -120,6 +127,10 @@
 __WORKER__
 </script>
 <script id="weights" type="text/plain">__WEIGHTS_B64__</script>
+<script id="face-worker-src" type="text/plain">
+__FACE_WORKER__
+</script>
+<script id="face-weights" type="text/plain">__FACE_WEIGHTS_B64__</script>
 
 <script>
 (() => {
@@ -457,6 +468,8 @@ __WORKER__
     return { scale, dx, dy };
   }
   function defaultGuide() {
+    // A new picture: the finder starts afresh (its first sighting places the oval).
+    guide.classList.remove("auto"); mainSeenAt = 0; mouths = []; mainTrack = []; renderMouths();
     const w = Math.round(Math.min(sourceSize.w, sourceSize.h * 4 / 3) * 0.34), h = Math.round(w / 2);
     guideBox = { x: Math.round((sourceSize.w - w) / 2), y: Math.round(sourceSize.h * 0.6 - h / 2), w, h };
     const m = location.hash.match(/^#g(\d+)-(\d+)-(\d+)-(\d+)$/);
@@ -466,7 +479,7 @@ __WORKER__
   // Drag to move, pinch to resize.
   const touches = new Map();
   let pinch = null;
-  guide.addEventListener("pointerdown", (e) => { guide.setPointerCapture(e.pointerId); touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (touches.size === 2) { const [a, b] = [...touches.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), w: guideBox.w }; } });
+  guide.addEventListener("pointerdown", (e) => { setAuto(false, true); guide.setPointerCapture(e.pointerId); touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (touches.size === 2) { const [a, b] = [...touches.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), w: guideBox.w }; } });
   guide.addEventListener("pointermove", (e) => {
     if (!touches.has(e.pointerId) || !guideBox) return;
     const prev = touches.get(e.pointerId);
@@ -487,6 +500,144 @@ __WORKER__
   const release = (e) => { touches.delete(e.pointerId); if (touches.size < 2) pinch = null; };
   guide.addEventListener("pointerup", release); guide.addEventListener("pointercancel", release);
   window.addEventListener("resize", layoutGuide);
+
+  // ---- finding the mouth by itself: BlazeFace in a worker of its own --------------------------------
+  // A few times a second the frame goes, letterboxed to 128x128, to the face finder
+  // (faces.js: MediaPipe's BlazeFace, run from its own weights). The largest face's
+  // mouth is the oval: it follows the mouth when the head moves and holds still when
+  // it does not, so that what starts a sentence is the lips moving, not the oval. The
+  // other faces' mouths get ovals of their own, and with a server (which reads every
+  // face) their motion starts a sentence too. Dragging the oval places it by hand.
+  // The oval: 0.85 of the face's width, on the median of the mouth's last sightings
+  // (two seconds): a speaking mouth's centre drops as the jaw opens, and LipNet reads
+  // best from an oval between closed and open. Measured on GRID's ten sample clips,
+  // read whole (tools/oval_check.mjs): 60 of 60 words at 0.85 and 0.9 of the face,
+  // 58 at 0.8, 59 at 0.94; at 0.85 from the first frame alone (mouth closed), 54.
+  const FACE_EVERY_MS = 150, OVAL_OF_FACE = 0.85, HOLD_SHIFT = 0.07, HOLD_SIZE = 0.15, LOST_MS = 1500, TRACK_MS = 2000, TRACK_N = 12;
+  let faceWorker = null, faceReady = false, facePending = null, faceId = 0, lastFaceAt = 0, mainSeenAt = 0;
+  let autoGuide = true, mouths = [], mainTrack = [];
+  const faceCanvas = document.createElement("canvas"); faceCanvas.width = faceCanvas.height = 128;
+  const faceCtx = faceCanvas.getContext("2d", { willReadFrequently: true });
+  const mouthCanvas = document.createElement("canvas"); mouthCanvas.width = 40; mouthCanvas.height = 20;
+  const mouthCtx = mouthCanvas.getContext("2d", { willReadFrequently: true });
+  function bootFaces() {
+    try {
+      const bin = atob($("face-weights").textContent.trim()), bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      faceWorker = new Worker(URL.createObjectURL(new Blob([$("face-worker-src").textContent], { type: "text/javascript" })));
+      faceWorker.onmessage = (e) => {
+        const m = e.data;
+        if (m.type === "ready") { faceReady = true; debug.faceMs = Math.round(m.ms); renderAuto(); }
+        else if (m.type === "failed") { debug.faceError = m.error; renderAuto(); }
+        else if (m.type === "faces" && facePending && facePending.id === m.id) { const p = facePending; facePending = null; debug.faceMs = Math.round(m.ms); p.resolve(m.faces); }
+      };
+      faceWorker.postMessage({ type: "init", model: bytes.buffer }, [bytes.buffer]);
+    } catch (e) { debug.faceError = e.message; }
+  }
+  function renderAuto() {
+    $("auto").checked = autoGuide;
+    $("autoStatus").textContent = debug.faceError ? `the face finder did not start here (${debug.faceError}): place the oval by hand`
+      : !faceReady ? "" : `BlazeFace (MediaPipe's face detector, Apache 2.0) finds it, here in this page: ${debug.faceMs} ms a look on this device.`;
+  }
+  function setAuto(on, byHand) {
+    if (autoGuide === on) return;
+    autoGuide = on;
+    if (byHand || on) { try { localStorage.setItem("thelip.auto", on ? "1" : "0"); } catch {} }
+    if (!on) { guide.classList.remove("auto"); mouths = []; renderMouths(); }
+    renderAuto();
+  }
+  // The frame, letterboxed into the finder's input -> the faces, in source pixels.
+  function findFaces() {
+    if (!faceReady || facePending || !source || !sourceSize.w) return null;
+    const { w, h } = sourceSize, k = 128 / Math.max(w, h), dx = (128 - w * k) / 2, dy = (128 - h * k) / 2;
+    faceCtx.fillStyle = "#000"; faceCtx.fillRect(0, 0, 128, 128);
+    faceCtx.drawImage(source, dx, dy, w * k, h * k);
+    const rgba = faceCtx.getImageData(0, 0, 128, 128).data;
+    const id = ++faceId;
+    const found = new Promise((resolve) => { facePending = { id, resolve }; });
+    faceWorker.postMessage({ type: "detect", id, rgba }, [rgba.buffer]);
+    lastFaceAt = performance.now();
+    const px = (u) => (u * 128 - dx) / k, py = (v) => (v * 128 - dy) / k;
+    return found.then((faces) => faces.map((f) => ({ score: f.score, x: px(f.box[0]), y: py(f.box[1]), w: (f.box[2] * 128) / k, h: (f.box[3] * 128) / k,
+                                                   mouth: [px(f.keypoints[3][0]), py(f.keypoints[3][1])] })));
+  }
+  const ovalOf = (f) => { const w = f.w * OVAL_OF_FACE, h = w / 2; return { x: f.mouth[0] - w / 2, y: f.mouth[1] - h / 2, w, h }; };
+  const centre = (b) => [b.x + b.w / 2, b.y + b.h / 2];
+  // Moves an oval to where the finder saw the mouth, only when it really moved.
+  function follow(b, t, resize) {
+    if (!b) return t;
+    const [cx, cy] = centre(b), [tx, ty] = centre(t);
+    const shift = Math.hypot(tx - cx, ty - cy) / b.w, size = Math.abs(t.w - b.w) / b.w;
+    if (shift > 0.5 || size > 0.4) return t;
+    if (shift <= HOLD_SHIFT && (size <= HOLD_SIZE || !resize)) return b;
+    const w = resize && size > HOLD_SIZE ? b.w + (t.w - b.w) * 0.6 : b.w, h = w / 2;
+    const nx = shift > HOLD_SHIFT ? cx + (tx - cx) * 0.6 : cx, ny = shift > HOLD_SHIFT ? cy + (ty - cy) * 0.6 : cy;
+    return { x: nx - w / 2, y: ny - h / 2, w, h };
+  }
+  function applyFaces(faces, exact) {
+    if (!autoGuide) return;
+    const now = performance.now();
+    debug.facesSeen = faces.length;
+    if (!faces.length) {
+      if (now - mainSeenAt > LOST_MS) { guide.classList.remove("auto"); mouths = []; renderMouths(); }
+      return;
+    }
+    // The main face: the one at the oval while it is followed, else the largest.
+    let main = faces.reduce((a, b) => (b.w > a.w ? b : a));
+    if (guideBox && now - mainSeenAt < LOST_MS) {
+      const [gx, gy] = centre(guideBox), d = (f) => Math.hypot(f.mouth[0] - gx, f.mouth[1] - gy);
+      const near = faces.reduce((a, b) => (d(b) < d(a) ? b : a));
+      if (d(near) < near.w * 0.5 && near.w > main.w * 0.6) main = near;
+    }
+    mainSeenAt = now;
+    const was = mainTrack[mainTrack.length - 1];
+    if (was && Math.hypot(main.mouth[0] - was.mx, main.mouth[1] - was.my) > main.w * 0.5) mainTrack = [];   // another face, or a jump
+    mainTrack.push({ mx: main.mouth[0], my: main.mouth[1], w: main.w, t: now });
+    mainTrack = mainTrack.filter((m) => now - m.t < TRACK_MS).slice(-TRACK_N);
+    const med = (k) => mainTrack.map((m) => m[k]).sort((a, b) => a - b)[mainTrack.length >> 1];
+    const target = ovalOf({ mouth: [med("mx"), med("my")], w: med("w") });
+    guideBox = exact ? target : follow(guide.classList.contains("auto") ? guideBox : null, target, !utter);
+    guide.classList.add("auto");
+    layoutGuide();
+    debug.guide = { x: Math.round(guideBox.x), y: Math.round(guideBox.y), w: Math.round(guideBox.w), h: Math.round(guideBox.h) };
+    // The others: each keeps its oval (and its last crop) while its mouth stays put.
+    mouths = faces.filter((f) => f !== main).map((f) => {
+      const t = ovalOf(f), [tx, ty] = centre(t);
+      const was = mouths.find((m) => Math.hypot(centre(m.box)[0] - tx, centre(m.box)[1] - ty) < m.box.w * 0.5);
+      if (!was) return { box: t, last: null, recent: [], motion: 0 };
+      const box = follow(was.box, t, true);
+      return box === was.box ? was : { box, last: null, recent: [], motion: 0 };
+    });
+    renderMouths();
+  }
+  function renderMouths() {
+    const box = $("mouths");
+    box.replaceChildren();
+    if (!mouths.length || guide.hidden || !sourceSize.w) return;
+    const { r, scale, dx, dy } = viewMap();
+    for (const m of mouths) {
+      const b = m.box, el = (m.el = document.createElement("div"));
+      el.className = "mouth";
+      let left = dx + b.x * scale;
+      if (mirror) left = r.width - (dx + (b.x + b.w) * scale);
+      el.style.left = `${left}px`; el.style.top = `${dy + b.y * scale}px`; el.style.width = `${b.w * scale}px`; el.style.height = `${b.h * scale}px`;
+      box.appendChild(el);
+    }
+  }
+  window.addEventListener("resize", renderMouths);
+  // How much another face's mouth moved since the last frame (the first channel of a
+  // 40x20 crop, as motionOf does for the oval's), median of the last five.
+  function mouthMotion(m) {
+    const b = m.box;
+    mouthCtx.drawImage(source, b.x, b.y, b.w, b.h, 0, 0, 40, 20);
+    const img = mouthCtx.getImageData(0, 0, 40, 20).data, cur = new Float32Array(800);
+    for (let i = 0; i < 800; i++) cur[i] = img[i * 4] / 255;
+    let s = 0;
+    if (m.last) { for (let i = 0; i < 800; i++) s += Math.abs(cur[i] - m.last[i]); s /= 800; }
+    m.last = cur;
+    m.recent.push(s); if (m.recent.length > 5) m.recent.shift();
+    return (m.motion = [...m.recent].sort((a, c) => a - c)[m.recent.length >> 1]);
+  }
   // Several faces in a server's reading: a frame around each, and what each one's
   // lips said under it (the main face's reading is also the subtitle).
   let lastFaces = null;
@@ -539,12 +690,21 @@ __WORKER__
 
   function onFrame() {
     if (!ready || !source || !guideBox) return;
+    // A look every 150 ms, or less often on a device where a look takes long (a third of a core at most).
+    if (autoGuide && faceReady && !facePending && !guide.hidden && performance.now() - lastFaceAt >= Math.max(FACE_EVERY_MS, 3 * (debug.faceMs || 0))) { const f = findFaces(); if (f) f.then(applyFaces); }
     const data = cropFrame();
     const onServer = serverOn();
     MAX = onServer ? MAX_SERVER : MAX_LOCAL; STILL = onServer ? STILL_SERVER : STILL_LOCAL;
     const full = onServer ? fullFrame() : null;
     if (mode === "file") { lastFrames.push(data); if (lastFrames.length > MAX) lastFrames.shift(); }
-    const motion = smoothed(motionOf(last, data));
+    let motion = smoothed(motionOf(last, data));
+    // With a server, any face's lips start a sentence (it reads each face on its own).
+    if (onServer && mouths.length) {
+      let other = 0;
+      for (const m of mouths) { other = Math.max(other, mouthMotion(m)); if (m.el) m.el.classList.toggle("moving", m.motion > Math.max(quiet * 2.5, 0.005)); }
+      debug.otherMotion = other;
+      motion = Math.max(motion, other);
+    }
     last = data;
     quiet = stillLevel(motion);
     const moving = motion > Math.max(quiet * 2.5, 0.005);
@@ -846,10 +1006,27 @@ __WORKER__
       cleanup();
       return;
     }
+    // The finder puts the oval on the mouth before any frame is read: where it is over
+    // the first two seconds (a frame every half second; the median of them).
+    if (autoGuide && faceReady) {
+      for (let t = 0; t < Math.min(duration, 2.9); t += 0.48) {
+        await seekTo(t);
+        const found = findFaces();
+        if (found) applyFaces(await found, true);
+      }
+    }
+    // A clip no longer than a sentence (three seconds, as GRID's) is read whole, the way
+    // LipNet was trained; a longer one sentence by sentence, as the camera is.
+    const whole = total <= MAX_LOCAL;
     for (let i = 0; i * (1 / FPS) < duration; i++) {
       if (source !== v) { cleanup(); return; }
       await seekTo(i / FPS);
       vctx.drawImage(v, 0, 0);
+      if (whole) {
+        lastFrames.push(cropFrame());
+        if (i % 5 === 0) showText(`reading the clip… ${Math.round((100 * i) / total)}%`, true);
+        continue;
+      }
       onFrame();
       await busy;
     }
@@ -887,6 +1064,7 @@ __WORKER__
     checkServer();
   });
   $("serverOff").addEventListener("click", () => { server = null; serverToken = null; serverInfo = null; serverExplicit = false; try { localStorage.removeItem("thelip.server"); localStorage.removeItem("thelip.token"); } catch {} renderFaces(null); renderServer(); newSentence(); discoverServer(); });
+  $("auto").addEventListener("change", (e) => setAuto(e.target.checked, true));
   $("improve").addEventListener("change", (e) => { improve = e.target.checked; try { localStorage.setItem("thelip.improve", improve ? "1" : "0"); } catch {} syncMic(); });
   $("lang").addEventListener("change", (e) => { setLanguage(e.target.value); newSentence(); });
   $("closeSheet").addEventListener("click", () => { $("sheet").hidden = true; });
@@ -894,9 +1072,18 @@ __WORKER__
   const debug = { frames: 0, started: 0, finished: 0, reads: 0, lastMotion: 0, quiet: 0, lastWords: null, trace: [], server: { sent: 0, lastText: null, lastError: null, lastFeedback: null, lastHeard: null, lastHearError: null } };
   window.lipLive = { get ready() { return ready; }, get text() { return sub.textContent; }, get heard() { return $("heard").hidden ? null : $("heard").textContent; }, get server() { return serverOn() ? server : null; },
     get lastRead() { return lastRead; }, get lastHeard() { return lastHeard; }, get mic() { return mic ? mic.ctx.state : null; }, get language() { return language; },
-    get profile() { return storedProfile(); }, get phrases() { return phrases; }, get crawl() { return [...plane.children].map((l) => l.textContent.trim()); }, startFile, openFix, debug };
+    get profile() { return storedProfile(); }, get phrases() { return phrases; }, get crawl() { return [...plane.children].map((l) => l.textContent.trim()); },
+    get auto() { return autoGuide; }, get faceReady() { return faceReady; }, get guide() { return guideBox && { x: Math.round(guideBox.x), y: Math.round(guideBox.y), w: Math.round(guideBox.w), h: Math.round(guideBox.h) }; },
+    get mouths() { return mouths.map((m) => ({ x: Math.round(m.box.x), y: Math.round(m.box.y), w: Math.round(m.box.w), h: Math.round(m.box.h), moving: !!(m.el && m.el.classList.contains("moving")) })); },
+    startFile, openFix, debug };
+  // The oval finds the mouth unless it was placed by hand (and kept so), or the
+  // address gives it (#gX-Y-W-H: tests, and anyone who wants it fixed).
+  try { autoGuide = localStorage.getItem("thelip.auto") !== "0"; } catch {}
+  if (/^#g\d+-\d+-\d+-\d+$/.test(location.hash)) autoGuide = false;
   loadServer();
   renderTally();
+  renderAuto();
+  bootFaces();
   bootWorker();
 })();
 </script>

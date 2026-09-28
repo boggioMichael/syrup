@@ -26,6 +26,18 @@ their own repositories' code; on non-frontal faces and low resolution
 every one of them degrades — LipNet measurably (docs/benchmarks.md: WER
 0.5 at half resolution) — and none reads a profile mouth.
 
+## The face finder
+
+Every reader above needs the mouth found first. thelip-server finds it
+with **BlazeFace** (short range; Bazarevsky et al. 2019), MediaPipe's face
+detector (Apache 2.0; `blaze_face_short_range.tflite`, 0.1M parameters,
+230 KB) through mediapipe's Tasks API; thelip.syrup runs the same network
+in the browser from its own weights (`example/thelip/faces.js`, no TFLite
+runtime, 35 ms a look on one CPU core), matching MediaPipe's detector to
+four decimals (`example/thelip/test/faces.test.mjs`). Its six keypoints
+(eyes, nose tip, mouth centre, ears) place the mouth: the page's oval, the
+server's 96x96 crops.
+
 ## What this means for the product
 
 - English works today with a closed vocabulary. A user gets exactly what

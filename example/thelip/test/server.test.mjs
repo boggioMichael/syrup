@@ -232,6 +232,27 @@ try {
           await page2.evaluate(() => localStorage.getItem("thelip.server") === null && localStorage.getItem("thelip.token") === null && window.lipLive.language === "es"));
     check("the sheet says so", /connected to thelip's server/.test(await page2.$eval("#serverStatus", (e) => e.textContent)));
   } finally { api2.kill(); }
+
+  // Two people before the camera, the larger one still, the other speaking: with a
+  // server (which reads each face) the other's lips start the sentence too.
+  const twoCam = path.join(os.tmpdir(), "thelip-two-camera.y4m");
+  const grid = path.join(here, "..", "..", "..", "docs", "test", "grid");
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-i", path.join(grid, "bbaf2n.webm"), "-i", path.join(grid, "sbwe5n.webm"), "-filter_complex",
+    "[0:v]trim=end_frame=1,loop=loop=74:size=1:start=0,setpts=N/25/TB,crop=180:288:63:0[a];[1:v]crop=180:288:93:0[b];[a][b]hstack=inputs=2,format=yuv420p", "-frames:v", "75", twoCam]);
+  const browser2 = await chromium.launch({ channel: "chromium", headless: true, args: [
+    "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", `--use-file-for-fake-video-capture=${twoCam}`] });
+  try {
+    const ctx2 = await browser2.newContext({ viewport: { width: 390, height: 800 }, permissions: ["camera"] });
+    const cam2 = await ctx2.newPage();
+    cam2.on("pageerror", (e) => console.error("page error:", e.message));
+    await cam2.goto("http://127.0.0.1:8795" + pagePath + "?server=http://127.0.0.1:8798&token=t0k");
+    await cam2.waitForFunction(() => window.lipLive && window.lipLive.ready && window.lipLive.faceReady && window.lipLive.server, null, { timeout: 60000 });
+    await cam2.waitForFunction(() => window.lipLive.mouths.length === 1 && window.lipLive.debug.server.sent >= 1, null, { timeout: 60000 }).catch(() => {});
+    const seen = await cam2.evaluate(() => ({ guide: window.lipLive.guide, mouths: window.lipLive.mouths, sent: window.lipLive.debug.server.sent, other: window.lipLive.debug.otherMotion, quiet: window.lipLive.debug.quiet }));
+    check("two people, the larger still: the oval is on the larger one's mouth, the other's is followed, and its lips start a sentence for the server",
+          seen.guide && seen.guide.x + seen.guide.w / 2 < 180 && seen.mouths.length === 1 && seen.mouths[0].x > 180 && seen.sent >= 1, JSON.stringify(seen));
+    await cam2.screenshot({ path: path.join(here, "two-camera.png") });
+  } finally { await browser2.close(); }
   console.log(failures ? `${failures} FAILED` : "ALL PASSED");
   if (failures) process.exit(1);
 } finally {
