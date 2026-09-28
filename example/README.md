@@ -12,6 +12,7 @@ example/
   inference-api/      the local HTTP service the apps talk to (jobs, streamed sessions, exports, deletion)
   chrome-extension/   Lip Read for YouTube (Manifest V3, TypeScript), with a Playwright end-to-end test
   web/                one HTML page that uses the service
+  thelip/             thelip.syrup: The Lip in the browser, on a phone (live site on GitHub Pages)
   ios/                the SwiftUI app (Vision + AVFoundation + Core ML), written without a compiler here
   shared-types/       the JSON schema and TypeScript types every part agrees on
   ml/                 model scripts: get LipNet, fetch research checkpoints behind their licences, export/convert
@@ -30,6 +31,7 @@ example/
 | Inference service | works; 9 tests (jobs, streamed sessions, exports, auth, rate limit, deletion) |
 | Chrome extension | works end to end against the service and a fake YouTube page (25 checks in Playwright); real youtube.com and the tab-capture source not exercised here |
 | Web page | works; 7 checks in Playwright |
+| thelip.syrup (in the browser) | works: the network in a Web Worker, camera on https, record-a-clip elsewhere; reads the GRID clip in Chromium; live at boggiomichael.github.io/syrup/thelip/ once Pages deploys |
 | iOS app | source written against iOS 17 APIs, never compiled (no Xcode here); `// VERIFY:` marks the doubtful sites |
 | Speed (2-core Xeon, 25 fps, 360x288 faces) | 0.4x realtime with the OpenCV detector, 1.4x with syrup's cascade; 5 faces at 1080x576: 1.9x / 3.8x — see [docs/benchmarks.md](docs/benchmarks.md) |
 

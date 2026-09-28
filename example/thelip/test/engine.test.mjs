@@ -4,10 +4,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LipNet, loadWeights, decode, correct } from "../lipnet.js";
+import { LipNet, loadWeights, decode, correct } from "../thelip.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const [weightsPath = path.join(here, "..", "lipnet-web.bin"), cropsPath = path.join(here, "..", "lipnet-web.sbwe5n.crops.f32"), probsPath = path.join(here, "..", "lipnet-web.sbwe5n.probs.f32")] = process.argv.slice(2);
+const [weightsPath = path.join(here, "..", "thelip-weights.bin"), cropsPath = path.join(here, "..", "thelip-weights.sbwe5n.crops.f32"), probsPath = path.join(here, "..", "thelip-weights.sbwe5n.probs.f32")] = process.argv.slice(2);
 
 const toBuffer = (b) => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
 const t0 = performance.now();

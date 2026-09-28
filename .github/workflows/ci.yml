@@ -81,3 +81,10 @@ jobs:
         run: cd example/chrome-extension && NODE_PATH=$(npm root -g) node test/e2e.mjs
       - name: Web page end to end
         run: cd example/web && NODE_PATH=$(npm root -g) node test/e2e.mjs
+      - name: thelip.syrup (engine against numpy, built page in Chromium)
+        run: |
+          cd example/thelip
+          python ../ml/conversion/export_thelip_weights.py --out thelip-weights.bin --reference sbwe5n
+          node test/engine.test.mjs
+          python build.py
+          NODE_PATH=$(npm root -g) node test/page.test.mjs

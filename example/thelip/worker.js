@@ -1,5 +1,5 @@
 /**
- * The Web Worker: owns the LipNet engine, takes frames as they are
+ * The Web Worker: owns the thelip engine, takes frames as they are
  * captured, keeps the incremental convolution state, and reads a window
  * on request. Built into the page with the engine prepended (build.py).
  *

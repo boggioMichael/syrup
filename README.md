@@ -176,6 +176,13 @@ vocabulary); the other languages are surveyed with their licences and wired
 as adapters, not pretended. Measured numbers, tests and the honest status
 of every piece: [`example/README.md`](example/README.md).
 
+## thelip.syrup
+
+The Lip on your phone: **https://boggiomichael.github.io/syrup/thelip/**
+runs the lip reader in the browser (a Web Worker, plain JavaScript, no
+upload, no audio). Point the camera at your mouth, say a sentence from its
+vocabulary, and read it back. Source in [`example/thelip`](example/thelip).
+
 ## The Lip
 
 ![A muted clip of a person speaking, subtitled live from the lips alone](docs/the-lip.gif)

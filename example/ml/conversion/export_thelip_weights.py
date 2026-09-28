@@ -1,8 +1,8 @@
-"""LipNet for the browser: one binary of int8 weights (batch norm folded
-into the convolutions, one scale per tensor) plus a JSON header, for the
-plain-JavaScript engine in example/web-live. 4.6 MB instead of 18.
+"""The Lip's weights for the browser: one binary of int8 weights (batch norm
+folded into the convolutions, one scale per tensor) plus a JSON header, for
+the plain-JavaScript engine in example/thelip. 4.6 MB instead of 18.
 
-    python3 export_lipnet_web.py --out lipnet-web.bin [--check]
+    python3 export_thelip_weights.py --out thelip-weights.bin [--check]
 
 `--check` runs the numpy network with the folded, quantised weights on the
 GRID sample clips and prints the words right (64/66 with the float
@@ -51,7 +51,7 @@ def quantise(a: np.ndarray):
 
 
 def write(tensors: dict, path: str) -> dict:
-    header = {"format": "lipnet-web-int8", "tensors": []}
+    header = {"format": "thelip-int8", "tensors": []}
     blob = bytearray()
     for name, a in tensors.items():
         q, scale = quantise(a)
@@ -89,7 +89,7 @@ def net_with(net: LipNet, tensors: dict) -> LipNet:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--lipnet", default=lipnet_dir())
-    ap.add_argument("--out", default="lipnet-web.bin")
+    ap.add_argument("--out", default="thelip-weights.bin")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--reference", default=None, help="GRID clip code: write <out>.<code>.crops.f32 and .probs.f32")
     args = ap.parse_args()

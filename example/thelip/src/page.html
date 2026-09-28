@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>The Lip Live</title>
+<title>thelip.syrup</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,500..900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
   :root {
@@ -73,8 +73,8 @@
 <div class="wrap">
   <header>
     <div>
-      <div class="eyebrow">syrup · example · in the browser</div>
-      <h1>The <span>Lip</span> Live</h1>
+      <div class="eyebrow">The Lip &middot; reads your lips in the browser</div>
+      <h1>thelip<span>.syrup</span></h1>
     </div>
     <div class="lag" id="lag"></div>
   </header>
@@ -83,7 +83,7 @@
     <video id="cam" playsinline muted autoplay hidden></video>
     <canvas id="view" class="view" hidden></canvas>
     <div class="guide" id="guide" hidden><span class="hint">mouth in the frame, lips on the oval</span></div>
-    <div class="empty" id="empty">Loading the network…</div>
+    <div class="empty" id="empty">Loading thelip&hellip;</div>
     <div class="status" id="status" data-state="idle">loading</div>
   </div>
 
@@ -103,22 +103,22 @@
 
   <div class="sees">
     <canvas id="crop" width="100" height="50"></canvas>
-    <div class="label">What the network sees: a 100×50 crop of the frame, the same crop LipNet was trained on. Keep your lips inside the oval and your face still.</div>
+    <div class="label">What thelip sees: a 100&times;50 crop of the frame, the crop its network was trained on. Keep your lips inside the oval and your face still.</div>
   </div>
 
   <div class="say">
     <div class="eyebrow">Say this (mouth only, no voice needed)</div>
     <div class="sentence" id="sentence">set blue with e five now</div>
     <div class="row"><button class="small" id="another">Another sentence</button></div>
-    <div class="why">The network knows 51 words in one sentence shape: <span class="grammar">command · colour · preposition · letter · digit · adverb</span>. It reads those and nothing else.</div>
+    <div class="why">thelip knows 51 words in one sentence shape: <span class="grammar">command &middot; colour &middot; preposition &middot; letter &middot; digit &middot; adverb</span>. It reads those and nothing else.</div>
   </div>
 
   <div class="history" id="history"></div>
 
   <div class="notes">
-    <div><b>What this is.</b> LipNet (Assael et al. 2016), the same weights The Lip reads with, running here in JavaScript, in your browser, on the phone. Nothing leaves the device. 64 of 66 words on the GRID sample clips; a new face and a phone camera are harder than the lab data it learned from, so expect misses, and speak the sentence at a normal pace.</div>
-    <div><b>Live.</b> With the camera, an utterance is read as soon as your lips go still; on a fast phone the words form while you speak. From a recording, the clip plays at the speed the network reads it, with the subtitle forming underneath.</div>
-    <div class="grammar">command: bin lay place set · colour: blue green red white · preposition: at by in with · letter: a–z (no w) · digit: zero–nine · adverb: again now please soon</div>
+    <div><b>What this is.</b> thelip is The Lip, the lip reader from the syrup library, running in JavaScript in your browser, on the phone. Nothing leaves the device and no audio is used. Its network is LipNet (Assael, Shillingford, Whiteson, de Freitas 2016; weights from rizkiarm/LipNet, MIT), trained on the GRID corpus: 64 of 66 words on GRID's sample clips. A new face and a phone camera are harder than the lab data it learned from, so expect misses, and say the sentence at a normal pace.</div>
+    <div><b>Live.</b> With the camera, an utterance is read as soon as your lips go still; on a fast phone the words form while you speak. From a recording, the clip plays at the speed thelip reads it, with the subtitle forming underneath.</div>
+    <div class="grammar">command: bin lay place set &middot; colour: blue green red white &middot; preposition: at by in with &middot; letter: a&ndash;z (no w) &middot; digit: zero&ndash;nine &middot; adverb: again now please soon</div>
   </div>
 </div>
 
@@ -142,7 +142,7 @@ __WORKER__
   let mirror = false;
   let history = [];
 
-  // ---- the network, in a worker ------------------------------------------------
+  // ---- thelip's network, in a worker ------------------------------------------
   function bootWorker() {
     const b64 = $("weights").textContent.trim();
     const bin = atob(b64);
@@ -161,7 +161,7 @@ __WORKER__
     if (m.type === "ready") {
       ready = true; perFrameMs = m.perFrameMs;
       $("lag").textContent = `${perFrameMs.toFixed(0)} ms per frame on this device`;
-      empty.textContent = "Use the camera, or record a clip of yourself saying a sentence.";
+      empty.textContent = "Use the camera, or record a clip of yourself mouthing a sentence.";
       setStatus("idle", "ready");
       $("camera").disabled = !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -183,7 +183,7 @@ __WORKER__
   // ---- frames -------------------------------------------------------------------
   function setStatus(state, text) { status.dataset.state = state; status.textContent = text; }
 
-  /** The 100x50 crop of the guide box from the source, as the network wants it. */
+  /** The 100x50 crop of the guide box from the source, as the model wants it. */
   function cropFrame() {
     const g = guideBox;
     cropCtx.drawImage(source, g.x, g.y, g.w, g.h, 0, 0, W, H);
@@ -287,7 +287,7 @@ __WORKER__
         const to = Math.max(0, Math.min(n - 1, n - u.still + POST - 1));
         const r = await read(0, to, true);
         show(r.words, true, r.ms);
-        setStatus("idle", mode === "camera" ? "waiting for lips" : "playing at the network's pace");
+        setStatus("idle", mode === "camera" ? "waiting for lips" : "playing at reading pace");
       } else if (!u.finished && n - u.reads >= 12 && perFrameMs < 45) {
         u.reads = n;
         const r = await read(0, n - 1, false);
@@ -305,7 +305,7 @@ __WORKER__
     for (const w of settled) { const s = document.createElement("span"); s.className = w.confidence < 0.5 ? "u" : ""; s.textContent = (w.confidence < 0.5 ? `[${w.text}?] ` : `${w.text} `); text.appendChild(s); }
     for (const w of forming) { const s = document.createElement("span"); s.className = "forming"; s.textContent = w.raw + " "; text.appendChild(s); }
     if (final) {
-      $("raw").textContent = words.length ? `network letters: ${words.map((w) => w.raw).join(" ")}` : "nothing read: no letters came out of the network";
+      $("raw").textContent = words.length ? `letters as read: ${words.map((w) => w.raw).join(" ")}` : "nothing read: no letters came out";
       const conf = words.length ? words.reduce((a, w) => a + w.confidence, 0) / words.length : 0;
       $("meta").replaceChildren(...[`decoded in ${ms.toFixed(0)} ms`, words.length ? `confidence ${Math.round(conf * 100)}%` : "", "no audio used"].filter(Boolean).map((t) => { const s = document.createElement("span"); s.textContent = t; return s; }));
       if (words.length) {
@@ -348,7 +348,7 @@ __WORKER__
   }
   $("camera").addEventListener("click", startCamera);
 
-  // ---- file mode: the clip plays at the speed the network reads it ---------------------
+  // ---- file mode: the clip plays at the speed thelip reads it ----------------------
   async function startFile(file) {
     if (rafId) cancelAnimationFrame(rafId);
     if (cam.srcObject) { cam.srcObject.getTracks().forEach((t) => t.stop()); cam.srcObject = null; }
@@ -365,7 +365,7 @@ __WORKER__
     defaultGuide();
     utter = null; last = null; preRoll = []; anyUtterance = false; recent.length = 0;
     worker.postMessage({ type: "reset" });
-    setStatus("listening", "playing at the network's pace");
+    setStatus("listening", "playing at reading pace");
     const duration = v.duration;
     const seekTo = (t) => new Promise((res) => { const done = () => { v.removeEventListener("seeked", done); res(); }; v.addEventListener("seeked", done); v.currentTime = t; });
     for (let i = 0; i * (1 / FPS) < duration; i++) {
@@ -373,7 +373,7 @@ __WORKER__
       await seekTo(i / FPS);
       vctx.drawImage(v, 0, 0);
       await onFrame();
-      await busy;                      // pace the playback to the network
+      await busy;                      // pace the playback to the reading
       $("lag").textContent = `${(i / FPS).toFixed(1)} / ${duration.toFixed(1)} s`;
     }
     // Whatever was still forming at the end is read now; a clip in which the

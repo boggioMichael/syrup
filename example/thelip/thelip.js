@@ -1,6 +1,7 @@
 /**
- * LipNet in plain JavaScript: typed arrays, no framework, runs in a Web
- * Worker on a phone. Reads the int8 export of export_lipnet_web.py.
+ * thelip: The Lip's network (LipNet, Assael et al. 2016) in plain JavaScript —
+ * typed arrays, no framework, runs in a Web Worker on a phone. Reads the
+ * int8 export of export_thelip_weights.py.
  *
  * The convolution stack is computed incrementally: every new frame
  * finalises one more time step of each layer (a 3-deep kernel needs the
@@ -19,7 +20,7 @@ const SPACE = 26;
 /** Reads the LIPW file: {name: Float32Array (dequantised), shapes}. */
 export function loadWeights(buffer) {
   const view = new DataView(buffer);
-  if (String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3)) !== "LIPW") throw new Error("not a LipNet web weight file");
+  if (String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3)) !== "LIPW") throw new Error("not a thelip weight file");
   const headLength = view.getUint32(4, true);
   const header = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 8, headLength)));
   const base = 8 + headLength;

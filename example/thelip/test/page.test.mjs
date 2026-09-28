@@ -9,18 +9,20 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 const here = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(here, "..");
+// SERVE_DIR / PAGE_PATH test another copy, e.g. the standalone build in docs/thelip.
+const root = process.env.SERVE_DIR || path.resolve(here, "..");
+const pagePath = process.env.PAGE_PATH || "/thelip.syrup.html";
 const server = spawn("python3", ["-m", "http.server", "8793", "--bind", "127.0.0.1"], { cwd: root, stdio: "ignore" });
 const wait = async (url) => { for (let i = 0; i < 100; i++) { try { if ((await fetch(url)).ok) return; } catch {} await new Promise((r) => setTimeout(r, 200)); } throw new Error(`not up: ${url}`); };
 let browser;
 try {
-  await wait("http://127.0.0.1:8793/the-lip-live.html");
+  await wait(`http://127.0.0.1:8793${pagePath}`);
   browser = await chromium.launch({ channel: "chromium", headless: true });
   const page = await browser.newPage({ viewport: { width: 420, height: 860 } });
   page.on("pageerror", (e) => console.error("page error:", e.message));
   page.on("console", (m) => { if (m.type() === "error") console.error("console:", m.text()); });
   // The GRID mouth of sbwe5n sits at (127,176) 113x57 in the 360x288 frame.
-  await page.goto("http://127.0.0.1:8793/the-lip-live.html#g127-176-113-57");
+  await page.goto(`http://127.0.0.1:8793${pagePath}#g127-176-113-57`);
   await page.waitForFunction(() => window.lipLive && window.lipLive.ready, null, { timeout: 60000 });
   const perFrame = await page.$eval("#lag", (e) => e.textContent);
   console.log("ok   network ready in the worker:", perFrame);
