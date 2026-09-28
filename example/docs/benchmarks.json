@@ -1,0 +1,328 @@
+[
+ {
+  "name": "five_faces",
+  "wer": 0.0,
+  "cer": 0.0,
+  "words_ref": 18,
+  "words_hyp": 18,
+  "attribution_accuracy": 1.0,
+  "track_consistency": 1.0,
+  "tracks": 5,
+  "people": 5,
+  "speaking_precision": 0.6613,
+  "speaking_recall": 0.9152,
+  "latency_ms_per_frame": 147.9194,
+  "realtime_factor": 3.698,
+  "detail": {
+   "per_person": [
+    {
+     "person": 0,
+     "reference": "set blue with e five now",
+     "hypothesis": "set blue with e five now",
+     "word_errors": 0
+    },
+    {
+     "person": 1,
+     "reference": "",
+     "hypothesis": "",
+     "word_errors": 0
+    },
+    {
+     "person": 2,
+     "reference": "lay blue at x four now",
+     "hypothesis": "lay blue at x four now",
+     "word_errors": 0
+    },
+    {
+     "person": 3,
+     "reference": "",
+     "hypothesis": "",
+     "word_errors": 0
+    },
+    {
+     "person": 4,
+     "reference": "lay red with p nine again",
+     "hypothesis": "lay red with p nine again",
+     "word_errors": 0
+    }
+   ],
+   "assignment": {
+    "1": 4,
+    "2": 2,
+    "3": 3,
+    "4": 0,
+    "5": 1
+   },
+   "stages": {
+    "detect": 9.596127271652222,
+    "track": 0.009658336639404297,
+    "mouth": 0.1684582233428955,
+    "vsr": 0.7791697978973389,
+    "asr": 0.0
+   },
+   "cuts_expected": []
+  }
+ },
+ {
+  "name": "low_res",
+  "wer": 0.5,
+  "cer": 0.4722,
+  "words_ref": 12,
+  "words_hyp": 12,
+  "attribution_accuracy": 1.0,
+  "track_consistency": 1.0,
+  "tracks": 2,
+  "people": 2,
+  "speaking_precision": 0.7172,
+  "speaking_recall": 1.0,
+  "latency_ms_per_frame": 34.5898,
+  "realtime_factor": 0.8647,
+  "detail": {
+   "per_person": [
+    {
+     "person": 0,
+     "reference": "set blue with e five now",
+     "hypothesis": "bin red with r five now",
+     "word_errors": 3
+    },
+    {
+     "person": 1,
+     "reference": "bin red by k seven now",
+     "hypothesis": "bin white by y five now",
+     "word_errors": 3
+    }
+   ],
+   "assignment": {
+    "1": 1,
+    "2": 0
+   },
+   "stages": {
+    "detect": 1.7782063484191895,
+    "track": 0.004739522933959961,
+    "mouth": 0.05700945854187012,
+    "vsr": 0.5091261863708496,
+    "asr": 0.0
+   },
+   "cuts_expected": []
+  }
+ },
+ {
+  "name": "muted",
+  "wer": 0.0,
+  "cer": 0.0,
+  "words_ref": 6,
+  "words_hyp": 6,
+  "attribution_accuracy": 1.0,
+  "track_consistency": 1.0,
+  "tracks": 1,
+  "people": 1,
+  "speaking_precision": 0.7027,
+  "speaking_recall": 0.7429,
+  "latency_ms_per_frame": 54.5241,
+  "realtime_factor": 1.3631,
+  "detail": {
+   "per_person": [
+    {
+     "person": 0,
+     "reference": "set blue with e five now",
+     "hypothesis": "set blue with e five now",
+     "word_errors": 0
+    }
+   ],
+   "assignment": {
+    "1": 0
+   },
+   "stages": {
+    "detect": 3.507516860961914,
+    "track": 0.005307435989379883,
+    "mouth": 0.04497957229614258,
+    "vsr": 0.289339542388916,
+    "asr": 0.0
+   },
+   "cuts_expected": []
+  }
+ },
+ {
+  "name": "one_speaker",
+  "wer": 0.0,
+  "cer": 0.0,
+  "words_ref": 6,
+  "words_hyp": 6,
+  "attribution_accuracy": 1.0,
+  "track_consistency": 1.0,
+  "tracks": 1,
+  "people": 1,
+  "speaking_precision": 0.7027,
+  "speaking_recall": 0.7429,
+  "latency_ms_per_frame": 54.1943,
+  "realtime_factor": 1.3549,
+  "detail": {
+   "per_person": [
+    {
+     "person": 0,
+     "reference": "set blue with e five now",
+     "hypothesis": "set blue with e five now",
+     "word_errors": 0
+    }
+   ],
+   "assignment": {
+    "1": 0
+   },
+   "stages": {
+    "detect": 3.4654364585876465,
+    "track": 0.0050716400146484375,
+    "mouth": 0.04642081260681152,
+    "vsr": 0.27854347229003906,
+    "asr": 0.0
+   },
+   "cuts_expected": []
+  }
+ },
+ {
+  "name": "rapid_cuts",
+  "wer": 0.0,
+  "cer": 39.0,
+  "words_ref": 0,
+  "words_hyp": 9,
+  "attribution_accuracy": 0.0,
+  "track_consistency": 0.0625,
+  "tracks": 4,
+  "people": 4,
+  "speaking_precision": 0.0,
+  "speaking_recall": 0.0,
+  "latency_ms_per_frame": 54.5793,
+  "realtime_factor": 1.3645,
+  "detail": {
+   "per_person": [
+    {
+     "person": 0,
+     "reference": "",
+     "hypothesis": "lay green i five please place white i sixpaeain",
+     "word_errors": 9
+    },
+    {
+     "person": 1,
+     "reference": "",
+     "hypothesis": "",
+     "word_errors": 0
+    },
+    {
+     "person": 2,
+     "reference": "",
+     "hypothesis": "",
+     "word_errors": 0
+    },
+    {
+     "person": 3,
+     "reference": "",
+     "hypothesis": "",
+     "word_errors": 0
+    }
+   ],
+   "assignment": {
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0
+   },
+   "stages": {
+    "detect": 5.882309198379517,
+    "track": 0.010705947875976562,
+    "mouth": 0.07491683959960938,
+    "vsr": 0.30074191093444824,
+    "asr": 0.0
+   },
+   "cuts_expected": [
+    1.2,
+    2.4,
+    3.6
+   ]
+  }
+ },
+ {
+  "name": "two_alternating",
+  "wer": 0.0,
+  "cer": 0.0,
+  "words_ref": 12,
+  "words_hyp": 12,
+  "attribution_accuracy": 1.0,
+  "track_consistency": 1.0,
+  "tracks": 2,
+  "people": 2,
+  "speaking_precision": 0.7412,
+  "speaking_recall": 0.8873,
+  "latency_ms_per_frame": 66.1295,
+  "realtime_factor": 1.6532,
+  "detail": {
+   "per_person": [
+    {
+     "person": 0,
+     "reference": "set blue with e five now",
+     "hypothesis": "set blue with e five now",
+     "word_errors": 0
+    },
+    {
+     "person": 1,
+     "reference": "bin red by k seven now",
+     "hypothesis": "bin red by k seven now",
+     "word_errors": 0
+    }
+   ],
+   "assignment": {
+    "1": 1,
+    "2": 0
+   },
+   "stages": {
+    "detect": 8.78445029258728,
+    "track": 0.01126861572265625,
+    "mouth": 0.14417290687561035,
+    "vsr": 0.5454857349395752,
+    "asr": 0.0
+   },
+   "cuts_expected": []
+  }
+ },
+ {
+  "name": "two_simultaneous",
+  "wer": 0.0,
+  "cer": 0.0,
+  "words_ref": 12,
+  "words_hyp": 12,
+  "attribution_accuracy": 1.0,
+  "track_consistency": 1.0,
+  "tracks": 2,
+  "people": 2,
+  "speaking_precision": 0.6985,
+  "speaking_recall": 0.669,
+  "latency_ms_per_frame": 71.4287,
+  "realtime_factor": 1.7857,
+  "detail": {
+   "per_person": [
+    {
+     "person": 0,
+     "reference": "set blue with e five now",
+     "hypothesis": "set blue with e five now",
+     "word_errors": 0
+    },
+    {
+     "person": 1,
+     "reference": "bin red by k seven now",
+     "hypothesis": "bin red by k seven now",
+     "word_errors": 0
+    }
+   ],
+   "assignment": {
+    "1": 1,
+    "2": 0
+   },
+   "stages": {
+    "detect": 4.396760940551758,
+    "track": 0.00618743896484375,
+    "mouth": 0.07523822784423828,
+    "vsr": 0.5584635734558105,
+    "asr": 0.0
+   },
+   "cuts_expected": []
+  }
+ }
+]

@@ -41,3 +41,43 @@ jobs:
           python -m pip install --quiet numpy pillow opencv-python-headless
           python python/test_syrup.py
           python python/thelip/test_thelip.py
+
+  example:
+    # The lipreader example projects: pipeline, service, shared types, extension, web page.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the library (the face and eye detector)
+        run: cargo build --release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python packages
+        run: python -m pip install --quiet numpy opencv-python-headless pillow scipy starlette uvicorn httpx python-multipart jsonschema
+      - name: ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: LipNet weights and sample clips (MIT / CC BY 4.0)
+        run: example/ml/models/get_lipnet.sh
+      - name: Fixtures
+        run: cd example/lipreader && python tests/make_fixtures.py
+      - name: Pipeline tests
+        run: cd example/lipreader && python tests/test_lipreader.py
+      - name: Weights export round-trip
+        run: python example/ml/conversion/export_lipnet_weights.py --out /tmp/lipnet.npz
+      - name: API tests
+        run: cd example/inference-api && python tests/test_api.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: TypeScript
+        run: |
+          npm install -g typescript playwright
+          npx playwright install --with-deps chromium
+          cd example/shared-types && tsc -p tsconfig.json
+          cd ../chrome-extension && tsc -p tsconfig.json
+      - name: Extension end to end
+        run: cd example/chrome-extension && NODE_PATH=$(npm root -g) node test/e2e.mjs
+      - name: Web page end to end
+        run: cd example/web && NODE_PATH=$(npm root -g) node test/e2e.mjs

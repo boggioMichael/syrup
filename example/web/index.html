@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lipreader — web</title>
+<style>
+  :root { color-scheme: light dark; font: 14px/1.45 system-ui, sans-serif; }
+  body { margin: 0; padding: 16px; max-width: 1100px; margin-inline: auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .muted { opacity: .7; font-size: 12px; }
+  form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; align-items: end; margin: 14px 0; }
+  label { display: block; font-size: 12px; }
+  input, select, button { width: 100%; padding: 6px; margin-top: 3px; box-sizing: border-box; }
+  button.primary { font-weight: 600; }
+  .status { padding: 8px 10px; border-radius: 6px; background: rgba(127,127,127,.15); margin: 10px 0; }
+  .stage { position: relative; display: inline-block; max-width: 100%; }
+  video { max-width: 100%; display: block; background: #000; }
+  canvas.overlay { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .subs { position: absolute; left: 0; right: 0; bottom: 8%; text-align: center; pointer-events: none; }
+  .subs div { display: inline-block; background: rgba(0,0,0,.65); color: #fff; padding: 4px 10px; border-radius: 4px; font-size: clamp(14px, 2.4vw, 24px); margin: 2px; }
+  .subs .who { font-size: .6em; opacity: .8; margin-right: 8px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .row { grid-template-columns: 1fr; } }
+  .seg { padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+  .seg:hover { background: rgba(127,127,127,.15); }
+  .seg .meta { font-size: 11px; opacity: .8; display: flex; gap: 8px; }
+  .uncertain { font-style: italic; opacity: .75; }
+  .warning { color: #c60; border-left: 3px solid #c60; padding-left: 6px; margin: 6px 0; white-space: pre-wrap; font-size: 12px; }
+  .lanes { margin-top: 10px; }
+  .lane { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 3px 0; }
+  .lane .bar { position: relative; flex: 1; height: 14px; background: rgba(127,127,127,.2); border-radius: 3px; overflow: hidden; }
+  .lane .bar span { position: absolute; top: 0; bottom: 0; background: rgba(80, 200, 120, .6); }
+  .lane .bar span.seg { background: rgba(255, 213, 74, .8); }
+  .exports a { margin-right: 10px; }
+</style>
+</head>
+<body>
+<h1>lipreader</h1>
+<div class="muted">Lip-reading output is probabilistic. Many sounds look identical on the lips, so this transcript is a best guess, not a verbatim record; words marked [like this?] are uncertain.</div>
+<form id="form">
+  <label>Service <input id="api" value="http://127.0.0.1:8765"></label>
+  <label>Token <input id="token" type="password" placeholder="if the service needs one"></label>
+  <label>Video <input id="file" type="file" accept="video/*" required></label>
+  <label>Mode <select id="mode"><option value="visual">visual only</option><option value="audiovisual">audio + visual</option><option value="audio-attributed">audio transcript, speakers from the lips</option></select></label>
+  <label>Language <select id="language"><option>auto</option><option>en</option><option>he</option><option>es</option><option>ar</option><option>fr</option><option>de</option><option>it</option></select></label>
+  <label>Speakers <select id="speakers"><option value="all">all</option><option value="current">current (largest face at the start)</option></select></label>
+  <button class="primary" type="submit">Read the lips</button>
+  <button type="button" id="delete" disabled>Delete result from the service</button>
+</form>
+<div id="status" class="status">Choose a video. The service on your machine does the work; nothing is uploaded elsewhere.</div>
+<div id="languages" class="muted"></div>
+<div class="row">
+  <div>
+    <div class="stage"><video id="video" controls></video><canvas id="overlay" class="overlay"></canvas><div id="subs" class="subs"></div></div>
+    <div id="lanes" class="lanes"></div>
+  </div>
+  <div>
+    <div id="warnings"></div>
+    <div id="transcript"></div>
+    <div id="exports" class="exports"></div>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+let job = null, follow = null, objectUrl = null;
+
+const headers = () => ($("token").value ? { Authorization: `Bearer ${$("token").value}` } : {});
+const api = (path) => $("api").value.replace(/\/$/, "") + path;
+
+async function health() {
+  try {
+    const h = await (await fetch(api("/health"), { headers: headers() })).json();
+    const ready = h.languages.filter((l) => l.visual.available).map((l) => l.code);
+    const audio = h.languages[0]?.audio?.available ? "audio modes available" : "audio modes need a Whisper backend on the service";
+    $("languages").textContent = `Service ${h.version}, processing ${h.processing}. Visual models here: ${ready.join(", ") || "none"}; ${audio}.`;
+  } catch (e) {
+    $("languages").textContent = `Service not reachable at ${$("api").value}: start it with python3 -m lipreader_api`;
+  }
+}
+health();
+$("api").addEventListener("change", health);
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const file = $("file").files[0];
+  if (!file) return;
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = URL.createObjectURL(file);
+  $("video").src = objectUrl;
+  const options = { mode: $("mode").value, language: $("language").value, speakers: $("speakers").value };
+  const form = new FormData();
+  form.append("file", file, file.name);
+  form.append("options", JSON.stringify(options));
+  $("status").textContent = "Uploading…";
+  try {
+    const r = await fetch(api("/jobs"), { method: "POST", headers: headers(), body: form });
+    job = await r.json();
+    if (!r.ok) throw new Error(job.error);
+    $("delete").disabled = false;
+    await poll();
+  } catch (err) {
+    $("status").textContent = `Failed: ${err.message}`;
+  }
+});
+
+async function poll() {
+  for (;;) {
+    const r = await fetch(api(`/jobs/${job.id}?wait=20`), { headers: headers() });
+    job = await r.json();
+    if (job.status === "done") { $("status").textContent = summary(job); render(); return; }
+    if (job.status === "failed") { $("status").textContent = `Failed: ${job.error}`; return; }
+    $("status").textContent = `Reading lips… ${Math.round(job.progress * 100)}% (processed ${job.processing === "server" ? "on the server" : "on this machine"})`;
+  }
+}
+
+function summary(j) {
+  const r = j.result;
+  const how = r.language.detection === "assumed" ? " (assumed: no visual language identification exists)" : r.language.detection === "audio-detected" ? " (from the audio)" : "";
+  return `${r.tracks.length} people, ${r.segments.length} segments · language ${r.language.used ?? "none"}${how} · mode ${r.mode} · ${r.timing.processingSeconds.toFixed(1)} s (x${r.timing.realtimeFactor.toFixed(2)} realtime) · processed ${j.processing === "server" ? "on the server" : "on this machine"}`;
+}
+
+$("delete").addEventListener("click", async () => {
+  if (!job) return;
+  await fetch(api(`/jobs/${job.id}`), { method: "DELETE", headers: headers() });
+  job = null; $("delete").disabled = true; $("status").textContent = "Deleted from the service."; render();
+});
+
+function boxAt(track, t) {
+  const k = track.keyframes; if (!k.length) return null;
+  if (t <= k[0].t) return k[0].box; if (t >= k[k.length - 1].t) return k[k.length - 1].box;
+  let lo = 0, hi = k.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (k[m].t <= t) lo = m; else hi = m; }
+  const a = k[lo], b = k[hi], f = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t);
+  return { x: a.box.x + (b.box.x - a.box.x) * f, y: a.box.y + (b.box.y - a.box.y) * f, w: a.box.w + (b.box.w - a.box.w) * f, h: a.box.h + (b.box.h - a.box.h) * f };
+}
+
+function render() {
+  const r = job?.result;
+  const list = $("transcript"), lanes = $("lanes"), warnings = $("warnings"), exports = $("exports");
+  list.replaceChildren(); lanes.replaceChildren(); warnings.replaceChildren(); exports.replaceChildren();
+  if (!r) return;
+  for (const w of r.warnings ?? []) { const d = document.createElement("div"); d.className = "warning"; d.textContent = w; warnings.appendChild(d); }
+  const duration = r.video.duration || 1;
+  for (const t of r.tracks) {
+    const lane = document.createElement("div"); lane.className = "lane";
+    const name = document.createElement("button"); name.textContent = t.label; name.style.width = "auto";
+    name.addEventListener("click", () => { follow = follow === t.trackId ? null : t.trackId; render(); });
+    const bar = document.createElement("div"); bar.className = "bar";
+    for (const s of t.speaking) { const span = document.createElement("span"); span.style.left = `${100 * s.start / duration}%`; span.style.width = `${100 * (s.end - s.start) / duration}%`; bar.appendChild(span); }
+    for (const s of r.segments.filter((s) => s.trackId === t.trackId)) { const span = document.createElement("span"); span.className = "seg"; span.style.left = `${100 * s.start / duration}%`; span.style.width = `${100 * (s.end - s.start) / duration}%`; span.style.height = "40%"; span.style.top = "60%"; bar.appendChild(span); }
+    bar.addEventListener("click", (e) => { const rect = bar.getBoundingClientRect(); $("video").currentTime = duration * (e.clientX - rect.left) / rect.width; });
+    lane.append(name, bar); lanes.appendChild(lane);
+  }
+  for (const s of r.segments.filter((s) => follow == null || s.trackId === follow)) {
+    const el = document.createElement("div"); el.className = "seg";
+    const label = r.tracks.find((t) => t.trackId === s.trackId)?.label ?? (s.trackId < 0 ? "Unattributed" : `Person ${s.trackId}`);
+    el.innerHTML = `<div class="meta"><b>${label}</b><span>${s.start.toFixed(1)}–${s.end.toFixed(1)} s</span><span>${s.language}</span><span>${Math.round(s.confidence * 100)}%</span><span>${s.mode}</span></div>`;
+    const text = document.createElement("div");
+    for (const w of s.words) { const span = document.createElement("span"); span.className = w.uncertain ? "uncertain" : ""; span.title = `${Math.round(w.confidence * 100)}%${w.raw ? ` (network: ${w.raw})` : ""}`; span.textContent = (w.uncertain ? `[${w.text}?]` : w.text) + " "; text.appendChild(span); }
+    el.appendChild(text);
+    el.addEventListener("click", () => { $("video").currentTime = s.start; $("video").play(); });
+    list.appendChild(el);
+  }
+  for (const f of ["txt", "json", "srt", "vtt"]) {
+    const a = document.createElement("a"); a.textContent = f.toUpperCase(); a.href = "#";
+    a.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const params = new URLSearchParams({ format: f }); if (follow != null) params.append("track", follow);
+      const text = await (await fetch(api(`/jobs/${job.id}/export?${params}`), { headers: headers() })).text();
+      const blob = new Blob([text]); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `lipread.${f}`; link.click();
+    });
+    exports.appendChild(a);
+  }
+}
+
+function draw() {
+  requestAnimationFrame(draw);
+  const video = $("video"), canvas = $("overlay"), subs = $("subs");
+  const r = job?.result;
+  canvas.width = video.clientWidth; canvas.height = video.clientHeight;
+  const ctx = canvas.getContext("2d"); ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!r || !video.videoWidth) { subs.replaceChildren(); return; }
+  const t = video.currentTime;
+  const scale = Math.min(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
+  const ox = (canvas.width - video.videoWidth * scale) / 2, oy = (canvas.height - video.videoHeight * scale) / 2;
+  const current = r.segments.filter((s) => s.start <= t && t <= s.end && (follow == null || s.trackId === follow));
+  for (const track of r.tracks) {
+    if (t < track.firstSeen - 0.2 || t > track.lastSeen + 0.2) continue;
+    const b = boxAt(track, t); if (!b) continue;
+    const speaking = current.some((s) => s.trackId === track.trackId);
+    ctx.strokeStyle = follow === track.trackId ? "#fff" : speaking ? "rgba(255,213,74,.9)" : "rgba(120,255,150,.6)";
+    ctx.lineWidth = 2; ctx.strokeRect(ox + b.x * scale, oy + b.y * scale, b.w * scale, b.h * scale);
+    ctx.fillStyle = "rgba(0,0,0,.6)"; ctx.fillRect(ox + b.x * scale, oy + b.y * scale - 16, 64, 16);
+    ctx.fillStyle = "#fff"; ctx.font = "11px system-ui"; ctx.fillText(track.label, ox + b.x * scale + 4, oy + b.y * scale - 4);
+  }
+  const lines = current.map((s) => { const d = document.createElement("div"); const words = s.words.filter((w) => w.start <= t + 0.05); d.innerHTML = `<span class="who">Person ${s.trackId}</span>` + (words.length ? words : s.words).map((w) => (w.uncertain ? `[${w.text}?]` : w.text)).join(" "); return d; });
+  const key = lines.map((l) => l.textContent).join("|");
+  if (subs.dataset.key !== key) { subs.dataset.key = key; subs.replaceChildren(...lines); }
+}
+draw();
+</script>
+</body>
+</html>

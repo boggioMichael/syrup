@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Lip Read for YouTube",
+  "version": "0.1.0",
+  "description": "Probabilistic lip reading of the people in a YouTube video: subtitles from the lips, per person, with confidence. Processing happens on your own machine through the lipreader service.",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage", "activeTab", "tabs", "sidePanel", "offscreen", "tabCapture"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "optional_host_permissions": ["https://*/*"],
+  "background": { "service_worker": "dist/worker.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*", "https://m.youtube.com/*"],
+      "js": ["content-loader.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    { "resources": ["dist/content.js", "dist/youtube.js", "dist/shared.js"], "matches": ["https://www.youtube.com/*", "https://m.youtube.com/*"] }
+  ],
+  "side_panel": { "default_path": "panel.html" },
+  "options_page": "options.html",
+  "action": { "default_title": "Lip Read: open the transcript panel" },
+  "icons": { "128": "icon128.png" }
+}

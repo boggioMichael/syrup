@@ -26,6 +26,27 @@
   `mouth_patch`, a small normalised picture of the mouth for matching.
 - `sequence`: dynamic time warping and a nearest-example matcher.
 
+### Example projects: lipreader (`example/`)
+- `lipreader` (Python): many faces, IoU/Hungarian tracking with shot-cut
+  detection, mouth localisation per face, speaking activity, batched visual
+  speech recognition behind a model interface, CTC decoding with word timing
+  and confidence, three modes (visual never opens the audio), an honest
+  language registry (English runs; es/fr/pt/it/ar/de/el/ru/zh listed with
+  licences as not runnable here; Hebrew has no public model), exports,
+  an evaluation framework (WER, CER, attribution, track consistency, cuts,
+  latency, RTF) and 25 tests on composited fixtures with exact truth.
+- `inference-api`: jobs, streamed sessions, exports, deletion, token, rate
+  limit, CORS; 9 tests.
+- `chrome-extension`: Lip Read for YouTube (MV3, TypeScript), overlay with
+  per-person boxes and subtitles, click-to-follow, side panel with seek and
+  export; 25-check Playwright end-to-end test against the service.
+- `web`: one page using the service; 7-check end-to-end test.
+- `ios`: SwiftUI app sources (Vision, AVFoundation, Core ML, remote
+  backend), written without a compiler and labelled so.
+- `shared-types`, `ml` (model scripts behind licence gates, weights export,
+  Core ML conversion), `docs` (architecture, models, benchmarks, API, setup,
+  decisions).
+
 ### The Lip
 - `python/thelip`: lip reading from muted video with live subtitles —
   syrup locates the mouth, LipNet's published weights run in numpy (with a

@@ -163,6 +163,19 @@ ffmpeg -v error -f v4l2 -video_size 640x480 -i /dev/video0 -pix_fmt rgba -f rawv
   when two are equally close. Your words, your camera; arbitrary lip
   reading needs a learned model this library does not have.
 
+## Example projects: lipreader
+
+[`example/`](example/) is the library carrying a product: **lipreader**,
+probabilistic lip reading of one or many visible people — a Chrome
+extension for YouTube (subtitles from the lips over the video, a
+transcript panel, SRT/VTT/JSON/TXT export), a web page, a local inference
+service, the Python pipeline behind them (faces → tracks → mouths →
+speaking → reading, batched, with word-level confidence and `[word?]` for
+doubt), and a native iOS app. English runs today (LipNet, GRID's
+vocabulary); the other languages are surveyed with their licences and wired
+as adapters, not pretended. Measured numbers, tests and the honest status
+of every piece: [`example/README.md`](example/README.md).
+
 ## The Lip
 
 ![A muted clip of a person speaking, subtitled live from the lips alone](docs/the-lip.gif)

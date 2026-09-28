@@ -1,0 +1,310 @@
+[
+ {
+  "name": "five_faces",
+  "wer": 0.0,
+  "cer": 0.0,
+  "words_ref": 18,
+  "words_hyp": 18,
+  "attribution_accuracy": 1.0,
+  "track_consistency": 1.0,
+  "tracks": 5,
+  "people": 5,
+  "speaking_precision": 0.6613,
+  "speaking_recall": 0.9152,
+  "cut_recall": null,
+  "latency_ms_per_frame": 152.2377,
+  "realtime_factor": 3.8059,
+  "detail": {
+   "per_person": [
+    {
+     "person": 0,
+     "reference": "set blue with e five now",
+     "hypothesis": "set blue with e five now",
+     "word_errors": 0
+    },
+    {
+     "person": 1,
+     "reference": "",
+     "hypothesis": "",
+     "word_errors": 0
+    },
+    {
+     "person": 2,
+     "reference": "lay blue at x four now",
+     "hypothesis": "lay blue at x four now",
+     "word_errors": 0
+    },
+    {
+     "person": 3,
+     "reference": "",
+     "hypothesis": "",
+     "word_errors": 0
+    },
+    {
+     "person": 4,
+     "reference": "lay red with p nine again",
+     "hypothesis": "lay red with p nine again",
+     "word_errors": 0
+    }
+   ],
+   "assignment": {
+    "1": 4,
+    "2": 2,
+    "3": 3,
+    "4": 0,
+    "5": 1
+   },
+   "stages": {
+    "detect": 9.909388542175293,
+    "track": 0.009330272674560547,
+    "mouth": 0.16895246505737305,
+    "vsr": 0.7703578472137451,
+    "asr": 0.0
+   },
+   "cuts_expected": []
+  }
+ },
+ {
+  "name": "low_res",
+  "wer": 0.5,
+  "cer": 0.4722,
+  "words_ref": 12,
+  "words_hyp": 12,
+  "attribution_accuracy": 1.0,
+  "track_consistency": 1.0,
+  "tracks": 2,
+  "people": 2,
+  "speaking_precision": 0.7172,
+  "speaking_recall": 1.0,
+  "cut_recall": null,
+  "latency_ms_per_frame": 33.939,
+  "realtime_factor": 0.8485,
+  "detail": {
+   "per_person": [
+    {
+     "person": 0,
+     "reference": "set blue with e five now",
+     "hypothesis": "bin red with r five now",
+     "word_errors": 3
+    },
+    {
+     "person": 1,
+     "reference": "bin red by k seven now",
+     "hypothesis": "bin white by y five now",
+     "word_errors": 3
+    }
+   ],
+   "assignment": {
+    "1": 1,
+    "2": 0
+   },
+   "stages": {
+    "detect": 1.7011315822601318,
+    "track": 0.005127906799316406,
+    "mouth": 0.05589103698730469,
+    "vsr": 0.5344862937927246,
+    "asr": 0.0
+   },
+   "cuts_expected": []
+  }
+ },
+ {
+  "name": "muted",
+  "wer": 0.0,
+  "cer": 0.0,
+  "words_ref": 6,
+  "words_hyp": 6,
+  "attribution_accuracy": 1.0,
+  "track_consistency": 1.0,
+  "tracks": 1,
+  "people": 1,
+  "speaking_precision": 0.7027,
+  "speaking_recall": 0.7429,
+  "cut_recall": null,
+  "latency_ms_per_frame": 56.7877,
+  "realtime_factor": 1.4197,
+  "detail": {
+   "per_person": [
+    {
+     "person": 0,
+     "reference": "set blue with e five now",
+     "hypothesis": "set blue with e five now",
+     "word_errors": 0
+    }
+   ],
+   "assignment": {
+    "1": 0
+   },
+   "stages": {
+    "detect": 3.65698504447937,
+    "track": 0.00661921501159668,
+    "mouth": 0.04831409454345703,
+    "vsr": 0.2937788963317871,
+    "asr": 0.0
+   },
+   "cuts_expected": []
+  }
+ },
+ {
+  "name": "one_speaker",
+  "wer": 0.0,
+  "cer": 0.0,
+  "words_ref": 6,
+  "words_hyp": 6,
+  "attribution_accuracy": 1.0,
+  "track_consistency": 1.0,
+  "tracks": 1,
+  "people": 1,
+  "speaking_precision": 0.7027,
+  "speaking_recall": 0.7429,
+  "cut_recall": null,
+  "latency_ms_per_frame": 56.5273,
+  "realtime_factor": 1.4132,
+  "detail": {
+   "per_person": [
+    {
+     "person": 0,
+     "reference": "set blue with e five now",
+     "hypothesis": "set blue with e five now",
+     "word_errors": 0
+    }
+   ],
+   "assignment": {
+    "1": 0
+   },
+   "stages": {
+    "detect": 3.602766513824463,
+    "track": 0.006235361099243164,
+    "mouth": 0.04861140251159668,
+    "vsr": 0.2965846061706543,
+    "asr": 0.0
+   },
+   "cuts_expected": []
+  }
+ },
+ {
+  "name": "rapid_cuts",
+  "wer": null,
+  "cer": null,
+  "words_ref": 0,
+  "words_hyp": 0,
+  "attribution_accuracy": null,
+  "track_consistency": 1.0,
+  "tracks": 4,
+  "people": 4,
+  "speaking_precision": 1.0,
+  "speaking_recall": 0.475,
+  "cut_recall": 1.0,
+  "latency_ms_per_frame": 55.0428,
+  "realtime_factor": 1.3761,
+  "detail": {
+   "per_person": [],
+   "assignment": {
+    "1": 0,
+    "2": 1,
+    "3": 2,
+    "4": 3
+   },
+   "stages": {
+    "detect": 5.95367693901062,
+    "track": 0.008854389190673828,
+    "mouth": 0.0728309154510498,
+    "vsr": 0.30351948738098145,
+    "asr": 0.0
+   },
+   "cuts_expected": [
+    1.2,
+    2.4,
+    3.6
+   ]
+  }
+ },
+ {
+  "name": "two_alternating",
+  "wer": 0.0,
+  "cer": 0.0,
+  "words_ref": 12,
+  "words_hyp": 12,
+  "attribution_accuracy": 1.0,
+  "track_consistency": 1.0,
+  "tracks": 2,
+  "people": 2,
+  "speaking_precision": 0.7412,
+  "speaking_recall": 0.8873,
+  "cut_recall": null,
+  "latency_ms_per_frame": 69.5974,
+  "realtime_factor": 1.7399,
+  "detail": {
+   "per_person": [
+    {
+     "person": 0,
+     "reference": "set blue with e five now",
+     "hypothesis": "set blue with e five now",
+     "word_errors": 0
+    },
+    {
+     "person": 1,
+     "reference": "bin red by k seven now",
+     "hypothesis": "bin red by k seven now",
+     "word_errors": 0
+    }
+   ],
+   "assignment": {
+    "1": 1,
+    "2": 0
+   },
+   "stages": {
+    "detect": 9.31433367729187,
+    "track": 0.012302398681640625,
+    "mouth": 0.15756821632385254,
+    "vsr": 0.5166795253753662,
+    "asr": 0.0
+   },
+   "cuts_expected": []
+  }
+ },
+ {
+  "name": "two_simultaneous",
+  "wer": 0.0,
+  "cer": 0.0,
+  "words_ref": 12,
+  "words_hyp": 12,
+  "attribution_accuracy": 1.0,
+  "track_consistency": 1.0,
+  "tracks": 2,
+  "people": 2,
+  "speaking_precision": 0.6985,
+  "speaking_recall": 0.669,
+  "cut_recall": null,
+  "latency_ms_per_frame": 70.7571,
+  "realtime_factor": 1.7689,
+  "detail": {
+   "per_person": [
+    {
+     "person": 0,
+     "reference": "set blue with e five now",
+     "hypothesis": "set blue with e five now",
+     "word_errors": 0
+    },
+    {
+     "person": 1,
+     "reference": "bin red by k seven now",
+     "hypothesis": "bin red by k seven now",
+     "word_errors": 0
+    }
+   ],
+   "assignment": {
+    "1": 1,
+    "2": 0
+   },
+   "stages": {
+    "detect": 4.406365394592285,
+    "track": 0.006539821624755859,
+    "mouth": 0.07304739952087402,
+    "vsr": 0.5164003372192383,
+    "asr": 0.0
+   },
+   "cuts_expected": []
+  }
+ }
+]

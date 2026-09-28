@@ -144,7 +144,8 @@ class Spell:
     (lipnet/utils/spell.py, MIT)."""
 
     def __init__(self, path):
-        self.dictionary = Counter(list(string.punctuation) + re.findall(r"\w+", open(path).read().lower()))
+        with open(path) as f:
+            self.dictionary = Counter(list(string.punctuation) + re.findall(r"\w+", f.read().lower()))
         self.total = sum(self.dictionary.values())
 
     def correction(self, word):

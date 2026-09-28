@@ -18,3 +18,7 @@ Thumbs.db
 /python/thelip/proofwork
 /python/thelip/*.wav
 __pycache__/
+/example/lipreader/tests/fixtures/
+/example/**/__pycache__/
+/example/chrome-extension/dist/
+/example/shared-types/dist/

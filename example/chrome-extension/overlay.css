@@ -1,0 +1,14 @@
+.lipread-button { font: 700 11px/1 system-ui, sans-serif !important; letter-spacing: .5px; color: #fff !important; opacity: .85; }
+.lipread-button.lipread-active { color: #ffd54a !important; opacity: 1; }
+.lipread-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 60; font-family: system-ui, sans-serif; }
+.lipread-boxes { position: absolute; inset: 0; }
+.lipread-box { position: absolute; border: 1.5px solid rgba(120, 255, 150, .55); border-radius: 4px; pointer-events: auto; cursor: pointer; }
+.lipread-box.lipread-speaking { border-color: rgba(255, 213, 74, .9); }
+.lipread-box.lipread-followed { border-color: #fff; border-width: 2px; }
+.lipread-label { position: absolute; left: 0; top: -18px; font-size: 11px; background: rgba(0,0,0,.6); color: #fff; padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
+.lipread-subtitles { position: absolute; left: 0; right: 0; bottom: 12%; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.lipread-line { background: rgba(0,0,0,.65); color: #fff; padding: 4px 10px; border-radius: 4px; font-size: clamp(14px, 2.4vw, 26px); display: flex; gap: 10px; align-items: baseline; max-width: 90%; }
+.lipread-who { font-size: .6em; opacity: .8; }
+.lipread-conf { font-size: .55em; opacity: .7; }
+.lipread-status { position: absolute; left: 12px; top: 12px; font-size: 12px; background: rgba(0,0,0,.55); color: #ffd54a; padding: 3px 8px; border-radius: 4px; }
+.lipread-status:empty { display: none; }

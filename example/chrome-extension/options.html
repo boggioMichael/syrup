@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lip Read options</title>
+<link rel="stylesheet" href="panel.css">
+<style>form label { display: block; margin-bottom: 10px; } input[type=text], input[type=password] { width: 100%; } .help { font-size: 11px; opacity: .75; }</style>
+</head>
+<body>
+<h1>Lip Read options</h1>
+<form id="form">
+  <label>Service address
+    <input type="text" id="apiUrl" placeholder="http://127.0.0.1:8765">
+    <div class="help">The lipreader service. On your own machine by default; an address elsewhere means the video is processed on that server, and the panel says so.</div>
+  </label>
+  <label>Service token
+    <input type="password" id="apiToken" placeholder="only if the service was started with LIPREADER_API_TOKEN">
+  </label>
+  <label>Video source
+    <select id="source">
+      <option value="url">The service fetches the video by URL (yt-dlp on the service's machine; whole video, best quality)</option>
+      <option value="capture">Capture this tab and stream frames (what is on screen, live; not verified in this build)</option>
+    </select>
+  </label>
+  <label><input type="checkbox" id="showBoxes"> Draw a box and label on each person</label>
+  <button type="submit">Save</button>
+  <span id="saved" class="help"></span>
+</form>
+<script type="module" src="dist/options.js"></script>
+</body>
+</html>
