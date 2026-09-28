@@ -40,10 +40,48 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CHAPLIN = os.environ.get("THELIP_CHAPLIN", os.path.join(HERE, "chaplin"))
+# Downloads live under THELIP_HOME (run.py sets it): on Windows an ASCII path,
+# because PyTorch's DLLs fail to initialise from a path with non-ASCII characters.
+WORK = os.environ.get("THELIP_HOME") or HERE
+CHAPLIN = os.environ.get("THELIP_CHAPLIN") or os.path.join(WORK, "chaplin")
+FACE_MODEL = os.environ.get("THELIP_FACE_MODEL") or os.path.join(WORK, "blaze_face_short_range.tflite")
 CONFIG = "configs/LRS3_V_WER19.1.ini"
 MODEL_NAME = "LRS3_V_WER19.1 (Auto-AVSR, Ma et al. 2023) via Chaplin"
 MAX_FRAMES = 400
+
+
+class FaceKeypoints:
+    """Four points per frame — right eye, left eye, nose tip, mouth centre —
+    from BlazeFace through mediapipe's Tasks API: the same keypoints, in the
+    same order, that Chaplin's detector took from the legacy Solutions API,
+    which mediapipe 0.10.3x no longer ships. The largest face wins; a frame
+    with no face gives None, which Chaplin's VideoProcess interpolates."""
+
+    def __init__(self, model_path: str):
+        import mediapipe as mp
+        from mediapipe.tasks.python import BaseOptions, vision
+
+        if not os.path.isfile(model_path):
+            raise SystemExit(f"missing the face detector model {model_path}; run.py downloads it")
+        self.mp = mp
+        options = vision.FaceDetectorOptions(
+            base_options=BaseOptions(model_asset_path=model_path),
+            running_mode=vision.RunningMode.IMAGE, min_detection_confidence=0.5)
+        self.detector = vision.FaceDetector.create_from_options(options)
+
+    def detect(self, video: np.ndarray) -> list:
+        out = []
+        for frame in video:
+            h, w = frame.shape[:2]
+            image = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=np.ascontiguousarray(frame))
+            result = self.detector.detect(image)
+            if not result.detections:
+                out.append(None)
+                continue
+            best = max(result.detections, key=lambda d: d.bounding_box.width + d.bounding_box.height)
+            kps = best.keypoints
+            out.append(np.array([[int(kps[i].x * w), int(kps[i].y * h)] for i in range(4)]))
+        return out
 
 
 class Reader:
@@ -83,11 +121,10 @@ class Reader:
                 raise SystemExit(f"missing {path} under {CHAPLIN}; run.py downloads the model files")
         from pipelines.model import AVSR  # noqa: E402
         from pipelines.data.data_module import AVSRDataLoader  # noqa: E402
-        from pipelines.detectors.mediapipe.detector import LandmarksDetector  # noqa: E402
 
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.loader = AVSRDataLoader("video", speed_rate=1, detector="mediapipe")
-        self.detector = LandmarksDetector()
+        self.detector = FaceKeypoints(FACE_MODEL)
         self.model = AVSR(
             "video", cfg.get("model", "model_path"), cfg.get("model", "model_conf"),
             cfg.get("model", "rnnlm") if lm else None, cfg.get("model", "rnnlm_conf") if lm else None,
@@ -101,9 +138,7 @@ class Reader:
         if self.fake:
             return f"FAKE READING OF {len(video)} FRAMES"
         with self.lock:
-            landmarks = self.detector.detect(video, self.detector.full_range_detector)
-            if all(l is None for l in landmarks):
-                landmarks = self.detector.detect(video, self.detector.short_range_detector)
+            landmarks = self.detector.detect(video)
             if all(l is None for l in landmarks):
                 raise NoFace()
             crops = self.loader.video_process(video, landmarks)

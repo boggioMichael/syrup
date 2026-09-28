@@ -30,7 +30,14 @@ import urllib.request
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CHAPLIN_DIR = os.path.join(HERE, "chaplin")
+# Downloads and the Python environment live under THELIP_HOME (thelip-server.cmd
+# sets it to C:\Users\Public\thelip-server): PyTorch's DLLs fail to initialise
+# from a path with non-ASCII characters, such as a Hebrew user name. Logs and
+# the link stay next to this file.
+WORK = os.environ.get("THELIP_HOME") or HERE
+CHAPLIN_DIR = os.path.join(WORK, "chaplin")
+FACE_MODEL = os.path.join(WORK, "blaze_face_short_range.tflite")
+FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite"
 CHAPLIN_COMMIT = "7aee1f8fca776ce4f63690063310b53573b7d804"
 CHAPLIN_ZIP = f"https://github.com/amanvirparhar/chaplin/archive/{CHAPLIN_COMMIT}.zip"
 MODELS = [
@@ -74,19 +81,27 @@ def download(url: str, dest: str, min_size: int = 0) -> None:
 def ensure_chaplin() -> None:
     if os.path.isdir(os.path.join(CHAPLIN_DIR, "pipelines")):
         return
+    old = os.path.join(HERE, "chaplin")
+    if WORK != HERE and os.path.isdir(os.path.join(old, "pipelines")):
+        say(f"moving {old} to {CHAPLIN_DIR}")
+        os.makedirs(WORK, exist_ok=True)
+        shutil.move(old, CHAPLIN_DIR)
+        return
     say("fetching the Chaplin pipeline (MIT; Imperial College preprocessing, Apache-2.0)")
     req = urllib.request.Request(CHAPLIN_ZIP, headers={"User-Agent": "thelip-server/1.0"})
     with urllib.request.urlopen(req, timeout=120) as r:
         data = r.read()
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         root = z.namelist()[0].split("/")[0]
-        z.extractall(HERE)
-    shutil.move(os.path.join(HERE, root), CHAPLIN_DIR)
+        os.makedirs(WORK, exist_ok=True)
+        z.extractall(WORK)
+    shutil.move(os.path.join(WORK, root), CHAPLIN_DIR)
 
 
 def ensure_models() -> None:
     for rel, url, min_size in MODELS:
         download(url, os.path.join(CHAPLIN_DIR, rel), min_size)
+    download(FACE_MODEL_URL, FACE_MODEL, 100_000)
 
 
 def cloudflared_path() -> str:
@@ -103,7 +118,10 @@ def cloudflared_path() -> str:
         raise SystemExit("on macOS install the tunnel client with: brew install cloudflared")
     else:
         raise SystemExit(f"no cloudflared build known for {system}")
-    path = os.path.join(HERE, name)
+    path = os.path.join(WORK, name)
+    old = os.path.join(HERE, name)
+    if not os.path.isfile(path) and WORK != HERE and os.path.isfile(old):
+        shutil.move(old, path)
     if not os.path.isfile(path):
         download(f"https://github.com/cloudflare/cloudflared/releases/latest/download/{asset}", path, 10_000_000)
         if system != "Windows":
@@ -170,7 +188,8 @@ def main() -> None:
     if args.fake:
         cmd.append("--fake")
     say("starting the server" + ("" if args.fake else " (loading the model takes a minute the first time)"))
-    server = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
+    env = dict(os.environ, THELIP_HOME=WORK, PYTHONIOENCODING="utf-8")
+    server = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
     tunnel = None
     try:
         health = wait_health(args.port, timeout=900)

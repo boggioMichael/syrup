@@ -14,8 +14,10 @@ thelip.ai (phone)  --frames of one sentence (JPEG, 25 fps)-->  thelip-server (yo
 
 Double-click **`thelip-server.cmd`**. The first run takes a while: it
 creates a Python environment, installs PyTorch and mediapipe, fetches the
-Chaplin pipeline and the model files (1.2 GB) and the tunnel client. Then
-it prints a link and a QR code:
+Chaplin pipeline and the model files (1.2 GB) and the tunnel client — all
+under `C:\Users\Public\thelip-server`, an ASCII path, because PyTorch's
+DLLs fail to initialise from a path with non-ASCII characters (a Hebrew
+user name, say). Then it prints a link and a QR code:
 
 ```
 Open this on the phone (it is the site with the server's address in it):
@@ -48,11 +50,14 @@ and "py launcher" ticked. macOS/Linux: `python3 -m venv .venv &&
   a product needs a model with its own licence.
 - **Pipeline**: [Chaplin](https://github.com/amanvirparhar/chaplin)
   (Amanvir Parhar, MIT; pinned commit in `run.py`), which carries the
-  Imperial College preprocessing (Apache-2.0): mediapipe face detection,
-  alignment of the four stable points to a mean face, a 96×96 grey mouth
-  crop, and the ESPnet beam search. `server.py` calls exactly the steps of
-  Chaplin's `InferencePipeline.forward`, on frames from memory instead of a
-  file.
+  Imperial College preprocessing (Apache-2.0): alignment of four face points
+  to a mean face, a 96×96 grey mouth crop, and the ESPnet beam search.
+  `server.py` calls exactly the steps of Chaplin's
+  `InferencePipeline.forward`, on frames from memory instead of a file, with
+  one substitution: the four points (right eye, left eye, nose tip, mouth
+  centre) come from BlazeFace through mediapipe's Tasks API, because the
+  legacy Solutions API Chaplin's detector uses is gone from mediapipe
+  0.10.3x; same model, same keypoints, same order.
 - **Speed**: the model has 250M parameters; on a desktop CPU a 3-second
   sentence takes a few seconds (beam 20; `--beam 40` is Chaplin's setting,
   slower; `--no-lm` drops the language model, faster and worse). A CUDA GPU
@@ -78,8 +83,11 @@ cd ../thelip && NODE_PATH=$(npm root -g) node test/server.test.mjs   # the page 
 
 Both run in CI. The model itself could not be run where this was written
 (no PyTorch there, no way to download the weights): the contract and the
-page are tested with `--fake`; the first real run is the one on your
-computer, and `server.log` says what happened.
+page are tested with `--fake`; the real runs happen on the user's computer,
+and `server.log` says what happened. The first such run found two things
+the code now handles: PyTorch's DLLs refusing to initialise from the
+Hebrew-named user folder (hence `C:\Users\Public\thelip-server`), and
+mediapipe 0.10.35 without the Solutions API (hence the Tasks detector).
 
 ## Files
 
