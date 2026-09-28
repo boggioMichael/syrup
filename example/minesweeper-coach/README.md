@@ -58,9 +58,10 @@ Nothing it sees is sent anywhere. Without `--dump`, nothing is saved.
 **Smart App Control.** On a Windows with Smart App Control on, Windows
 refuses to run programs you build yourself that are not signed, and that
 includes this one ("blocked by your organization's Device Guard policy").
-Your options are to turn Smart App Control off, which Microsoft suggests
-for people who build software but which can't be undone without resetting
-Windows, or to run it from a signed build.
+You can sign it (Microsoft's advice to developers), or turn Smart App
+Control off in Windows Security → App & browser control. On current
+Windows 11 it can be turned back on afterwards
+([Microsoft's FAQ](https://support.microsoft.com/en-us/windows/security/threat-malware-protection/smart-app-control-frequently-asked-questions)).
 
 Other commands, on any system:
 

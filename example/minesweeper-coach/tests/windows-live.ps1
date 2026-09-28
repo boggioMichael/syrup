@@ -25,6 +25,12 @@ Get-Content live.err
 $said = if (Test-Path dump\said.txt) { Get-Content dump\said.txt -Raw } else { '' }
 $frames = @(Get-ChildItem dump -Filter 'frame-*.png' -ErrorAction SilentlyContinue).Count
 Write-Host "--- $frames frames saved"
+# The lines, as annotations on the run: readable without the logs.
+foreach ($line in (Get-Content dump\said.txt -ErrorAction SilentlyContinue)) { Write-Host "::notice title=The coach said::$line" }
+Write-Host "::notice title=Positions seen::$frames of $(@(Get-ChildItem frames -Filter *.png).Count) shown"
+foreach ($line in @(Get-Content live.out | Where-Object { $_ -like '(*' }) + @(Get-Content live.err | Select-Object -First 5)) {
+    Write-Host "::warning title=The coach noted::$line"
+}
 if ($said -notmatch 'New game') { throw 'the coach never saw the new game' }
 if ($said -notmatch 'safe|No sure move|Nothing is sure') { throw 'the coach never gave advice' }
 if ($said -notmatch 'Cleared|Boom') { throw 'the coach never saw the game end' }
