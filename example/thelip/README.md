@@ -45,3 +45,22 @@ measured here: 37–42 ms per frame in Node/Chromium on a 2.1 GHz Xeon
 core (37 ms with doubles, which V8 runs faster than float32 stores); a recent phone is comparable or faster. 64/66 words on the GRID
 sample clips with the int8 weights; a new face and a phone camera are
 harder than the lab data.
+
+## Your own domain
+
+GitHub Pages serves the same site under a domain you own, at
+`https://<domain>/thelip/`, in two steps:
+
+1. At the registrar, point the domain at GitHub Pages: for the apex
+   (`syrup.ai`) four `A` records to `185.199.108.153`, `185.199.109.153`,
+   `185.199.110.153`, `185.199.111.153` (and `AAAA` records to
+   `2606:50c0:8000::153`, `2606:50c0:8001::153`, `2606:50c0:8002::153`,
+   `2606:50c0:8003::153`); for `www` or another subdomain, one `CNAME`
+   record to `boggiomichael.github.io`.
+2. Put the domain, alone, in `docs/CNAME`; the Pages workflow publishes it
+   with the site, GitHub picks it up as the custom domain and issues the
+   HTTPS certificate once the DNS records resolve (minutes to a day).
+
+Do step 1 first: the moment `docs/CNAME` is published, GitHub redirects
+`boggiomichael.github.io/syrup/` to the domain, so a domain that does not
+resolve yet takes the site down with it.
