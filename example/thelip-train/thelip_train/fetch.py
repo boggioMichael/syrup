@@ -36,11 +36,16 @@ def fetch_item(item: dict, out_dir: str) -> Optional[str]:
     if os.path.isfile(base + ".info.json") and os.path.isfile(video):
         return video
     if item.get("direct"):
-        tmp = video + ".part"
+        ext = os.path.splitext(item["direct"].split("?")[0])[1].lower() or ".bin"
+        tmp = base + ".download" + ext
         req = urllib.request.Request(item["direct"], headers={"User-Agent": "thelip-train/1.0"})
         with urllib.request.urlopen(req, timeout=120) as r, open(tmp, "wb") as f:
             shutil.copyfileobj(r, f, 1 << 20)
-        os.replace(tmp, video)
+        if ext == ".mp4":
+            os.replace(tmp, video)
+        else:  # Wikimedia's .webm / .ogv: one container for everything downstream
+            subprocess.check_call(["ffmpeg", "-v", "error", "-y", "-i", tmp, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-movflags", "+faststart", video])
+            os.remove(tmp)
         if item.get("captions_url"):
             try:
                 with urllib.request.urlopen(item["captions_url"], timeout=60) as r, open(base + ".srt", "wb") as f:

@@ -5,6 +5,8 @@
 #   curl -sSL https://raw.githubusercontent.com/boggioMichael/syrup/claude/intents-2/example/thelip-train/bootstrap.sh \
 #     | bash -s -- --languages en,he --hours 40 --hourly-cost 3.5 --video-hours en=150,he=80
 #
+# First, once, the same command with --smoke: every stage on a few videos
+# (about ten minutes), so that a fault shows up before the hours are spent.
 # Everything lands under /workspace/thelip (a RunPod volume survives restarts).
 set -euo pipefail
 ROOT="${THELIP_TRAIN_ROOT:-/workspace/thelip}"
@@ -14,5 +16,6 @@ if [ ! -d syrup/.git ]; then git clone -q --depth 1 -b claude/intents-2 https://
 cd syrup/example/thelip-train
 python3 -m pip install -q -r requirements.txt
 export THELIP_TRAIN_HOME="$ROOT/work"
+case " $* " in *" --smoke "*) export THELIP_TRAIN_HOME="$ROOT/work-smoke";; esac
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || echo "no GPU visible: training will not run"
 exec python3 run_all.py "$@" 2>&1 | tee -a "$ROOT/run.log"

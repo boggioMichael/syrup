@@ -14,6 +14,12 @@ curl -sSL https://raw.githubusercontent.com/boggioMichael/syrup/claude/intents-2
   | bash -s -- --languages en,he --hours 40 --hourly-cost 3.5 --video-hours en=150,he=80
 ```
 
+Before that, once, the same command with `--smoke` added: every stage on
+a few videos, one epoch, a small evaluation — about ten minutes and well
+under a dollar — so that a fault in fetching, labelling or training shows
+up before the hours are spent. It works in its own folder (`work-smoke`)
+and leaves the real run's state alone.
+
 `--hours` is the wall-clock budget: the run stops starting stages when it
 is spent, and says where it got to; run again and it continues from
 `state.json`. `--hourly-cost` is what the machine costs, so that every
@@ -159,6 +165,7 @@ pip install -r requirements.txt            # CUDA PyTorch from PyPI, Lightning, 
 export THELIP_TRAIN_HOME=/workspace/thelip/work
 python run_all.py --languages he --hours 20 --hourly-cost 3.5 --video-hours he=80 --phone-data /path/to/thelip-server/data
 python run_all.py --only fetch --languages he      # one stage
+THELIP_TRAIN_HOME=/workspace/thelip/work-smoke python run_all.py --languages en,he --hours 1 --smoke   # every stage, quickly
 ```
 
 Tests, without a GPU (Chaplin and Auto-AVSR checkouts, ffmpeg, and

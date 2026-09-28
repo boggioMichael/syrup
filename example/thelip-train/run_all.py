@@ -72,7 +72,11 @@ def main() -> None:
     ap.add_argument("--phone-data", default=None, help="thelip-server's data/ folder (consented samples)")
     ap.add_argument("--push", default=None, help="Hugging Face repo prefix to publish to, e.g. boggioMichael/thelip")
     ap.add_argument("--only", default=None, help="run one stage only (tools, fetch, label, segment, phone, manifest, baseline, train, evaluate, export)")
+    ap.add_argument("--smoke", action="store_true", help="a few videos, one epoch, a small evaluation: every stage once, quickly, before the real run")
     args = ap.parse_args()
+    if args.smoke:
+        args.video_hours = ",".join(f"{p.split('=')[0]}=0.3" for p in args.video_hours.split(",") if p)
+        say("smoke run: 0.3 h of video per language, at most 12 items per source, one epoch, 40 clips evaluated")
 
     ensure_dirs()
     state = load_state()
@@ -109,10 +113,10 @@ def main() -> None:
         hours_wanted = video_hours.get(lang, 50)
         plan = PLAN.get(lang, [])
         if want("fetch") and not stage(state, f"fetch:{lang}"):
-            if not budget.allows(ESTIMATE_HOURS["fetch"] * hours_wanted / 10):
+            if not args.smoke and not budget.allows(ESTIMATE_HOURS["fetch"] * hours_wanted / 10):
                 say(f"stopping before fetch:{lang}: budget {budget.line()}")
                 return
-            got = {name: fetch_source(name, hours_wanted * share) for name, share in plan}
+            got = {name: fetch_source(name, hours_wanted * share, max_items=12 if args.smoke else 400) for name, share in plan}
             state.setdefault("hours", {})[lang] = got
             mark(state, f"fetch:{lang}")
             say(f"fetch:{lang} done {got} {budget.line()}")
@@ -145,23 +149,23 @@ def main() -> None:
             mark(state, f"manifest:{lang}")
         split = state.get("split", {}).get(lang, {})
         if want("baseline") and lang == "en" and not stage(state, f"baseline:{lang}"):
-            result = evaluate(lang, base_checkpoint(), limit=2000)
+            result = evaluate(lang, base_checkpoint(), limit=40 if args.smoke else 2000)
             record(lang, "base", result)
             mark(state, f"baseline:{lang}", result["overall"])
             say(f"baseline:{lang}: {result['overall'] * 100:.1f}% {result['unit']} error rate before any training {budget.line()}")
         if want("train") and not stage(state, f"train:{lang}"):
             left = budget.left_hours - ESTIMATE_HOURS["evaluate"] - 0.5
-            if left < ESTIMATE_HOURS["train_min"]:
+            if left < ESTIMATE_HOURS["train_min"] and not args.smoke:
                 say(f"stopping before train:{lang}: only {left:.1f} h left {budget.line()}")
                 return
             cfg = TRAINING.get(lang, TRAINING["*"])
             per_lang = left / max(1, len([l for l in languages if not stage(state, f'train:{l}')]))
-            averaged = train(lang, run="v1", epochs=cfg["epochs"], lr=cfg["lr"], max_hours=per_lang)
+            averaged = train(lang, run="v1", epochs=1 if args.smoke else cfg["epochs"], lr=cfg["lr"], max_hours=per_lang)
             mark(state, f"train:{lang}", averaged)
             say(f"train:{lang} done -> {averaged} {budget.line()}")
         averaged = state.get("done", {}).get(f"train:{lang}")
         if want("evaluate") and averaged and not stage(state, f"evaluate:{lang}"):
-            result = evaluate(lang, averaged)
+            result = evaluate(lang, averaged, limit=40 if args.smoke else None)
             record(lang, "v1", result)
             mark(state, f"evaluate:{lang}", result["overall"])
             say(f"evaluate:{lang}: {result['overall'] * 100:.1f}% {result['unit']} error rate after training {budget.line()}")
