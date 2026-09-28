@@ -53,7 +53,7 @@ SOURCES: Dict[str, dict] = {
     "youtube-cc-de": {"language": "de", "kind": "youtube-cc-search", "licence": "CC BY (YouTube licence field)", "queries": ["interview", "vlog", "vortrag"]},
     "youtube-cc-ar": {"language": "ar", "kind": "youtube-cc-search", "licence": "CC BY (YouTube licence field)", "queries": ["مقابلة", "محاضرة", "فلوق"]},
     # ---- thelip.ai's own consented samples: mouth crops already ---------------------------
-    "phone": {"language": "*", "kind": "thelip-samples", "licence": "consented users of thelip.ai (the improve switch)"},
+    "phone": {"language": "*", "kind": "thelip-samples", "licence": "consented users of thelip.ai (asked at the start; the improve switch before 2026-09-28)"},
     # ---- the owner's own recordings, dropped in a folder (my-videos/<language>/ next to the
     #      work folder): long clips of the reader speaking, the best material for their face --
     "my-videos-he": {"language": "he", "kind": "local-folder", "licence": "the owner's own recordings", "folder": "he"},

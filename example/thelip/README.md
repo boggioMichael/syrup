@@ -56,8 +56,11 @@ to https by the page itself, because a camera needs a secure page.
   sheet) the page sends each sentence's frames (320 px JPEGs, 25 fps) to
   [`../thelip-server`](../thelip-server) and shows its answer — any English
   words, a few seconds late, nothing read locally meanwhile. The address is
-  kept in the browser; "Stop" forgets it. With "keep my sentences" on, the
-  sound of each sentence goes too, to be written down (speech recognition)
+  kept in the browser; "Stop" forgets it. Before anything is kept the page
+  asks, once, at the start (a card over the subtitles, in Hebrew for a
+  Hebrew browser): each sentence's small grey video of the mouth and the
+  words said, for training; the face and the voice are not kept. After a
+  yes, the sound of each sentence goes too, to be written down (speech recognition)
   and kept as its label: the microphone's, or an opened clip's own —
   taken out of the file in the browser when it can (`decodeAudioData`),
   else the clip itself goes and the server takes the stretch's sound out.

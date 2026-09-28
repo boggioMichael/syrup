@@ -82,6 +82,15 @@
   .plane .miss { color: var(--ink); text-decoration: underline 2px var(--bad); text-underline-offset: 3px; }
   .plane .tag { font: 600 max(10px, .36em) system-ui, sans-serif; letter-spacing: .04em; color: var(--dim); vertical-align: middle; margin-inline-end: 8px; text-transform: uppercase; }
   .plane .hd .tag { font-size: max(10px, .6em); }
+  /* Asked once, at the start, before any sentence is kept: a card over the subtitles,
+     the face and the "?" left free (the sheet says more). */
+  .consent { position: absolute; left: 0; right: 0; bottom: 0; display: grid; justify-items: center; padding: 16px 16px calc(20px + env(safe-area-inset-bottom, 0px)); pointer-events: none; }
+  .consent .card { pointer-events: auto; width: 100%; max-width: 440px; box-sizing: border-box; background: rgba(22,22,26,.97); border: 1px solid rgba(255,255,255,.14); border-radius: 18px; padding: 18px 20px;
+    display: grid; gap: 14px; font-size: 15px; line-height: 1.45; color: rgba(255,255,255,.8); box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+  .consent h2 { margin: 0; font-size: 21px; color: var(--ink); }
+  .consent .row { display: flex; gap: 10px; }
+  .consent button { flex: 1; font: 600 16px system-ui, sans-serif; padding: 12px 16px; border-radius: 999px; border: none; background: var(--lip); color: #fff; }
+  .consent button.quiet, .sheet button.quiet { background: rgba(255,255,255,.14); }
   @media (prefers-reduced-motion: no-preference) { .dot[data-state="listening"] { animation: pulse 1s infinite; } }
   @keyframes pulse { 50% { opacity: .35; } }
 </style>
@@ -104,7 +113,7 @@
   <div class="msg" id="msg"><div>Loading thelip&hellip;</div></div>
   <div class="sheet" id="sheet" hidden>
     <h1>thelip<span>.syrup</span></h1>
-    <div>The oval finds your mouth by itself (red while it follows it); face the camera, keep still, then mouth a sentence. The words appear below as they are read. No audio is used and nothing leaves the phone, unless a server is set below (frames go there) and you turn on "keep my sentences" (the microphone too, and an opened clip's sound: then say the sentence out loud, so that it is written down and kept with what your lips did).</div>
+    <div>The oval finds your mouth by itself (red while it follows it); face the camera, keep still, then mouth a sentence. The words appear below as they are read. Without a server nothing leaves the phone. With one (below), each sentence's frames go there to be read; and if you agreed when it asked at the start, your sentences are kept for training (see below).</div>
     <div><b>It knows 51 words, in one sentence shape:</b></div>
     <div class="mono">command &middot; colour &middot; preposition &middot; letter &middot; digit &middot; adverb<br>bin lay place set &middot; blue green red white &middot; at by in with &middot; a&ndash;z (no w) &middot; zero&ndash;nine &middot; again now please soon</div>
     <div>Tap the sentence for another one. To place the oval by hand, drag it to your mouth (pinch to resize); it then stays where you put it until you turn this back on:</div>
@@ -118,14 +127,22 @@
     <div><b>Language</b> (with a server; here, the 51 English words)</div>
     <div class="row"><select id="lang" aria-label="language"></select></div>
     <div class="status" id="langStatus"></div>
-    <div><b>Help thelip improve</b></div>
-    <label class="toggle"><input type="checkbox" id="improve"> Keep my sentences for training</label>
-    <div>Off, nothing is kept anywhere and the microphone stays off. On, the microphone is on too: the server hears each sentence, writes down what you said (speech recognition, which is far more reliable than lips) and keeps that text with what its model saw &mdash; 96&times;96 grey crops of the mouth, not the frames, not the face, not the sound, which is dropped once it is written down. Under the subtitle you see what was heard against what was read. That is the material for training a model on real phones and real speakers; if speech recognition got it wrong, tap the subtitle and fix it. An opened clip's own sound is written down the same way, stretch by stretch. In a language with no lip-reading model, it is also how the server learns your phrases: say one with sound once (live, or in a clip), and your lips alone read it after that. A random id this page keeps for itself goes with those sentences, so that only your own phrases are matched.</div>
+    <div><b>Your sentences, for training</b></div>
+    <div class="status" id="consentState"></div>
+    <div class="row"><button id="consentChange" class="quiet" hidden></button></div>
+    <div>When a server is connected, thelip asks once, at the start, whether it may keep your sentences for training. If you agree, for each sentence it keeps a small grey video of your mouth (96&times;96 pixels, 25 frames a second: the mouth alone, not your face, not the picture around it) and what you said, written down by speech recognition from the microphone or from an opened clip's sound; the sound itself is deleted once it is written down. A random id this page keeps for itself goes with them, so that only your own phrases are matched. Under the subtitle you see what was heard against what the lips gave; if speech recognition got it wrong, tap the subtitle and fix it. They train thelip's readers on real phones and real speakers; in a language with no reader yet, Hebrew among them, they are also how it learns your phrases: say one out loud once, and your lips alone read it after that. If you do not agree, nothing is kept and the microphone stays off.</div>
     <div class="status" id="micStatus"></div>
     <div class="status" id="tally"></div>
     <div id="speed"></div>
     <div>The Lip is the lip reader of the <b>syrup</b> library. Its network is LipNet (Assael, Shillingford, Whiteson, de Freitas 2016), weights from rizkiarm/LipNet (MIT), trained on the GRID corpus (CC BY 4.0): 64 of 66 words on GRID's sample clips. A new face and a phone camera are harder than that; expect misses.</div>
     <div class="row"><button id="closeSheet">Back</button></div>
+  </div>
+  <div class="consent" id="consent" role="dialog" aria-modal="true" aria-labelledby="consentTitle" hidden>
+    <div class="card" id="consentCard">
+      <h2 id="consentTitle"></h2>
+      <div id="consentText"></div>
+      <div class="row"><button id="consentYes"></button><button id="consentNo" class="quiet"></button></div>
+    </div>
   </div>
 </div>
 
@@ -846,8 +863,8 @@ onmessage = (e) => {
   const langInfo = (code) => ((serverInfo && serverInfo.languages) || []).find((l) => l.code === code) || null;
   const hasModel = (code) => { const l = langInfo(code); return !!(l && l.available); };
   // A language with no lip-reading model reads the phrases this reader said
-  // before with "keep my sentences" on (the server learned them from the
-  // microphone). `phrases` is how many it knows, for the current language.
+  // before, kept for training with their agreement (the server learned them
+  // from what it heard). `phrases` is how many it knows, for the current language.
   let phrases = { language: null, count: 0 };
   function renderLanguages() {
     const sel = $("lang");
@@ -861,7 +878,7 @@ onmessage = (e) => {
     const l = langInfo(language);
     const n = phrases.language === language ? phrases.count : 0;
     $("langStatus").textContent = !serverOn() ? "" : !l ? "" : l.available ? `${l.quality}${l.loaded ? "" : " — loads on first use"}`
-      : `No lip-reading model for this language yet (${l.status || "none published"}). Meanwhile it reads your own phrases: say a sentence with "keep my sentences" on (or open a clip with its sound), what is heard is written down, and the next time your lips alone read it. ${n ? `${n} phrase${n === 1 ? "" : "s"} learned so far.` : "None learned yet."}`;
+      : `No lip-reading model for this language yet (${l.status || "none published"}). Meanwhile it reads your own phrases: with your sentences kept for training (asked at the start; see below), say one out loud or open a clip with its sound; what is heard is written down, and the next time your lips alone read it. ${n ? `${n} phrase${n === 1 ? "" : "s"} learned so far.` : "None learned yet."}`;
   }
   function setLanguage(code) {
     language = code; try { localStorage.setItem("thelip.language", code); } catch {}
@@ -892,9 +909,8 @@ onmessage = (e) => {
       try { localStorage.setItem("thelip.server", q.get("server")); if (q.get("token")) localStorage.setItem("thelip.token", q.get("token")); else localStorage.removeItem("thelip.token"); } catch {}
       window.history.replaceState(null, "", location.pathname + location.hash);
     }
-    try { server = localStorage.getItem("thelip.server") || null; serverToken = localStorage.getItem("thelip.token") || null; improve = localStorage.getItem("thelip.improve") === "1"; language = localStorage.getItem("thelip.language") || language; } catch {}
+    try { server = localStorage.getItem("thelip.server") || null; serverToken = localStorage.getItem("thelip.token") || null; language = localStorage.getItem("thelip.language") || language; } catch {}
     if (!LANGS.some(([c]) => c === language)) language = "en";
-    $("improve").checked = improve;
     renderLanguages();
     serverExplicit = !!server;
     if (server) checkServer(); else discoverServer();
@@ -934,6 +950,8 @@ onmessage = (e) => {
   setInterval(async () => { if (serverOn()) return; if (serverExplicit) await checkServer(); if (!serverOn()) discoverServer(true); }, 60000);
   function renderServer() {
     syncMic();
+    renderConsent();
+    askConsent();
     if (serverOn() && phrases.language !== language) refreshPhrases();
     $("serverUrl").value = server || "";
     $("serverOff").hidden = !server;
@@ -943,6 +961,47 @@ onmessage = (e) => {
       : serverInfo === null ? "checking…" : serverInfo.ok ? `connected${serverExplicit ? "" : " to thelip's server"}: ${serverInfo.model} on ${serverInfo.device}` : `not reachable (${serverInfo.error}) — reading 51 words here meanwhile`;
     renderLanguages();
   }
+  // ---- keeping sentences for training: asked once, at the start ------------------------------------
+  // Nothing is kept until the reader answers. The question comes as soon as a server
+  // answers (without one nothing leaves the phone); the answer stays in this browser
+  // (thelip.consent) and can be changed in the sheet. `improve` is true only after a yes.
+  const CONSENT = {
+    en: { title: "Help train thelip?", yes: "Yes", no: "No, thanks",
+          text: "To read lips better, and to learn Hebrew, which no lip reader knows yet, thelip keeps the sentences said here: for each one, a small grey video of the mouth alone and the words that were said, written down from the microphone (or from a clip's sound). The face and the voice are not kept: the sound is deleted once the words are written down. You can change your answer any time: the ? button at the top." },
+    he: { title: "לעזור לאמן את thelip?", yes: "כן", no: "לא, תודה",
+          text: "כדי לקרוא שפתיים טוב יותר, וללמוד גם עברית, שאף קורא שפתיים עוד לא יודע, thelip שומר את המשפטים שנאמרים כאן: לכל משפט סרטון קטן באפור של הפה בלבד, והמילים שנאמרו, כפי שנכתבו מהמיקרופון (או מהקול של קליפ). הפנים והקול לא נשמרים: הקול נמחק ברגע שהמילים נכתבו. אפשר לשנות את התשובה בכל זמן: כפתור ? למעלה." },
+  };
+  let consent = null, consentAt = null;
+  try { const c = JSON.parse(localStorage.getItem("thelip.consent") || "null"); if (c && (c.answer === "yes" || c.answer === "no")) { consent = c.answer; consentAt = c.at || null; } } catch {}
+  improve = consent === "yes";
+  const inHebrew = () => language === "he" || /^(he|iw)\b/i.test(navigator.language || "");
+  function renderConsent() {
+    const st = $("consentState"), change = $("consentChange");
+    st.className = "status" + (consent === "yes" ? " on" : "");
+    st.textContent = consent === "yes" ? `Your sentences are kept for training: you agreed${consentAt ? ` on ${new Date(consentAt).toLocaleDateString()}` : ""}.`
+      : consent === "no" ? "Your sentences are not kept: you said no." : serverOn() ? "Not answered yet: nothing is kept." : "Without a server nothing is kept.";
+    change.textContent = consent === "yes" ? "Stop keeping them" : "Keep them for training…";
+    change.hidden = !serverOn() && consent !== "yes";
+  }
+  function askConsent(again) {
+    if (!serverOn() || (consent && !again) || !$("sheet").hidden) return;   // with the sheet open: when it closes
+    const t = CONSENT[inHebrew() ? "he" : "en"];
+    $("consentCard").dir = inHebrew() ? "rtl" : "ltr";
+    $("consentTitle").textContent = t.title; $("consentText").textContent = t.text;
+    $("consentYes").textContent = t.yes; $("consentNo").textContent = t.no;
+    $("consent").hidden = false;
+  }
+  function answerConsent(answer) {
+    consent = answer; consentAt = new Date().toISOString();
+    try { localStorage.setItem("thelip.consent", JSON.stringify({ answer, at: consentAt })); } catch {}
+    improve = answer === "yes";
+    $("consent").hidden = true;
+    renderConsent();
+    syncMic();   // a yes opens the microphone, from this tap (which iOS needs to let it run)
+  }
+  $("consentYes").addEventListener("click", () => answerConsent("yes"));
+  $("consentNo").addEventListener("click", () => answerConsent("no"));
+  $("consentChange").addEventListener("click", () => { if (consent === "yes") answerConsent("no"); else { $("sheet").hidden = true; askConsent(true); } });
   async function checkServer() {
     serverInfo = null; renderServer();
     try {
@@ -970,7 +1029,7 @@ onmessage = (e) => {
     if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
     return j;
   }
-  // The microphone, only while "keep my sentences" is on and a server that
+  // The microphone, only when the reader agreed to their sentences being kept and a server that
   // hears is connected: the last seconds of sound stay in memory here, and
   // the stretch of each utterance goes to the server as a small WAV, to be
   // written down. The page never plays it, never keeps it.
@@ -1672,7 +1731,7 @@ onmessage = (e) => {
       guide.hidden = true;
       const texts = [];
       let blobs = [], first = 0;
-      // With "keep my sentences" on, the clip's own sound is written down too:
+      // With the sentences kept (the reader agreed), the clip's own sound is written down too:
       // taken out here when the browser can, else the clip goes to the server.
       // (Decoding a long clip's sound whole would take hundreds of MB here.)
       const sound = improve && serverHears() && v.duration <= 240 && file.size <= 250e6 ? await clipAudio(file) : null;
@@ -1756,7 +1815,7 @@ onmessage = (e) => {
   const langName = () => (LANGS.find(([c]) => c === language) || ["en", "English"])[1];
   const newSentence = () => { $("sentence").textContent = serverOn() ? (hasModel(language) ? `anything, in ${langName()}` : `a phrase in ${langName()}`) : [pick(G.c), pick(G.k), pick(G.p), pick(G.l), pick(G.d), pick(G.a)].join(" "); say.hidden = false; };
   say.addEventListener("click", newSentence);
-  $("helpBtn").addEventListener("click", () => { $("sheet").hidden = false; });
+  $("helpBtn").addEventListener("click", () => { $("sheet").hidden = false; $("consent").hidden = true; });
   $("serverUse").addEventListener("click", () => {
     const v = $("serverUrl").value.trim().replace(/\/$/, "");
     if (!/^https?:\/\//.test(v)) { serverInfo = { ok: false, error: "the address starts with http:// or https://" }; renderServer(); return; }
@@ -1765,15 +1824,14 @@ onmessage = (e) => {
   });
   $("serverOff").addEventListener("click", () => { server = null; serverToken = null; serverInfo = null; serverExplicit = false; try { localStorage.removeItem("thelip.server"); localStorage.removeItem("thelip.token"); } catch {} renderFaces(null); renderServer(); newSentence(); discoverServer(); });
   $("auto").addEventListener("change", (e) => setAuto(e.target.checked, true));
-  $("improve").addEventListener("change", (e) => { improve = e.target.checked; try { localStorage.setItem("thelip.improve", improve ? "1" : "0"); } catch {} syncMic(); });
   $("lang").addEventListener("change", (e) => { setLanguage(e.target.value); newSentence(); });
-  $("closeSheet").addEventListener("click", () => { $("sheet").hidden = true; });
+  $("closeSheet").addEventListener("click", () => { $("sheet").hidden = true; askConsent(); });
 
   const debug = { frames: 0, started: 0, finished: 0, reads: 0, lastMotion: 0, quiet: 0, lastWords: null, trace: [], server: { sent: 0, lastText: null, lastError: null, lastFeedback: null, lastHeard: null, lastHearError: null } };
   window.lipLive = { get ready() { return ready; }, get text() { return sub.textContent; }, get heard() { return $("heard").hidden ? null : $("heard").textContent; }, get server() { return serverOn() ? server : null; },
     get lastRead() { return lastRead; }, get lastHeard() { return lastHeard; }, get mic() { return mic ? mic.ctx.state : null; }, get language() { return language; },
     get profile() { return storedProfile(); }, get phrases() { return phrases; }, get crawl() { return [...plane.children].map((l) => l.textContent.trim()); },
-    get auto() { return autoGuide; }, get faceReady() { return faceReady; }, get guide() { return guideBox && { x: Math.round(guideBox.x), y: Math.round(guideBox.y), w: Math.round(guideBox.w), h: Math.round(guideBox.h) }; },
+    get auto() { return autoGuide; }, get improve() { return improve; }, get consent() { return consent; }, get faceReady() { return faceReady; }, get guide() { return guideBox && { x: Math.round(guideBox.x), y: Math.round(guideBox.y), w: Math.round(guideBox.w), h: Math.round(guideBox.h) }; },
     get mouths() { return mouths.map((m) => ({ x: Math.round(m.box.x), y: Math.round(m.box.y), w: Math.round(m.box.w), h: Math.round(m.box.h), moving: !!(m.el && m.el.classList.contains("moving")) })); },
     startFile, openFix, debug };
   // The oval finds the mouth unless it was placed by hand (and kept so), or the

@@ -37,6 +37,13 @@ try {
   await page.waitForFunction(() => window.lipLive && window.lipLive.ready, null, { timeout: 60000 });
   await page.waitForFunction(() => window.lipLive.server, null, { timeout: 20000 });
   check("the address bar keeps the guide but drops the server", await page.evaluate(() => location.search === "" && location.hash === "#g127-176-113-57"));
+  // With a server, the page asks at the start whether it may keep the sentences; nothing is kept meanwhile.
+  await page.waitForSelector("#consent:not([hidden])", { timeout: 10000 }).catch(() => {});
+  const asked = await page.evaluate(() => ({ shown: !document.querySelector("#consent").hidden, text: document.querySelector("#consentText").textContent, improve: window.lipLive.improve, mic: window.lipLive.mic }));
+  check("with a server, it asks at the start whether it may keep the sentences, and keeps nothing until answered",
+        asked.shown && /keeps the sentences said here/.test(asked.text) && /small grey video of the mouth/.test(asked.text) && !asked.improve && !asked.mic, JSON.stringify(asked));
+  await page.click("#consentNo");
+  check("a no is remembered, and nothing is kept: no microphone", await page.evaluate(() => JSON.parse(localStorage.getItem("thelip.consent")).answer === "no" && !window.lipLive.improve && !window.lipLive.mic && document.querySelector("#consent").hidden));
   check("the server is kept for next time", await page.evaluate(() => localStorage.getItem("thelip.server") === "http://127.0.0.1:8798" && localStorage.getItem("thelip.token") === "t0k"));
   await page.click("#helpBtn");
   const status = await page.$eval("#serverStatus", (e) => e.textContent);
@@ -78,18 +85,20 @@ try {
     check("the page found the server named in /server.json on its own", true);
     await page2.click("#helpBtn");
     check("the sheet says it is thelip's server", /connected to thelip's server/.test(await page2.$eval("#serverStatus", (e) => e.textContent)));
-    check("keeping sentences is off by default", !(await page2.$eval("#improve", (e) => e.checked)));
+    check("the sheet says nothing is kept until the question is answered", /Not answered yet: nothing is kept/.test(await page2.$eval("#consentState", (e) => e.textContent)) && !(await page2.evaluate(() => window.lipLive.improve)));
     const options = await page2.$$eval("#lang option", (os) => os.map((o) => [o.value, o.textContent]));
     check("the language list starts English, Hebrew, Spanish, Arabic, Chinese, French, German", options.map((o) => o[0]).join(",").startsWith("en,he,es,ar,zh,fr,de"), JSON.stringify(options));
     check("languages without a model say they learn your phrases", options.find((o) => o[0] === "ar")[1].includes("learns your phrases") && !options.find((o) => o[0] === "es")[1].includes("learns"), JSON.stringify(options));
     await page2.selectOption("#lang", "es");
     check("the language is remembered and the prompt follows it", await page2.evaluate(() => localStorage.getItem("thelip.language") === "es" && window.lipLive.language === "es") && (await page2.$eval("#sentence", (e) => e.textContent)) === "anything, in Español");
     check("the sheet shows that language's quality", /44\.5%/.test(await page2.$eval("#langStatus", (e) => e.textContent)), await page2.$eval("#langStatus", (e) => e.textContent));
-    await page2.click("#improve");
-    check("the switch is remembered", await page2.evaluate(() => localStorage.getItem("thelip.improve") === "1"));
-    await page2.waitForFunction(() => window.lipLive.mic === "running", null, { timeout: 15000 }).catch(() => {});
-    check("the switch turns the microphone on", (await page2.evaluate(() => window.lipLive.mic)) === "running", await page2.$eval("#micStatus", (e) => e.textContent));
     await page2.click("#closeSheet");
+    await page2.waitForSelector("#consent:not([hidden])", { timeout: 10000 });
+    await page2.click("#consentYes");
+    check("a yes is remembered", await page2.evaluate(() => JSON.parse(localStorage.getItem("thelip.consent")).answer === "yes" && window.lipLive.improve));
+    await page2.waitForFunction(() => window.lipLive.mic === "running", null, { timeout: 15000 }).catch(() => {});
+    check("a yes turns the microphone on", (await page2.evaluate(() => window.lipLive.mic)) === "running", await page2.$eval("#micStatus", (e) => e.textContent));
+    check("the sheet says the sentences are kept, and offers to stop", /kept for training: you agreed/.test(await page2.$eval("#consentState", (e) => e.textContent)) && (await page2.$eval("#consentChange", (e) => !e.hidden && /Stop keeping/.test(e.textContent))));
     await page2.waitForFunction(() => window.lipLive.lastRead && window.lipLive.lastRead.id && window.lipLive.lastHeard, null, { timeout: 90000 });
     const read = await page2.evaluate(() => window.lipLive.lastRead);
     check("with the switch on, the server kept a sample and the page holds its id", /^[0-9a-f]{32}$/.test(read.id), JSON.stringify(read));
@@ -230,6 +239,8 @@ try {
     await page2.waitForFunction(() => window.lipLive.server === "http://127.0.0.1:8797", null, { timeout: 20000 });
     check("a dead server from a link gives way to thelip's server, and is forgotten",
           await page2.evaluate(() => localStorage.getItem("thelip.server") === null && localStorage.getItem("thelip.token") === null && window.lipLive.language === "es"));
+    await new Promise((r) => setTimeout(r, 500));
+    check("the question is not asked again once answered", await page2.evaluate(() => document.querySelector("#consent").hidden && window.lipLive.improve));
     check("the sheet says so", /connected to thelip's server/.test(await page2.$eval("#serverStatus", (e) => e.textContent)));
   } finally { api2.kill(); }
 

@@ -1,7 +1,7 @@
 """Phrases the server learns from a reader's own kept sentences, and reads
 back from the lips alone.
 
-Every sentence a reader keeps (the improve switch) carries the visual
+Every sentence a reader lets it keep (asked at the start) carries the visual
 encoder's per-frame features of its mouth crops and, once the microphone
 has heard it or the reader has corrected it, its text. For a language
 with no lip-reading model (Hebrew, until one is trained), a new utterance

@@ -176,13 +176,16 @@ pipes; started again if it dies); `run.py` fetches Auto-AVSR's code
 Frames leave the phone only when a server is set, only for the sentence
 being read, only to that address. The server decodes them in memory and
 drops them with the answer; nothing is written to disk — unless the reader
-turns on "Keep my sentences for training" in the page's "?" sheet. Then
-each read is sent with `improve=1` and the server keeps, under
+agreed to it. The page asks once, at the start, as soon as a server
+answers (a card: what is kept, what is not, yes or no; in Hebrew for a
+Hebrew browser), keeps nothing until the answer, and remembers it in the
+browser; the "?" sheet shows it and changes it. After a yes, each read is
+sent with `improve=1` and the server keeps, under
 `data/<id>/`, the 96×96 grey mouth crops its model saw (`crops.npy`; not
 the frames, not the face) and `meta.json` with what it read.
 
 The label — what was actually said — comes from the microphone, not from
-typing: with the switch on, the page also records the sound of each
+typing: after a yes, the page also records the sound of each
 utterance (the last seconds stay in the page's memory; the stretch of the
 utterance goes to `/hear` as a 16 kHz WAV, in parallel with the frames,
 under the same `utt` id). The server transcribes it with faster-whisper

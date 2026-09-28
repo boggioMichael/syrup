@@ -182,4 +182,4 @@ weights for non-commercial use), Chaplin (Amanvir Parhar, MIT), the
 Imperial College preprocessing (Apache-2.0), faster-whisper (MIT) and
 OpenAI's Whisper weights (MIT), ivrit.ai's Hebrew Whisper (Apache-2.0),
 yt-dlp (Unlicense), SentencePiece (Apache-2.0). Data: the sources above,
-each under its own licence, and the people who left the improve switch on.
+each under its own licence, and the people who agreed to their sentences being kept.
