@@ -140,12 +140,22 @@ def test_mouth_is_located_below_and_between_the_astronauts_eyes():
     assert boxes[0] is not None and ratio > 0
 
 
+class Skipped(Exception):
+    """Raised by a test whose input is absent; pytest's own skip when it runs there."""
+
+
+def skip(reason):
+    try:
+        import pytest
+    except ImportError:
+        raise Skipped(reason) from None
+    pytest.skip(reason)
+
+
 def test_the_weights_parse_when_a_checkout_is_present():
     path = os.path.join(LIPNET_DIR, WEIGHTS)
     if not os.path.exists(path):
-        import pytest
-
-        pytest.skip("no LipNet checkout")
+        skip("no LipNet checkout")
     from minih5 import H5
 
     arrays = H5(path).arrays()
