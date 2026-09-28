@@ -17,6 +17,7 @@ import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORT = 8797
+DATA = os.path.join(HERE, "test-data")
 
 
 def jpeg(w=64, h=48, shade=128) -> bytes:
@@ -54,8 +55,11 @@ def call(method, path, data=None, ctype=None, headers=None):
 
 
 def main() -> int:
+    import shutil
+
+    shutil.rmtree(DATA, ignore_errors=True)
     proc = subprocess.Popen([sys.executable, os.path.join(HERE, "server.py"), "--fake", "--port", str(PORT), "--token", "t0k"],
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=dict(os.environ, THELIP_DATA=DATA))
     failures = 0
 
     def check(name, cond, detail=""):
@@ -94,6 +98,26 @@ def main() -> int:
         status, _, body = call("POST", "/read", data, ctype, auth)
         check("30 fps resampled to 25 frames", status == 200 and body["frames"] == 25, body)
 
+        # Samples are kept only when asked; feedback joins them.
+        ctype, data = multipart([("fps", "25"), ("improve", "1"), ("source", "camera")], [("frames", f"f{i:04d}.jpg", jpeg()) for i in range(12)])
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        sample = body.get("id")
+        check("improve=1 keeps a sample and returns its id", status == 200 and isinstance(sample, str) and len(sample) == 32, body)
+        folder = os.path.join(DATA, sample or "none")
+        check("the sample holds the crops and the reading", os.path.isfile(os.path.join(folder, "crops.npy")) and json.load(open(os.path.join(folder, "meta.json")))["raw"] == "FAKE READING OF 12 FRAMES", os.listdir(folder) if os.path.isdir(folder) else "no folder")
+        import numpy as np
+
+        crops = np.load(os.path.join(folder, "crops.npy"))
+        check("crops are (T, 96, 96) uint8", crops.shape == (12, 96, 96) and crops.dtype == np.uint8, str(crops.shape))
+        status, _, body = call("POST", "/feedback", json.dumps({"id": sample, "raw": "FAKE READING OF 12 FRAMES", "corrected": "hello there"}).encode(), "application/json", auth)
+        meta = json.load(open(os.path.join(folder, "meta.json")))
+        check("feedback records the correction", status == 200 and meta.get("corrected") == "hello there" and meta.get("confirmed") is False, meta)
+        status, _, body = call("POST", "/feedback", json.dumps({"id": "../evil", "raw": "", "corrected": ""}).encode(), "application/json", auth)
+        check("feedback refuses a bad id", status == 404, body)
+        ctype, data = multipart([("fps", "25")], [("frames", f"f{i:04d}.jpg", jpeg()) for i in range(5)])
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        check("without improve nothing is kept", status == 200 and body.get("id") is None and len(os.listdir(DATA)) == 1, body)
+
         ctype, data = multipart([("fps", "25")], [])
         status, _, body = call("POST", "/read", data, ctype, auth)
         check("no frames is 400", status == 400, body)
@@ -108,6 +132,7 @@ def main() -> int:
         except subprocess.TimeoutExpired:
             proc.kill()
             out = proc.communicate()[0]
+    shutil.rmtree(DATA, ignore_errors=True)
     if failures:
         print(out)
     print("ALL PASSED" if not failures else f"{failures} FAILED")

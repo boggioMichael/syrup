@@ -11,8 +11,16 @@ const { chromium } = require("playwright");
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = process.env.SERVE_DIR || path.resolve(here, "..");
 const pagePath = process.env.PAGE_PATH || "/thelip.syrup.html";
+import fs from "node:fs";
+import os from "node:os";
+// The site as served: the page plus a server.json that points at the fake server (discovery, no ?server=).
+const site = fs.mkdtempSync(path.join(os.tmpdir(), "thelip-site-"));
+fs.copyFileSync(path.join(root, pagePath), path.join(site, "index.html"));
+fs.writeFileSync(path.join(site, "server.json"), JSON.stringify({ url: "http://127.0.0.1:8798" }));
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "thelip-data-"));
 const web = spawn("python3", ["-m", "http.server", "8795", "--bind", "127.0.0.1"], { cwd: root, stdio: "ignore" });
-const api = spawn("python3", [path.resolve(here, "..", "..", "thelip-server", "server.py"), "--fake", "--port", "8798", "--token", "t0k"], { stdio: "ignore" });
+const web2 = spawn("python3", ["-m", "http.server", "8796", "--bind", "127.0.0.1"], { cwd: site, stdio: "ignore" });
+const api = spawn("python3", [path.resolve(here, "..", "..", "thelip-server", "server.py"), "--fake", "--port", "8798", "--token", "t0k"], { stdio: "ignore", env: { ...process.env, THELIP_DATA: dataDir } });
 const wait = async (url) => { for (let i = 0; i < 100; i++) { try { if ((await fetch(url)).ok) return; } catch {} await new Promise((r) => setTimeout(r, 200)); } throw new Error(`not up: ${url}`); };
 let browser, failures = 0;
 const check = (name, ok, detail = "") => { console.log((ok ? "ok   " : "FAIL ") + name + (ok || !detail ? "" : `: ${detail}`)); if (!ok) failures++; };
@@ -54,9 +62,44 @@ try {
   check("stopping forgets the server", await page.evaluate(() => !window.lipLive.server && localStorage.getItem("thelip.server") === null));
   check("the prompt is a GRID sentence again", /^(bin|lay|place|set) /.test(await page.$eval("#sentence", (e) => e.textContent)));
   await page.click("#closeSheet");
+
+  // Discovery: the site's server.json names the server; no ?server= needed. The
+  // token is not in it, so the fake server (which wants one) must be run open
+  // for this part: use a second fake server without a token.
+  const api2 = spawn("python3", [path.resolve(here, "..", "..", "thelip-server", "server.py"), "--fake", "--port", "8797"], { stdio: "ignore", env: { ...process.env, THELIP_DATA: dataDir } });
+  try {
+    await wait("http://127.0.0.1:8797/health");
+    fs.writeFileSync(path.join(site, "server.json"), JSON.stringify({ url: "http://127.0.0.1:8797" }));
+    const page2 = await context.newPage();
+    page2.on("pageerror", (e) => console.error("page error:", e.message));
+    await page2.goto("http://127.0.0.1:8796/index.html#g127-176-113-57");
+    await page2.waitForFunction(() => window.lipLive && window.lipLive.ready, null, { timeout: 60000 });
+    await page2.waitForFunction(() => window.lipLive.server === "http://127.0.0.1:8797", null, { timeout: 20000 });
+    check("the page found the server named in /server.json on its own", true);
+    await page2.click("#helpBtn");
+    check("the sheet says it is thelip's server", /connected to thelip's server/.test(await page2.$eval("#serverStatus", (e) => e.textContent)));
+    check("keeping sentences is off by default", !(await page2.$eval("#improve", (e) => e.checked)));
+    await page2.click("#improve");
+    check("the switch is remembered", await page2.evaluate(() => localStorage.getItem("thelip.improve") === "1"));
+    await page2.click("#closeSheet");
+    await page2.waitForFunction(() => window.lipLive.lastRead && window.lipLive.lastRead.id, null, { timeout: 90000 });
+    const read = await page2.evaluate(() => window.lipLive.lastRead);
+    check("with the switch on, the server kept a sample and the page holds its id", /^[0-9a-f]{32}$/.test(read.id), JSON.stringify(read));
+    // Tap the subtitle, fix the text, send it.
+    await page2.evaluate(() => window.lipLive.openFix());
+    await page2.fill(".fix input", "hello there");
+    await page2.press(".fix input", "Enter");
+    await page2.waitForFunction(() => window.lipLive.debug.server.lastFeedback && window.lipLive.debug.server.lastFeedback.corrected === "hello there", null, { timeout: 10000 });
+    await new Promise((r) => setTimeout(r, 800));
+    check("the subtitle shows the correction", (await page2.$eval("#sub", (e) => e.textContent.trim())) === "hello there");
+    const meta = JSON.parse(fs.readFileSync(path.join(dataDir, read.id, "meta.json"), "utf8"));
+    check("the correction reached the kept sample", meta.corrected === "hello there" && meta.raw === read.raw, JSON.stringify(meta));
+    check("the sample holds the crops", fs.existsSync(path.join(dataDir, read.id, "crops.npy")));
+  } finally { api2.kill(); }
   console.log(failures ? `${failures} FAILED` : "ALL PASSED");
   if (failures) process.exit(1);
 } finally {
   if (browser) await browser.close();
-  web.kill(); api.kill();
+  web.kill(); web2.kill(); api.kill();
+  fs.rmSync(site, { recursive: true, force: true }); fs.rmSync(dataDir, { recursive: true, force: true });
 }

@@ -39,6 +39,13 @@
   .sheet input { display: none; }
   .sheet input.text { display: block; flex: 1; min-width: 0; font: 15px ui-monospace, Menlo, Consolas, monospace; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--dim); background: rgba(255,255,255,.08); color: var(--ink); }
   .sheet .status { font-size: 13px; }
+  .sub.tappable { cursor: pointer; }
+  .fix { display: flex; gap: 8px; width: 100%; max-width: 560px; }
+  .fix input { flex: 1; min-width: 0; font: 600 20px system-ui, sans-serif; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--dim); background: rgba(0,0,0,.6); color: var(--ink); }
+  .fix button { font: 600 16px system-ui, sans-serif; padding: 10px 14px; border-radius: 10px; border: none; background: var(--lip); color: #fff; }
+  .fix button.quiet { background: rgba(255,255,255,.15); }
+  .sheet .toggle { display: flex; align-items: center; gap: 10px; color: var(--ink); background: none; padding: 0; }
+  .sheet .toggle input { display: inline-block; width: 22px; height: 22px; accent-color: var(--lip); }
   .sheet .status.on { color: #7BE495; }
   .sheet .row { display: flex; gap: 10px; flex-wrap: wrap; }
   @media (prefers-reduced-motion: no-preference) { .dot[data-state="listening"] { animation: pulse 1s infinite; } }
@@ -65,9 +72,12 @@
     <div>Drag the oval to your mouth; pinch to resize. Tap the sentence for another one.</div>
     <div class="row"><label>Open a clip<input type="file" id="file2" accept="video/*"></label><label>Record a clip<input type="file" id="file" accept="video/*" capture="user"></label></div>
     <div><b>Any English words &mdash; with a server</b></div>
-    <div>Run <span class="mono">example/thelip-server</span> from the syrup repository on a computer: it prints a link (and a QR code) that brings its address here. The frames of each sentence go to that computer, which reads them with an open-vocabulary English model (LRS3, 19% word error rate in the lab) and answers in a few seconds. English only.</div>
-    <div class="row"><input class="text" type="url" id="serverUrl" placeholder="https://&hellip;trycloudflare.com" autocapitalize="off" autocorrect="off" spellcheck="false"><button id="serverUse">Use</button><button id="serverOff" hidden>Stop</button></div>
+    <div>The page looks for thelip's own server when it opens (<span class="mono">api.thelip.ai</span>); when it answers, every sentence's frames go there and come back read by an open-vocabulary English model (LRS3, 19% word error rate in the lab), in a few seconds. English only. You can also run <span class="mono">example/thelip-server</span> from the syrup repository on your own computer and put its address here.</div>
+    <div class="row"><input class="text" type="url" id="serverUrl" placeholder="https://&hellip;" autocapitalize="off" autocorrect="off" spellcheck="false"><button id="serverUse">Use</button><button id="serverOff" hidden>Stop</button></div>
     <div class="status" id="serverStatus"></div>
+    <div><b>Help thelip improve</b></div>
+    <label class="toggle"><input type="checkbox" id="improve"> Keep my sentences for training</label>
+    <div>Off, nothing is kept anywhere. On, the server keeps what its model saw &mdash; 96&times;96 grey crops of the mouth, not the frames and not the face &mdash; with what it read and, if you tap the subtitle and fix it, what you actually said. That is the material for training a model on real phones and real speakers. Tap the subtitle to correct it either way.</div>
     <div id="speed"></div>
     <div>The Lip is the lip reader of the <b>syrup</b> library. Its network is LipNet (Assael, Shillingford, Whiteson, de Freitas 2016), weights from rizkiarm/LipNet (MIT), trained on the GRID corpus (CC BY 4.0): 64 of 66 words on GRID's sample clips. A new face and a phone camera are harder than that; expect misses.</div>
     <div class="row"><button id="closeSheet">Back</button></div>
@@ -498,7 +508,8 @@ self.onmessage = (e) => {
   const cropCanvas = $("crop"), cropCtx = cropCanvas.getContext("2d", { willReadFrequently: true });
   let worker = null, ready = false, perFrameMs = 0;
   // ---- a server for any English words (example/thelip-server) ----------------------------------
-  let server = null, serverToken = null, serverInfo = null;
+  let server = null, serverToken = null, serverInfo = null, serverExplicit = false, improve = false, lastRead = null;
+  const DEFAULT_SERVER = "https://api.thelip.ai";
   const fullCanvas = document.createElement("canvas"), fullCtx = fullCanvas.getContext("2d");
   function loadServer() {
     const q = new URLSearchParams(location.search);
@@ -506,16 +517,46 @@ self.onmessage = (e) => {
       try { localStorage.setItem("thelip.server", q.get("server")); if (q.get("token")) localStorage.setItem("thelip.token", q.get("token")); else localStorage.removeItem("thelip.token"); } catch {}
       window.history.replaceState(null, "", location.pathname + location.hash);
     }
-    try { server = localStorage.getItem("thelip.server") || null; serverToken = localStorage.getItem("thelip.token") || null; } catch {}
-    if (server) checkServer();
+    try { server = localStorage.getItem("thelip.server") || null; serverToken = localStorage.getItem("thelip.token") || null; improve = localStorage.getItem("thelip.improve") === "1"; } catch {}
+    $("improve").checked = improve;
+    serverExplicit = !!server;
+    if (server) checkServer(); else discoverServer();
     renderServer();
   }
+  // thelip's own server: the address in /server.json on this site (kept current
+  // by the server that runs), else api.thelip.ai; either is used only when it
+  // answers /health. Nothing set: reading 51 words here, and looking again.
+  async function probe(url, ms) {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
+    try { const r = await fetch(url.replace(/\/$/, "") + "/health", { signal: ctl.signal }); if (!r.ok) return null; const j = await r.json(); return j && j.ok ? j : null; }
+    catch { return null; } finally { clearTimeout(t); }
+  }
+  let discovering = false;
+  async function discoverServer() {
+    if (discovering || serverExplicit) return;
+    discovering = true;
+    try {
+      const candidates = [];
+      if (location.protocol.startsWith("http")) {
+        try { const r = await fetch("/server.json?t=" + Date.now(), { cache: "no-store" }); const j = r.ok ? await r.json() : null; if (j && typeof j.url === "string" && /^https:\/\/|^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?/.test(j.url)) candidates.push(j.url); } catch {}
+      }
+      candidates.push(DEFAULT_SERVER);
+      for (const url of candidates) {
+        if (serverExplicit) return;
+        const info = await probe(url, 5000);
+        if (info) { server = url; serverToken = null; serverInfo = info; renderServer(); newSentence(); return; }
+      }
+      if (!serverExplicit && !serverOn()) { server = null; serverInfo = null; renderServer(); }
+    } finally { discovering = false; }
+  }
+  setInterval(() => { if (!serverOn()) discoverServer(); }, 60000);
   function renderServer() {
     $("serverUrl").value = server || "";
     $("serverOff").hidden = !server;
     const st = $("serverStatus");
     st.className = "status" + (serverInfo && serverInfo.ok ? " on" : "");
-    st.textContent = !server ? "" : serverInfo === null ? "checking…" : serverInfo.ok ? `connected: ${serverInfo.model} on ${serverInfo.device}` : `not reachable (${serverInfo.error}) — reading 51 words here meanwhile`;
+    st.textContent = !server ? "thelip's server is not answering right now — reading 51 words here; looking again every minute"
+      : serverInfo === null ? "checking…" : serverInfo.ok ? `connected${serverExplicit ? "" : " to thelip's server"}: ${serverInfo.model} on ${serverInfo.device}` : `not reachable (${serverInfo.error}) — reading 51 words here meanwhile`;
   }
   async function checkServer() {
     serverInfo = null; renderServer();
@@ -530,6 +571,7 @@ self.onmessage = (e) => {
   async function readOnServer(blobs) {
     const body = new FormData();
     body.append("fps", String(FPS));
+    if (improve) { body.append("improve", "1"); body.append("source", mode); }
     blobs.forEach((b, i) => body.append("frames", b, `f${String(i).padStart(4, "0")}.jpg`));
     const r = await fetch(server.replace(/\/$/, "") + "/read", { method: "POST", body, headers: serverToken ? { Authorization: `Bearer ${serverToken}` } : {} });
     const j = await r.json().catch(() => ({}));
@@ -703,13 +745,43 @@ self.onmessage = (e) => {
       debug.server.sent++;
       const r = await readOnServer(blobs);
       debug.server.lastText = r.text;
+      lastRead = { id: r.id || null, raw: r.text || "" };
       showText(r.text ? r.text.toLowerCase() : "(nothing read)", false);
+      sub.classList.toggle("tappable", !!r.text);
     } catch (e) {
       debug.server.lastError = e.message;
       showText(`server: ${e.message}`, true);
     }
     setState("idle");
   }
+  // Tap the subtitle of a server reading to fix it; the fix (or "as read") goes
+  // back to the server for the sample it kept, when it kept one.
+  let fixing = false;
+  async function sendFeedback(corrected) {
+    if (!lastRead || !server) return;
+    const sent = { id: lastRead.id, raw: lastRead.raw, corrected };
+    debug.server.lastFeedback = sent;
+    if (!lastRead.id) return;
+    try {
+      await fetch(server.replace(/\/$/, "") + "/feedback", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, serverToken ? { Authorization: `Bearer ${serverToken}` } : {}), body: JSON.stringify(sent) });
+    } catch {}
+  }
+  function openFix() {
+    if (fixing || !lastRead || !lastRead.raw) return;
+    fixing = true;
+    const box = document.createElement("div"); box.className = "fix";
+    const input = document.createElement("input"); input.value = lastRead.raw.toLowerCase(); input.setAttribute("aria-label", "what you said");
+    const ok = document.createElement("button"); ok.textContent = "✓"; ok.setAttribute("aria-label", "save the correction");
+    const cancel = document.createElement("button"); cancel.textContent = "✕"; cancel.className = "quiet"; cancel.setAttribute("aria-label", "cancel");
+    const finish = (text) => { fixing = false; if (text !== null) { showText(text, false); sub.classList.add("tappable"); sendFeedback(text); } else { showText(lastRead.raw.toLowerCase(), false); sub.classList.add("tappable"); } };
+    ok.addEventListener("click", () => finish(input.value.trim()));
+    cancel.addEventListener("click", () => finish(null));
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") finish(input.value.trim()); if (e.key === "Escape") finish(null); });
+    box.append(input, ok, cancel);
+    sub.replaceChildren(box); sub.classList.remove("tappable");
+    input.focus(); input.select();
+  }
+  sub.addEventListener("click", (e) => { if (sub.classList.contains("tappable") && !e.target.closest(".fix")) openFix(); });
   function showText(text, dim) {
     sub.replaceChildren();
     const s = document.createElement("span"); if (dim) s.className = "forming"; s.textContent = text; sub.appendChild(s);
@@ -822,14 +894,15 @@ self.onmessage = (e) => {
   $("serverUse").addEventListener("click", () => {
     const v = $("serverUrl").value.trim().replace(/\/$/, "");
     if (!/^https?:\/\//.test(v)) { serverInfo = { ok: false, error: "the address starts with http:// or https://" }; renderServer(); return; }
-    server = v; try { localStorage.setItem("thelip.server", v); } catch {}
+    server = v; serverExplicit = true; try { localStorage.setItem("thelip.server", v); } catch {}
     checkServer();
   });
-  $("serverOff").addEventListener("click", () => { server = null; serverToken = null; serverInfo = null; try { localStorage.removeItem("thelip.server"); localStorage.removeItem("thelip.token"); } catch {} renderServer(); newSentence(); });
+  $("serverOff").addEventListener("click", () => { server = null; serverToken = null; serverInfo = null; serverExplicit = false; try { localStorage.removeItem("thelip.server"); localStorage.removeItem("thelip.token"); } catch {} renderServer(); newSentence(); discoverServer(); });
+  $("improve").addEventListener("change", (e) => { improve = e.target.checked; try { localStorage.setItem("thelip.improve", improve ? "1" : "0"); } catch {} });
   $("closeSheet").addEventListener("click", () => { $("sheet").hidden = true; });
 
-  const debug = { frames: 0, started: 0, finished: 0, reads: 0, lastMotion: 0, quiet: 0, lastWords: null, trace: [], server: { sent: 0, lastText: null, lastError: null } };
-  window.lipLive = { get ready() { return ready; }, get text() { return sub.textContent; }, get server() { return serverOn() ? server : null; }, startFile, debug };
+  const debug = { frames: 0, started: 0, finished: 0, reads: 0, lastMotion: 0, quiet: 0, lastWords: null, trace: [], server: { sent: 0, lastText: null, lastError: null, lastFeedback: null } };
+  window.lipLive = { get ready() { return ready; }, get text() { return sub.textContent; }, get server() { return serverOn() ? server : null; }, get lastRead() { return lastRead; }, startFile, openFix, debug };
   loadServer();
   bootWorker();
 })();

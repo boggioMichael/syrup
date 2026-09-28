@@ -48,6 +48,11 @@ MODELS = [
     ("benchmarks/LRS3/language_models/lm_en_subword/model.pth", "https://huggingface.co/Amanvir/lm_en_subword/resolve/main/model.pth", 150_000_000),
 ]
 SITE = "https://thelip.ai/"
+# A Cloudflare named tunnel (a fixed address such as https://api.thelip.ai)
+# instead of a throwaway one: the tunnel's token in tunnel-token.txt, the
+# address it routes in public-url.txt; both next to this file, both ignored by git.
+TOKEN_FILE = os.path.join(HERE, "tunnel-token.txt")
+PUBLIC_FILE = os.path.join(HERE, "public-url.txt")
 
 
 def say(*a):
@@ -159,8 +164,9 @@ class Tunnel:
     since a fresh quick tunnel can sit on Cloudflare's error 1033 for a while
     or never route at all, in which case it is started again."""
 
-    def __init__(self, binary: str, origin: str):
+    def __init__(self, binary: str, origin: str, token: Optional[str] = None, fixed: Optional[str] = None):
         self.binary, self.origin = binary, origin
+        self.token, self.fixed = token, fixed
         self.proc: Optional[subprocess.Popen] = None
         self.public: Optional[str] = None
         self.log = open(os.path.join(HERE, "tunnel.log"), "a", buffering=1)
@@ -168,8 +174,9 @@ class Tunnel:
     def _start(self) -> None:
         import threading
 
-        self.public = None
-        self.proc = subprocess.Popen([self.binary, "tunnel", "--url", self.origin, "--no-autoupdate"],
+        self.public = self.fixed if self.token else None
+        cmd = [self.binary, "tunnel", "run", "--token", self.token] if self.token else [self.binary, "tunnel", "--url", self.origin]
+        self.proc = subprocess.Popen(cmd + ["--no-autoupdate"],
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
 
         def drain():
@@ -210,6 +217,55 @@ class Tunnel:
         return bool(self.proc and self.proc.poll() is None and self.public and try_health(self.public + "/health", timeout=8))
 
 
+def publish_pointer(url: Optional[str]) -> bool:
+    """Tell thelip.ai where the server is: docs/server.json on the site's
+    gh-pages branch, which the page reads when it opens. Best effort: needs
+    git and push rights on this machine; says so when it cannot."""
+    git = shutil.which("git")
+    if not git:
+        say("(git is not on this machine, so thelip.ai cannot be told the address; the link below still works)")
+        return False
+    root = os.path.normpath(os.path.join(HERE, "..", ".."))
+    try:
+        remote = subprocess.check_output([git, "-C", root, "remote", "get-url", "origin"], text=True, stderr=subprocess.STDOUT).strip()
+    except (subprocess.CalledProcessError, OSError):
+        say("(this folder is not a git checkout of syrup, so thelip.ai cannot be told the address; the link below still works)")
+        return False
+    pages = os.path.join(WORK, "pages")
+    try:
+        if not os.path.isdir(os.path.join(pages, ".git")):
+            subprocess.check_output([git, "clone", "-q", "--branch", "gh-pages", "--single-branch", "--depth", "1", remote, pages], stderr=subprocess.STDOUT, text=True)
+        else:
+            subprocess.check_output([git, "-C", pages, "fetch", "-q", "--depth", "1", "origin", "gh-pages"], stderr=subprocess.STDOUT, text=True)
+            subprocess.check_output([git, "-C", pages, "reset", "-q", "--hard", "origin/gh-pages"], stderr=subprocess.STDOUT, text=True)
+        import json
+
+        with open(os.path.join(pages, "server.json"), "w", encoding="utf-8") as f:
+            json.dump({"url": url, "since": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}, f)
+        subprocess.check_output([git, "-C", pages, "add", "server.json"], stderr=subprocess.STDOUT, text=True)
+        if subprocess.call([git, "-C", pages, "diff", "--cached", "--quiet"]) == 0:
+            return True  # already says so
+        subprocess.check_output([git, "-C", pages, "-c", "user.name=thelip-server", "-c", "user.email=thelip-server@thelip.ai",
+                                 "commit", "-q", "-m", f"server: {url or 'off'}"], stderr=subprocess.STDOUT, text=True)
+        subprocess.check_output([git, "-C", pages, "push", "-q", "origin", "HEAD:gh-pages"], stderr=subprocess.STDOUT, text=True)
+        say(f"thelip.ai told: server {'at ' + url if url else 'off'} (live there in about a minute)")
+        return True
+    except (subprocess.CalledProcessError, OSError) as e:
+        detail = getattr(e, "output", None) or str(e)
+        say(f"(could not tell thelip.ai the address — git said: {str(detail).strip()[:300]}; the link below still works)")
+        return False
+
+
+def pointer_on_site() -> Optional[str]:
+    import json
+
+    try:
+        with urllib.request.urlopen(f"{SITE}server.json?t={int(time.time())}", timeout=10) as r:
+            return json.load(r).get("url")
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def show_link(link: str) -> None:
     say("")
     say("Open this on the phone (it is the site with the server's address in it):")
@@ -238,6 +294,7 @@ def main() -> None:
     ap.add_argument("--beam", type=int, default=20)
     ap.add_argument("--no-lm", action="store_true")
     ap.add_argument("--no-tunnel", action="store_true", help="serve on this machine only")
+    ap.add_argument("--no-publish", action="store_true", help="do not write the address to thelip.ai's server.json")
     ap.add_argument("--token", default=os.environ.get("THELIP_TOKEN") or None)
     ap.add_argument("--fake", action="store_true")
     args = ap.parse_args()
@@ -271,26 +328,33 @@ def main() -> None:
         say(f"server up: {health.get('model')} on {health.get('device')}")
         public = origin
         if tunnel_bin:
-            say("opening the tunnel")
-            tunnel = Tunnel(tunnel_bin, origin)
+            token = open(TOKEN_FILE, encoding="utf-8").read().strip() if os.path.isfile(TOKEN_FILE) else None
+            fixed = open(PUBLIC_FILE, encoding="utf-8").read().strip().rstrip("/") if os.path.isfile(PUBLIC_FILE) else "https://api.thelip.ai"
+            say("opening the tunnel" + (f" to {fixed} (named tunnel)" if token else " (a throwaway address; see README for a fixed one)"))
+            tunnel = Tunnel(tunnel_bin, origin, token=token, fixed=fixed if token else None)
             public = tunnel.open()
-        link = f"{SITE}?server={public}" + (f"&token={args.token}" if args.token else "")
+        published = False if args.token or args.no_tunnel or args.no_publish else publish_pointer(public)
+        link = f"{SITE}" if published else f"{SITE}?server={public}" + (f"&token={args.token}" if args.token else "")
         show_link(link)
         say("Ctrl+C stops the server.")
-        misses = 0
+        misses, ticks = 0, 0
         while server is None or server.poll() is None:
             time.sleep(30)
+            ticks += 1
             if tunnel is None:
                 continue
             if tunnel.alive():
                 misses = 0
+                if published and ticks % 20 == 0 and pointer_on_site() != public:
+                    publish_pointer(public)
                 continue
             misses += 1
             if misses >= 3:
                 say("the tunnel stopped answering; opening a new one")
                 tunnel.stop()
                 public = tunnel.open()
-                link = f"{SITE}?server={public}" + (f"&token={args.token}" if args.token else "")
+                published = False if args.token or args.no_publish else publish_pointer(public)
+                link = f"{SITE}" if published else f"{SITE}?server={public}" + (f"&token={args.token}" if args.token else "")
                 show_link(link)
                 misses = 0
         raise SystemExit(f"the server stopped (exit {server.returncode}); see server.log")
@@ -299,6 +363,8 @@ def main() -> None:
     finally:
         if tunnel:
             tunnel.stop()
+            if not (args.token or args.no_publish) and tunnel.public and not tunnel.token:
+                publish_pointer(None)
         if server and server.poll() is None:
             server.terminate()
             try:

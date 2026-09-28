@@ -35,3 +35,5 @@ __pycache__/
 /example/thelip-server/*.log
 /example/thelip-server/link.txt
 /example/thelip-server/__pycache__
+/example/thelip-server/tunnel-token.txt
+/example/thelip-server/public-url.txt

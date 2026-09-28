@@ -13,13 +13,18 @@ encoder, a transformer decoder with a subword language model.
 
 Routes
     GET  /health            -> {"ok": true, "model": ..., "device": ..., "fake": bool}
-    POST /read              multipart: fps=<number>, frames=<jpeg>... in order
-                            -> {"text": "HELLO THERE", "frames": 62, "seconds": 3.1}
+    POST /read              multipart: fps=<number>, frames=<jpeg>... in order,
+                            improve=1 to keep the mouth crops for training
+                            -> {"text": "HELLO THERE", "frames": 62, "seconds": 3.1, "id": ...}
                             422 when no face is found in the frames
+    POST /feedback          json: {"id": ..., "raw": ..., "corrected": ...}
+                            -> {"ok": true}; the correction joins the kept crops
 
 English only, no audio, one speaker: the largest face in the frames. Text
-comes back in the model's upper-case tokens. Nothing is stored: frames are
-decoded in memory and dropped when the answer is sent.
+comes back in the model's upper-case tokens. Nothing is stored unless the
+request says improve=1: then the 96x96 grey mouth crops the model saw (not
+the frames, not the face) and the texts are written under data/<id>/, the
+material for training a better model on real phones and real speakers.
 """
 from __future__ import annotations
 
@@ -57,6 +62,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WORK = os.environ.get("THELIP_HOME") or HERE
 CHAPLIN = os.environ.get("THELIP_CHAPLIN") or os.path.join(WORK, "chaplin")
 FACE_MODEL = os.environ.get("THELIP_FACE_MODEL") or os.path.join(WORK, "blaze_face_short_range.tflite")
+DATA = os.environ.get("THELIP_DATA") or os.path.join(WORK, "data")
 CONFIG = "configs/LRS3_V_WER19.1.ini"
 MODEL_NAME = "LRS3_V_WER19.1 (Auto-AVSR, Ma et al. 2023) via Chaplin"
 MAX_FRAMES = 400
@@ -145,21 +151,53 @@ class Reader:
         )
         self.torch = torch
 
-    def read(self, video: np.ndarray) -> str:
-        """video: (T, H, W, 3) RGB uint8 at 25 fps -> the model's transcript."""
+    def read(self, video: np.ndarray):
+        """video: (T, H, W, 3) RGB uint8 at 25 fps -> (transcript, mouth crops
+        (T, 96, 96) uint8 grey — what the model saw, or None when fake)."""
         if self.fake:
-            return f"FAKE READING OF {len(video)} FRAMES"
+            return f"FAKE READING OF {len(video)} FRAMES", np.zeros((len(video), 96, 96), np.uint8)
         with self.lock:
             landmarks = self.detector.detect(video)
             if all(l is None for l in landmarks):
                 raise NoFace()
             crops = self.loader.video_process(video, landmarks)
             data = self.loader.video_transform(self.torch.tensor(crops))
-            return self.model.infer(data)
+            return self.model.infer(data), np.asarray(crops, dtype=np.uint8)
 
 
 class NoFace(Exception):
     pass
+
+
+def keep_sample(crops: np.ndarray, meta: dict) -> str:
+    """Write one training sample: the crops and what was read. Returns its id."""
+    import json
+    import uuid
+
+    sample_id = uuid.uuid4().hex
+    folder = os.path.join(DATA, sample_id)
+    os.makedirs(folder, exist_ok=True)
+    np.save(os.path.join(folder, "crops.npy"), crops)
+    with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as f:
+        json.dump(dict(meta, id=sample_id, kept=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())), f, ensure_ascii=False, indent=1)
+    return sample_id
+
+
+def update_sample(sample_id: str, fields: dict) -> bool:
+    import json
+    import re
+
+    if not re.fullmatch(r"[0-9a-f]{32}", sample_id or ""):
+        return False
+    path = os.path.join(DATA, sample_id, "meta.json")
+    if not os.path.isfile(path):
+        return False
+    with open(path, encoding="utf-8") as f:
+        meta = json.load(f)
+    meta.update(fields)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=1)
+    return True
 
 
 def decode_jpeg(data: bytes) -> np.ndarray:
@@ -172,7 +210,7 @@ def decode_jpeg(data: bytes) -> np.ndarray:
 def create_app(reader: Reader, token: Optional[str] = None) -> Starlette:
     async def health(request: Request):
         return JSONResponse({"ok": True, "model": MODEL_NAME, "device": reader.device, "fake": reader.fake,
-                             "beam": reader.beam, "lm": reader.lm, "max_frames": MAX_FRAMES})
+                             "beam": reader.beam, "lm": reader.lm, "max_frames": MAX_FRAMES, "keeps": "mouth crops and texts, only when asked (improve=1)"})
 
     async def read(request: Request):
         if token and request.headers.get("authorization") != f"Bearer {token}":
@@ -199,13 +237,29 @@ def create_app(reader: Reader, token: Optional[str] = None) -> Starlette:
             idx = np.clip(np.round(np.arange(0, len(video) * 25.0 / fps) * fps / 25.0).astype(int), 0, len(video) - 1)
             video = video[idx]
         try:
-            text = await _run(reader.read, video)
+            text, crops = await _run(reader.read, video)
         except NoFace:
             return JSONResponse({"error": "no face found in the frames"}, status_code=422)
-        return JSONResponse({"text": text, "frames": int(len(video)), "seconds": round(time.time() - started, 2)})
+        sample_id = None
+        if str(form.get("improve", "")) == "1":
+            sample_id = keep_sample(crops, {"raw": text, "fps": 25, "frames": int(len(video)),
+                                            "source": str(form.get("source", ""))[:40]})
+        return JSONResponse({"text": text, "frames": int(len(video)), "seconds": round(time.time() - started, 2), "id": sample_id})
+
+    async def feedback(request: Request):
+        if token and request.headers.get("authorization") != f"Bearer {token}":
+            return JSONResponse({"error": "bad token"}, status_code=401)
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            return JSONResponse({"error": "json body expected"}, status_code=400)
+        corrected = str(body.get("corrected", ""))[:500]
+        raw = str(body.get("raw", ""))[:500]
+        ok = update_sample(str(body.get("id", "")), {"corrected": corrected, "confirmed": corrected.strip().lower() == raw.strip().lower()})
+        return JSONResponse({"ok": ok}, status_code=200 if ok else 404)
 
     return Starlette(
-        routes=[Route("/health", health), Route("/read", read, methods=["POST"])],
+        routes=[Route("/health", health), Route("/read", read, methods=["POST"]), Route("/feedback", feedback, methods=["POST"])],
         middleware=[Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "POST"], allow_headers=["*"])],
     )
 
