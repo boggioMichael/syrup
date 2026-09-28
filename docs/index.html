@@ -799,7 +799,7 @@ self.onmessage = (e) => {
     }
     return out;
   }
-  const PRE = 10, POST = 8, STILL_LOCAL = 12, MAX_LOCAL = 75, STILL_SERVER = 20, MAX_SERVER = 250;
+  const PRE = 10, POST = 8, STILL_LOCAL = 12, MAX_LOCAL = 75, STILL_SERVER = 20, MAX_SERVER = 250, MIN_SERVER = 25;
   let MAX = MAX_LOCAL, STILL = STILL_LOCAL;
   let utter = null, last = null, preRoll = [], preRollFull = [], quiet = 0.004, anyUtterance = false;
   const recent = [], lastFrames = [], history = [];
@@ -877,6 +877,7 @@ self.onmessage = (e) => {
     let lips = "";
     try {
       const keep = Math.max(0, Math.min(u.full.length, u.full.length - u.still + POST));
+      if (keep < MIN_SERVER) { showText("(too short — say a whole sentence)", true); setState("idle"); return; }
       const blobs = await Promise.all(u.full.slice(0, keep));
       debug.server.sent++;
       const r = await readOnServer(blobs, utt);
