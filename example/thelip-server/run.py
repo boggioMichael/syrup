@@ -451,6 +451,7 @@ def main() -> None:
                    HF_HOME=os.path.join(WORK, "hf"), HF_HUB_DISABLE_SYMLINKS_WARNING="1", HF_HUB_DISABLE_TELEMETRY="1")
         server = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
     tunnel = None
+    replaced = False
     try:
         health = wait_health(args.port, timeout=900)
         say(f"server up: {health.get('model')} on {health.get('device')}")
@@ -485,13 +486,20 @@ def main() -> None:
                 link = f"{SITE}" if published else f"{SITE}?server={public}" + (f"&token={args.token}" if args.token else "")
                 show_link(link)
                 misses = 0
+        newer = try_health(origin + "/health")
+        if newer and newer.get("version") != SERVER_VERSION:
+            # Another launch replaced this server: it publishes its own address; this
+            # window has nothing left to do and closes (thelip-server.cmd pauses only on errors).
+            replaced = True
+            say(f"a newer thelip-server (version {newer.get('version')}) took over in another window; this one closes")
+            return
         raise SystemExit(f"the server stopped (exit {server.returncode}); see server.log")
     except KeyboardInterrupt:
         say("stopping")
     finally:
         if tunnel:
             tunnel.stop()
-            if not (args.token or args.no_publish) and tunnel.public and not tunnel.token:
+            if not (args.token or args.no_publish or replaced) and tunnel.public and not tunnel.token:
                 publish_pointer(None)
         if server and server.poll() is None:
             server.terminate()

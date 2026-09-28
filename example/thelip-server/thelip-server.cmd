@@ -46,4 +46,4 @@ set "PYTHONIOENCODING=utf-8"
 set "PYTHONUTF8=1"
 "%VENV%\Scripts\python.exe" run.py %*
 echo.
-pause
+if errorlevel 1 pause
