@@ -24,6 +24,15 @@ import numpy as np
 
 HEBREW = "ivrit-ai/whisper-large-v3-turbo-ct2"
 RATE = 16000
+SILENT_DB = -60.0   # a room with nobody speaking is about -50 to -60 dB; a muted or broken microphone gives far less
+
+
+def level_db(audio: np.ndarray) -> float:
+    """RMS level of float samples in dB below full scale (-120 for digital silence)."""
+    if audio.size == 0:
+        return -120.0
+    rms = float(np.sqrt(np.mean(np.square(audio, dtype=np.float64))))
+    return float(round(max(-120.0, 20.0 * float(np.log10(rms + 1e-12))), 1))
 
 
 def wav_to_float(data: bytes):
@@ -162,18 +171,22 @@ class Transcriber:
         return self.models[name]
 
     def hear(self, wav: bytes, language: str) -> dict:
-        """-> {"heard": text, "confidence": 0..1, "seconds": float, "model": name}"""
+        """-> {"heard": text, "confidence": 0..1, "seconds": float, "model": name,
+               "level_db": RMS of the sound in dB below full scale, "silent": bool}
+        A sound below SILENT_DB is not transcribed: nothing was said aloud, or
+        the microphone gave nothing (the page tells the two apart for the reader)."""
+        audio, seconds = wav_to_float(wav)   # a bad file is refused here, before any model
+        level = level_db(audio)
+        extra = {"level_db": level, "silent": bool(level < SILENT_DB)}
         if self.fake:
-            audio, seconds = wav_to_float(wav)
-            return {"heard": f"FAKE HEARD {seconds:.1f}s" if seconds >= 0.2 else "", "confidence": 0.9 if seconds >= 0.2 else 0.0,
-                    "seconds": round(seconds, 2), "model": "fake"}
+            said = seconds >= 0.2 and not extra["silent"]
+            return dict({"heard": f"FAKE HEARD {seconds:.1f}s" if said else "", "confidence": 0.9 if said else 0.0,
+                         "seconds": round(seconds, 2), "model": "fake"}, **extra)
         if not self.in_process:
-            wav_to_float(wav)   # a bad file is refused here, before it reaches the worker
             with self.lock:
-                return self._ask(wav, language)
-        audio, seconds = wav_to_float(wav)
-        if seconds < 0.2 or float(np.abs(audio).max()) < 1e-4:
-            return {"heard": "", "confidence": 0.0, "seconds": round(seconds, 2), "model": self.model_name(language)}
+                return dict(self._ask(wav, language), **extra)
+        if seconds < 0.2 or extra["silent"]:
+            return dict({"heard": "", "confidence": 0.0, "seconds": round(seconds, 2), "model": self.model_name(language)}, **extra)
         with self.lock:
             model = self._model(language)
             # No voice-activity filter: it imports onnxruntime, which ended the
@@ -189,4 +202,4 @@ class Transcriber:
                     no_speech.append(float(s.no_speech_prob))
         text = " ".join(texts)
         confidence = float(np.mean(probs)) * (1.0 - float(np.mean(no_speech))) if probs else 0.0
-        return {"heard": text, "confidence": round(confidence, 3), "seconds": round(seconds, 2), "model": self.model_name(language)}
+        return dict({"heard": text, "confidence": round(confidence, 3), "seconds": round(seconds, 2), "model": self.model_name(language)}, **extra)

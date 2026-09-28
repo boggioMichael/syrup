@@ -72,7 +72,7 @@
   <div class="msg" id="msg"><div>Loading thelip&hellip;</div></div>
   <div class="sheet" id="sheet" hidden>
     <h1>thelip<span>.syrup</span></h1>
-    <div>Lips in the dashed oval, face still, then mouth a sentence. The words appear below as they are read. No audio is used and nothing leaves the phone, unless a server is set below (frames go there) and you turn on "keep my sentences" (the microphone too).</div>
+    <div>Lips in the dashed oval, face still, then mouth a sentence. The words appear below as they are read. No audio is used and nothing leaves the phone, unless a server is set below (frames go there) and you turn on "keep my sentences" (the microphone too: then say the sentence out loud, so that it is written down and kept with what your lips did).</div>
     <div><b>It knows 51 words, in one sentence shape:</b></div>
     <div class="mono">command &middot; colour &middot; preposition &middot; letter &middot; digit &middot; adverb<br>bin lay place set &middot; blue green red white &middot; at by in with &middot; a&ndash;z (no w) &middot; zero&ndash;nine &middot; again now please soon</div>
     <div>Drag the oval to your mouth; pinch to resize. Tap the sentence for another one.</div>
@@ -665,10 +665,16 @@ self.onmessage = (e) => {
       const m = { ctx, stream, rate: ctx.sampleRate, blocks: [], total: 0 };
       const src = ctx.createMediaStreamSource(stream);
       const node = ctx.createScriptProcessor(4096, 1, 1);
+      m.peak = -120; m.shown = 0;
       node.onaudioprocess = (e) => {
         const d = new Float32Array(e.inputBuffer.getChannelData(0));
         m.blocks.push({ t: performance.now(), data: d }); m.total += d.length;
         while (m.total > m.rate * MIC_SECONDS) m.total -= m.blocks.shift().data.length;
+        let sum = 0; for (let i = 0; i < d.length; i++) sum += d[i] * d[i];
+        const db = 20 * Math.log10(Math.sqrt(sum / d.length) + 1e-9);
+        m.peak = Math.max(m.peak - 1.5, db);
+        const now = performance.now();
+        if (now - m.shown > 400) { m.shown = now; renderMic(`microphone on — level ${Math.round(m.peak)} dB${m.peak < -85 ? " (silent: is the microphone allowed for this site?)" : ""}; say your sentences out loud to label them`); }
       };
       const mute = ctx.createGain(); mute.gain.value = 0;
       src.connect(node); node.connect(mute); mute.connect(ctx.destination);
@@ -725,13 +731,14 @@ self.onmessage = (e) => {
     let hit = 0; for (const w of a) { const n = bag.get(w) || 0; if (n) { hit++; bag.set(w, n - 1); } }
     return { hit, of: b.length };
   }
-  function showHeard(heard, lips) {
+  function showHeard(h, lips) {
     const el = $("heard");
-    if (heard === null) { el.hidden = true; el.replaceChildren(); return; }
+    if (h === null) { el.hidden = true; el.replaceChildren(); return; }
     el.hidden = false; el.replaceChildren();
-    const b = document.createElement("b"); b.textContent = heard || "(nothing heard)";
+    if (h.silent) { el.textContent = "🎤 silence — say it out loud and the microphone writes it down (the lips are read either way)"; return; }
+    const b = document.createElement("b"); b.textContent = h.heard || "(no words heard)";
     el.append("🎤 ", b);
-    const ag = agreement(lips, heard);
+    const ag = agreement(lips, h.heard);
     if (ag) { const span = document.createElement("span"); span.className = "agree"; span.textContent = ` — lips got ${ag.hit} of ${ag.of} words`; el.appendChild(span); }
   }
   function fullFrame() {
@@ -924,7 +931,7 @@ self.onmessage = (e) => {
     setState("idle");
     if (hearing) {
       const h = await hearing;
-      if (h && lastRead && lastRead.utt === utt) showHeard(h.heard, lips);
+      if (h && lastRead && lastRead.utt === utt) showHeard(h, lips);
       if (!hasModel(language)) refreshPhrases();
     }
   }
@@ -1021,8 +1028,22 @@ self.onmessage = (e) => {
     const url = URL.createObjectURL(file);
     const v = document.createElement("video");
     v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = url;
-    try { await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error("cannot decode this video")); }); }
-    catch (e) { return noCamera("This video cannot be decoded here."); }
+    // In the page, out of sight: iOS Safari decodes the frames of a video it can see.
+    v.setAttribute("playsinline", ""); v.setAttribute("muted", "");
+    v.style.cssText = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none";
+    document.body.appendChild(v);
+    const cleanup = () => { v.remove(); URL.revokeObjectURL(url); };
+    showText("opening the clip…", true); setState("reading");
+    try {
+      await new Promise((res, rej) => {
+        v.onloadedmetadata = res; v.onerror = () => rej(new Error("cannot decode this video"));
+        setTimeout(() => rej(new Error("no answer from the video decoder")), 15000);
+      });
+    } catch (e) { cleanup(); return noCamera(`This video cannot be opened here (${e.message}).`); }
+    // iOS Safari loads no frame data until a video has played; a muted inline play
+    // is allowed. Whatever play() does, the clip goes on after at most a second.
+    try { await Promise.race([v.play(), new Promise((res) => setTimeout(res, 1000))]); } catch {}
+    v.pause();
     source = v; sourceSize = { w: v.videoWidth, h: v.videoHeight }; fullCanvas.width = 0;
     msg.hidden = true; cam.hidden = true; view.hidden = false;
     view.width = v.videoWidth; view.height = v.videoHeight;
@@ -1032,9 +1053,45 @@ self.onmessage = (e) => {
     utter = null; last = null; preRoll = []; anyUtterance = false; recent.length = 0; lastFrames.length = 0;
     worker.postMessage({ type: "reset" });
     sub.replaceChildren();
-    const seekTo = (t) => new Promise((res) => { const done = () => { v.removeEventListener("seeked", done); res(); }; v.addEventListener("seeked", done); v.currentTime = t; });
+    // A seek that never reports back (it happens on iOS) does not stop the clip.
+    const seekTo = (t) => new Promise((res) => {
+      let settled = false;
+      const done = () => { if (settled) return; settled = true; clearTimeout(timer); v.removeEventListener("seeked", done); res(); };
+      const timer = setTimeout(done, 2500);
+      v.addEventListener("seeked", done); v.currentTime = t;
+    });
+    const total = Math.max(1, Math.floor(v.duration * FPS));
+    if (serverOn()) {
+      // With a server: the whole clip, in windows of up to MAX_SERVER frames, read
+      // there; the server finds the face, so no oval and no motion detection needed.
+      const texts = [];
+      let blobs = [];
+      const flush = async () => {
+        if (blobs.length >= MIN_SERVER) {
+          const u = { full: blobs, still: 0, onServer: true, finished: true, startedAt: 0 };
+          await readWithServer(u);
+          if (lastRead && lastRead.raw) texts.push(lastRead.how === "model" ? lastRead.raw.toLowerCase() : lastRead.raw);
+        }
+        blobs = [];
+      };
+      for (let i = 0; i < total; i++) {
+        if (source !== v) { cleanup(); return; }
+        await seekTo(i / FPS);
+        vctx.drawImage(v, 0, 0);
+        blobs.push(fullFrame());
+        if (i % 5 === 0) showText(`reading the clip… ${Math.round((100 * i) / total)}%`, true);
+        if (blobs.length >= MAX_SERVER) await flush();
+      }
+      await flush();
+      if (texts.length > 1) showText(texts.join(" "), false);
+      else if (!texts.length && !sub.textContent.trim()) showText("(the clip is too short to read)", true);
+      debug.server.fileFrames = total;
+      setState("idle");
+      cleanup();
+      return;
+    }
     for (let i = 0; i * (1 / FPS) < v.duration; i++) {
-      if (source !== v) return;
+      if (source !== v) { cleanup(); return; }
       await seekTo(i / FPS);
       vctx.drawImage(v, 0, 0);
       onFrame();
@@ -1055,7 +1112,7 @@ self.onmessage = (e) => {
       }
     }
     setState("idle");
-    URL.revokeObjectURL(url);
+    cleanup();
   }
   for (const id of ["file", "file2"]) $(id).addEventListener("change", (e) => { const f = e.target.files[0]; if (f) startFile(f); e.target.value = ""; });
 

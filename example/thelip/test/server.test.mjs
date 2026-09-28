@@ -131,6 +131,19 @@ try {
     check("the page counts it", (await page2.evaluate(() => window.lipLive.phrases.count)) >= 1, JSON.stringify(await page2.evaluate(() => window.lipLive.phrases)));
     await page2.evaluate(() => { const s = document.querySelector("#lang"); s.value = "es"; s.dispatchEvent(new Event("change", { bubbles: true })); });
 
+    // Opening a clip with a server: the whole clip goes to it, whatever the oval sees.
+    const clip = fs.readFileSync(path.join(here, "sbwe5n.webm")).toString("base64");
+    await page2.evaluate(async (b64) => {
+      window.lipLive.debug.server.lastText = null;
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      window.lipLive.startFile(new File([bytes], "clip.webm", { type: "video/webm" }));
+    }, clip);
+    await page2.waitForFunction(() => window.lipLive.debug.server.fileFrames && /^FAKE ES READING OF/.test(window.lipLive.debug.server.lastText || ""), null, { timeout: 90000 })
+      .catch(async (e) => { console.log("file read state:", JSON.stringify(await page2.evaluate(() => ({ server: window.lipLive.debug.server, text: window.lipLive.text })))); });
+    const fileRead = await page2.evaluate(() => ({ text: window.lipLive.debug.server.lastText, frames: window.lipLive.debug.server.fileFrames, shown: window.lipLive.text }));
+    const sent = Number((fileRead.text.match(/OF (\d+) FRAMES/) || [])[1]);
+    check("an opened clip is read on the server, all of it (~3 s = ~74 frames)", sent >= 70 && sent <= 76 && fileRead.frames >= 70 && /fake es reading/.test(fileRead.shown), JSON.stringify(fileRead));
+
     // A server a link set (a throwaway tunnel, usually) that has died: thelip's server takes its place.
     await page2.evaluate(() => { localStorage.setItem("thelip.server", "http://127.0.0.1:8799"); localStorage.setItem("thelip.token", "old"); });
     await page2.reload();

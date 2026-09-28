@@ -41,8 +41,8 @@ def multipart(fields, files):
     return f"multipart/form-data; boundary={boundary}", body.getvalue()
 
 
-def wav(seconds=1.0, rate=16000, channels=1) -> bytes:
-    """A WAV file of a 440 Hz tone."""
+def wav(seconds=1.0, rate=16000, channels=1, amplitude=12000) -> bytes:
+    """A WAV file of a 440 Hz tone (amplitude 0: digital silence)."""
     import math
     import struct
     import wave
@@ -51,7 +51,7 @@ def wav(seconds=1.0, rate=16000, channels=1) -> bytes:
     with wave.open(buf, "wb") as w:
         w.setnchannels(channels); w.setsampwidth(2); w.setframerate(rate)
         n = int(seconds * rate)
-        w.writeframes(b"".join(struct.pack("<h", int(12000 * math.sin(2 * math.pi * 440 * i / rate))) * channels for i in range(n)))
+        w.writeframes(b"".join(struct.pack("<h", int(amplitude * math.sin(2 * math.pi * 440 * i / rate))) * channels for i in range(n)))
     return buf.getvalue()
 
 
@@ -65,7 +65,11 @@ def call(method, path, data=None, ctype=None, headers=None):
         with urllib.request.urlopen(req, timeout=30) as r:
             return r.status, dict(r.headers), json.loads(r.read() or b"null")
     except urllib.error.HTTPError as e:
-        return e.code, dict(e.headers), json.loads(e.read() or b"null")
+        raw = e.read() or b"null"
+        try:
+            return e.code, dict(e.headers), json.loads(raw)
+        except ValueError:
+            return e.code, dict(e.headers), {"error": raw.decode("utf-8", "replace")[:300]}
 
 
 def fake_export(models_dir: str) -> None:
@@ -215,6 +219,10 @@ def main() -> int:
         data = data.replace(b"Content-Type: image/jpeg", b"Content-Type: audio/wav")
         status, _, body = call("POST", "/hear", data, ctype, auth)
         check("without improve the sound is heard and nothing is written", status == 200 and body["id"] is None, body)
+        ctype, data = multipart([("language", "en")], [("audio", "u.wav", wav(1.5, amplitude=0))])
+        data = data.replace(b"Content-Type: image/jpeg", b"Content-Type: audio/wav")
+        status, _, body = call("POST", "/hear", data, ctype, auth)
+        check("silence is reported as silence, with its level, and not transcribed", status == 200 and body["silent"] is True and body["heard"] == "" and body["level_db"] <= -100, body)
         ctype, data = multipart([("language", "en")], [("audio", "u.wav", b"not a wav at all")])
         status, _, body = call("POST", "/hear", data, ctype, auth)
         check("a file that is not a wav is 400", status == 400, body)

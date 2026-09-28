@@ -359,7 +359,7 @@ def keep_sample(crops: np.ndarray, meta: dict, features: Optional[np.ndarray] = 
     if utt and valid_utt(utt):
         entry = link(utt, id=sample_id)
         if entry.get("heard") is not None:   # the sound was heard before the frames were read
-            meta = dict(meta, heard=entry["heard"], heard_confidence=entry.get("heard_confidence"), heard_model=entry.get("heard_model"))
+            meta = dict(meta, **{k: entry.get(k) for k in ("heard", "heard_confidence", "heard_model", "heard_level_db", "heard_seconds")})
     meta = dict(meta, id=sample_id, kept=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
     with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
@@ -504,10 +504,12 @@ def create_app(reader: Reader, token: Optional[str] = None, transcriber: Optiona
             return JSONResponse({"error": f"could not hear: {type(e).__name__}: {e}"}, status_code=400)
         sample_id = None
         if str(form.get("improve", "")) == "1" and valid_utt(utt):
-            entry = link(utt, heard=result["heard"], heard_confidence=result["confidence"], heard_model=result["model"])
+            fields = {"heard": result["heard"], "heard_confidence": result["confidence"], "heard_model": result["model"],
+                      "heard_level_db": result.get("level_db"), "heard_seconds": result.get("seconds")}
+            entry = link(utt, **fields)
             sample_id = entry.get("id")
             if sample_id:
-                update_sample(sample_id, {"heard": result["heard"], "heard_confidence": result["confidence"], "heard_model": result["model"]})
+                update_sample(sample_id, fields)
         return JSONResponse(dict(result, id=sample_id, language=language, took=round(time.time() - started, 2)))
 
     async def feedback(request: Request):
