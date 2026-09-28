@@ -121,7 +121,9 @@ lightens over the stretch (measured on the running server with GRID's
 clips, two to a frame: speaking mouths 0.10 - 0.25, still ones 0.004 -
 0.025; the encoder's own frame-to-frame change was tried first and could
 not tell them apart — numbers in `faces.py`). With several faces, one at
-or above `SPEAKING` (0.06) is read and a still one is marked not speaking
+or above `SPEAKING` (0.06) and at least 40% of the most active face's
+activity is read (a listener's small movements next to a speaker are
+not speech; two people talking at once stay close), and a still one is marked not speaking
 and gets no text, so that a listener's mouth is not made to say
 something. A lone face below `STILL` (0.03) is not read either: the
 model, given a mouth that did not move, makes up a stock sentence ("I

@@ -301,6 +301,12 @@ def main() -> int:
         check("several faces: each with its box and whether it spoke; the speaking one read and main",
               status == 200 and len(faces) == 2 and faces[0]["speaking"] and faces[0]["main"] and faces[0]["text"] == "FAKE EN FACE 1 READING OF 30 FRAMES"
               and not faces[1]["speaking"] and faces[1]["text"] is None and body["text"] == faces[0]["text"] and len(faces[0]["box"]) == 4, body)
+        frames = [("frames", f"f{i:04d}.jpg", jpeg2(60 + (i % 5) * 35, 120 + (i % 2) * 34)) for i in range(30)]
+        ctype, data = multipart([("fps", "25")], frames)
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        faces = body.get("faces") or []
+        check("a face that moves a little next to one that speaks is a listener, not a speaker",
+              status == 200 and len(faces) == 2 and faces[0]["speaking"] and not faces[1]["speaking"] and 0.06 < faces[1]["activity"] < 0.4 * faces[0]["activity"], body)
         frames = [("frames", f"f{i:04d}.jpg", jpeg2(60 + (i % 5) * 35, 40 + (i % 3) * 60)) for i in range(30)]
         ctype, data = multipart([("fps", "25")], frames)
         status, _, body = call("POST", "/read", data, ctype, auth)

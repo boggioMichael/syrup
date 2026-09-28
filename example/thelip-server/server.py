@@ -84,7 +84,7 @@ MODELS = os.environ.get("THELIP_MODELS") or os.path.join(WORK, "models")   # exp
 sys.path.insert(0, HERE)
 from hear import HEBREW, Transcriber  # noqa: E402
 from languages import LANGUAGES, ORDER, describe, runnable, trained_models  # noqa: E402
-from faces import SPEAKING, STILL, mouth_activity, track_faces  # noqa: E402
+from faces import RELATIVE, SPEAKING, STILL, mouth_activity, track_faces  # noqa: E402
 from phrases import LearnedPhrases, valid_profile  # noqa: E402
 from version import SERVER_VERSION  # noqa: E402
 FACE_MODEL = os.environ.get("THELIP_FACE_MODEL") or os.path.join(WORK, "blaze_face_short_range.tflite")
@@ -320,7 +320,8 @@ class Reader:
 
     def _decide(self, faces: list, infer, phrases: bool) -> dict:
         """Several faces, largest first, each with "activity": which spoke, their texts, the main one."""
-        speaking = [f for f in faces if f["activity"] >= SPEAKING] or [max(faces, key=lambda f: f["activity"])]
+        top = max(f["activity"] for f in faces)
+        speaking = [f for f in faces if f["activity"] >= max(SPEAKING, RELATIVE * top)] or [max(faces, key=lambda f: f["activity"])]
         for f in faces:
             f["speaking"] = any(f is g for g in speaking)
             f["text"] = infer(f) if f["speaking"] else None

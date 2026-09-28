@@ -34,6 +34,9 @@ MIN_PRESENCE = 0.5       # of the frames
 MIN_IOU = 0.3
 MAX_GAP = 12             # frames a track may go unseen and still continue (0.5 s at 25 fps)
 SPEAKING = 0.06          # mouth activity at or above which one of several faces counts as speaking (measured above)
+RELATIVE = 0.4           # ... and at least this share of the most active face's: a listener's small movements
+                         # (0.075 next to a speaker's 0.216 on the running server) are not speech, while two
+                         # people talking at once stay close (0.186 and 0.232)
 STILL = 0.03             # below this even a lone face is not read: nothing moved, and the model would make up a sentence
 
 Box = Tuple[float, float, float, float]
