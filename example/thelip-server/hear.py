@@ -176,7 +176,10 @@ class Transcriber:
             return {"heard": "", "confidence": 0.0, "seconds": round(seconds, 2), "model": self.model_name(language)}
         with self.lock:
             model = self._model(language)
-            segments, info = model.transcribe(audio, language=language, beam_size=5, vad_filter=True,
+            # No voice-activity filter: it imports onnxruntime, which ended the
+            # worker with an access violation next to CTranslate2 on Windows;
+            # the page sends the stretch of one utterance anyway.
+            segments, info = model.transcribe(audio, language=language, beam_size=5, vad_filter=False,
                                               condition_on_previous_text=False, without_timestamps=True)
             texts, probs, no_speech = [], [], []
             for s in segments:
