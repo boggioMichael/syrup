@@ -219,6 +219,33 @@ def main() -> int:
         status, _, body = call("POST", "/hear", data, ctype, auth)
         check("a file that is not a wav is 400", status == 400, body)
 
+        # A language with no model, read from the phrases this reader kept with the microphone on.
+        P = "f" * 32
+        ramp = lambda n, a, b: [("frames", f"f{i:04d}.jpg", jpeg(shade=int(a + (b - a) * i / max(1, n - 1)))) for i in range(n)]  # noqa: E731
+        ctype, data = multipart([("fps", "25"), ("language", "ar"), ("profile", P)], ramp(30, 40, 220))
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        check("Arabic (no model at all) with a profile but nothing learned yet answers 200 with nothing", status == 200 and body["text"] == "" and body["how"] == "none", body)
+        for utt, frames, seconds in (("aa11aa11aa11", ramp(30, 40, 220), 1.0), ("bb22bb22bb22", ramp(30, 220, 40), 2.0), ("cc33cc33cc33", ramp(28, 50, 210), 1.0)):
+            ctype, data = multipart([("fps", "25"), ("language", "ar"), ("profile", P), ("improve", "1"), ("utt", utt)], frames)
+            status, _, body = call("POST", "/read", data, ctype, auth)
+            ctype, data = multipart([("language", "ar"), ("utt", utt), ("improve", "1")], [("audio", "u.wav", wav(seconds))])
+            data = data.replace(b"Content-Type: image/jpeg", b"Content-Type: audio/wav")
+            call("POST", "/hear", data, ctype, auth)
+        ctype, data = multipart([("fps", "25"), ("language", "ar"), ("profile", P)], ramp(26, 45, 215))
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        check("a phrase said before with the microphone on is read from the lips alone", status == 200 and body["how"] == "learned" and body["text"] == "FAKE HEARD 1.0s", body)
+        ctype, data = multipart([("fps", "25"), ("language", "ar"), ("profile", P)], ramp(34, 210, 50))
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        check("the other phrase too", status == 200 and body["how"] == "learned" and body["text"] == "FAKE HEARD 2.0s", body)
+        ctype, data = multipart([("fps", "25"), ("language", "ar"), ("profile", P)], [("frames", f"f{i:04d}.jpg", jpeg(shade=10)) for i in range(30)])
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        check("a movement unlike any phrase is not read as one", status == 200 and body["how"] == "unmatched" and body["text"] == "", body)
+        status, _, body = call("GET", f"/phrases?profile={P}&language=ar")
+        check("the reader's phrases are listed with their example counts", status == 200 and [(p["text"], p["examples"]) for p in body["phrases"]] == [("FAKE HEARD 1.0s", 2), ("FAKE HEARD 2.0s", 1)], body)
+        ctype, data = multipart([("fps", "25"), ("language", "ar")], ramp(30, 40, 220))
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        check("without a profile Arabic is still 503", status == 503, body)
+
         ctype, data = multipart([("fps", "25")], [])
         status, _, body = call("POST", "/read", data, ctype, auth)
         check("no frames is 400", status == 400, body)

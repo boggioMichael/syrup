@@ -81,7 +81,7 @@ try {
     check("keeping sentences is off by default", !(await page2.$eval("#improve", (e) => e.checked)));
     const options = await page2.$$eval("#lang option", (os) => os.map((o) => [o.value, o.textContent]));
     check("the language list starts English, Hebrew, Spanish, Arabic, Chinese, French, German", options.map((o) => o[0]).join(",").startsWith("en,he,es,ar,zh,fr,de"), JSON.stringify(options));
-    check("languages without a model say so", options.find((o) => o[0] === "he")[1].includes("no model yet") && !options.find((o) => o[0] === "es")[1].includes("no model"), JSON.stringify(options));
+    check("languages without a model say they learn your phrases", options.find((o) => o[0] === "ar")[1].includes("learns your phrases") && !options.find((o) => o[0] === "es")[1].includes("learns"), JSON.stringify(options));
     await page2.selectOption("#lang", "es");
     check("the language is remembered and the prompt follows it", await page2.evaluate(() => localStorage.getItem("thelip.language") === "es" && window.lipLive.language === "es") && (await page2.$eval("#sentence", (e) => e.textContent)) === "anything, in Español");
     check("the sheet shows that language's quality", /44\.5%/.test(await page2.$eval("#langStatus", (e) => e.textContent)), await page2.$eval("#langStatus", (e) => e.textContent));
@@ -110,6 +110,26 @@ try {
     check("the correction reached the kept sample, with the language", meta.corrected === "hello there" && meta.raw === read.raw && meta.language === "es", JSON.stringify(meta));
     check("the sample carries what was heard, with its confidence", /^FAKE HEARD/.test(meta.heard || "") && meta.heard_confidence === 0.9, JSON.stringify(meta));
     check("the sample holds the crops", fs.existsSync(path.join(dataDir, read.id, "crops.npy")));
+
+    // A language with no model: the page sends its id, the server keeps the sentence's
+    // features, the microphone labels it, and it becomes one of the reader's phrases.
+    await page2.evaluate(() => window.lipLive.debug.server.lastHow = null);
+    await page2.click("#helpBtn");
+    await page2.selectOption("#lang", "ar");
+    check("the prompt asks for a phrase", (await page2.$eval("#sentence", (e) => e.textContent)) === "a phrase in العربية");
+    check("the sheet says how it learns, and that none are learned yet", /reads your own phrases.*None learned yet/.test(await page2.$eval("#langStatus", (e) => e.textContent)), await page2.$eval("#langStatus", (e) => e.textContent));
+    await page2.click("#closeSheet");
+    await page2.waitForFunction(() => ["none", "unmatched", "learned"].includes(window.lipLive.debug.server.lastHow) && window.lipLive.lastHeard && window.lipLive.lastRead && window.lipLive.lastRead.id, null, { timeout: 90000 });
+    const profile = await page2.evaluate(() => window.lipLive.profile);
+    check("the page made itself a random id", /^[0-9a-f]{32}$/.test(profile || ""), profile);
+    const arRead = await page2.evaluate(() => window.lipLive.lastRead);
+    const arMeta = JSON.parse(fs.readFileSync(path.join(dataDir, arRead.id, "meta.json"), "utf8"));
+    check("the sentence was kept with the id and the encoder's features", arMeta.profile === profile && arMeta.language === "ar" && fs.existsSync(path.join(dataDir, arRead.id, "features.npy")), JSON.stringify(arMeta));
+    await page2.waitForFunction(() => window.lipLive.phrases.count >= 1, null, { timeout: 20000 }).catch(() => {});
+    const learnedList = await (await fetch(`http://127.0.0.1:8797/phrases?profile=${profile}&language=ar`)).json();
+    check("what the microphone heard became one of the reader's phrases", learnedList.phrases.length >= 1 && /^FAKE HEARD/.test(learnedList.phrases[0].text), JSON.stringify(learnedList));
+    check("the page counts it", (await page2.evaluate(() => window.lipLive.phrases.count)) >= 1, JSON.stringify(await page2.evaluate(() => window.lipLive.phrases)));
+    await page2.evaluate(() => { const s = document.querySelector("#lang"); s.value = "es"; s.dispatchEvent(new Event("change", { bubbles: true })); });
 
     // A server a link set (a throwaway tunnel, usually) that has died: thelip's server takes its place.
     await page2.evaluate(() => { localStorage.setItem("thelip.server", "http://127.0.0.1:8799"); localStorage.setItem("thelip.token", "old"); });

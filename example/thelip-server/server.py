@@ -17,10 +17,14 @@ Routes
     GET  /health            -> {"ok": true, "version": N, "model": ..., "device": ..., "fake": bool, "languages": [...]}
     POST /read              multipart: fps=<number>, frames=<jpeg>... in order,
                             language=<code> (en default; see languages.py),
-                            improve=1 to keep the mouth crops for training
-                            -> {"text": "HELLO THERE", "frames": 62, "seconds": 3.1, "id": ...}
+                            improve=1 to keep the mouth crops for training,
+                            profile=<the page's id> to read a language without a model
+                            from the phrases this reader kept before (phrases.py)
+                            -> {"text": "HELLO THERE", "how": "model"|"learned"|"unmatched"|"none",
+                                "frames": 62, "seconds": 3.1, "id": ...}
                             422 when no face is found in the frames; 400 for an unknown
                             language; 503 for a language whose model is not on this server
+    GET  /phrases?profile=&language=   the phrases learned for that reader and language
     POST /feedback          json: {"id": ..., "raw": ..., "corrected": ...}
                             -> {"ok": true}; the correction joins the kept crops
     POST /hear              multipart: audio=<wav>, language=<code>, utt=<the read's utt>, improve=1
@@ -78,6 +82,7 @@ MODELS = os.environ.get("THELIP_MODELS") or os.path.join(WORK, "models")   # exp
 sys.path.insert(0, HERE)
 from hear import HEBREW, Transcriber  # noqa: E402
 from languages import LANGUAGES, ORDER, describe, runnable, trained_models  # noqa: E402
+from phrases import LearnedPhrases, valid_profile  # noqa: E402
 from version import SERVER_VERSION  # noqa: E402
 FACE_MODEL = os.environ.get("THELIP_FACE_MODEL") or os.path.join(WORK, "blaze_face_short_range.tflite")
 DATA = os.environ.get("THELIP_DATA") or os.path.join(WORK, "data")
@@ -261,21 +266,51 @@ class Reader:
         )
         return self.models[code]
 
-    def read(self, video: np.ndarray, language: str = "en"):
-        """video: (T, H, W, 3) RGB uint8 at 25 fps -> (transcript, mouth crops
-        (T, 96, 96) uint8 grey — what the model saw)."""
+    def read(self, video: np.ndarray, language: str = "en", phrases: bool = False):
+        """video: (T, H, W, 3) RGB uint8 at 25 fps -> (transcript, or None when the
+        language has no model; the mouth crops (T, 96, 96) uint8 grey — what the
+        model saw; the visual encoder's features (T, D), when `phrases` asks for
+        them and there is no model to read with — see phrases.py)."""
         if self.fake:
-            return f"FAKE {language.upper()} READING OF {len(video)} FRAMES", np.zeros((len(video), 96, 96), np.uint8)
+            has_model = runnable(language) or language in trained_models(MODELS)
+            text = f"FAKE {language.upper()} READING OF {len(video)} FRAMES" if has_model else None
+            crops = np.zeros((len(video), 96, 96), np.uint8)
+            return text, crops, self.fake_features(video) if (phrases and text is None) else None
         with self.lock:
-            model = self.model_for(language)
+            model = self.model_for(language) if self.available(language) else None
             landmarks = self.detector.detect(video)
             if all(l is None for l in landmarks):
                 raise NoFace()
             crops = np.asarray(self.loader.video_process(video, landmarks), dtype=np.uint8)
+            text = None
             if isinstance(model, TrainedModel):
-                return model.infer(crops), crops
-            data = self.loader.video_transform(self.torch.tensor(crops))
-            return model.infer(data), crops
+                text = model.infer(crops)
+            elif model is not None:
+                text = model.infer(self.loader.video_transform(self.torch.tensor(crops)))
+            return text, crops, self.embed(crops) if (phrases and text is None) else None
+
+    def embed(self, crops: np.ndarray) -> np.ndarray:
+        """The English model's encoder output for the crops, (T, D) float16 —
+        the movement of the mouth as the model sees it, in any language.
+        Called with the lock held."""
+        en = self.model_for("en")
+        if isinstance(en, TrainedModel):   # the trained English model has no encoder here; the published one does
+            from pipelines.model import AVSR  # noqa: E402
+            spec = LANGUAGES["en"]
+            base = os.path.join(CHAPLIN, "benchmarks")
+            en = self.models.setdefault("en-encoder", AVSR("video", os.path.join(base, spec["model"], "model.pth"), os.path.join(base, spec["model"], "model.json"),
+                                                            None, None, beam_size=1, device=self.device))
+        data = self.loader.video_transform(self.torch.tensor(crops))
+        with self.torch.no_grad():
+            enc = en.model.encode(data.to(self.device))
+        return enc.detach().cpu().numpy().astype(np.float16)
+
+    @staticmethod
+    def fake_features(video: np.ndarray) -> np.ndarray:
+        """Stand-in features for tests: the brightness of each frame, as a direction."""
+        mean = video.reshape(len(video), -1).mean(axis=1) / 255.0
+        std = video.reshape(len(video), -1).std(axis=1) / 255.0
+        return np.stack([mean, 1.0 - mean, std + 0.01, np.full_like(mean, 0.5)], axis=1).astype(np.float16)
 
 
 class NoFace(Exception):
@@ -305,8 +340,12 @@ def valid_utt(utt: str) -> bool:
     return bool(re.fullmatch(r"[0-9a-f]{8,32}", utt or ""))
 
 
-def keep_sample(crops: np.ndarray, meta: dict) -> str:
-    """Write one training sample: the crops and what was read. Returns its id."""
+LEARNED = LearnedPhrases(DATA)
+
+
+def keep_sample(crops: np.ndarray, meta: dict, features: Optional[np.ndarray] = None) -> str:
+    """Write one training sample: the crops, the encoder's features when
+    given, and what was read. Returns its id."""
     import json
     import uuid
 
@@ -314,13 +353,18 @@ def keep_sample(crops: np.ndarray, meta: dict) -> str:
     folder = os.path.join(DATA, sample_id)
     os.makedirs(folder, exist_ok=True)
     np.save(os.path.join(folder, "crops.npy"), crops)
+    if features is not None:
+        np.save(os.path.join(folder, "features.npy"), np.asarray(features, dtype=np.float16))
     utt = meta.get("utt")
     if utt and valid_utt(utt):
         entry = link(utt, id=sample_id)
         if entry.get("heard") is not None:   # the sound was heard before the frames were read
             meta = dict(meta, heard=entry["heard"], heard_confidence=entry.get("heard_confidence"), heard_model=entry.get("heard_model"))
+    meta = dict(meta, id=sample_id, kept=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
     with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as f:
-        json.dump(dict(meta, id=sample_id, kept=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())), f, ensure_ascii=False, indent=1)
+        json.dump(meta, f, ensure_ascii=False, indent=1)
+    if features is not None:
+        LEARNED.note(sample_id, meta, features)
     return sample_id
 
 
@@ -338,6 +382,7 @@ def update_sample(sample_id: str, fields: dict) -> bool:
     meta.update(fields)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
+    LEARNED.note(sample_id, meta)
     return True
 
 
@@ -386,10 +431,12 @@ def create_app(reader: Reader, token: Optional[str] = None, transcriber: Optiona
         if language not in LANGUAGES:
             return JSONResponse({"error": f"unknown language {language!r}"}, status_code=400)
         spec = LANGUAGES[language]
+        profile = str(form.get("profile", ""))[:32]
+        profile = profile if valid_profile(profile) else None
         has_model = runnable(language) or language in trained_models(MODELS)
-        if not has_model:
+        if not has_model and not profile:
             return JSONResponse({"error": f"no model for {spec['name']}: {spec['status']}"}, status_code=503)
-        if not reader.fake and not reader.available(language):
+        if has_model and not reader.fake and not reader.available(language):
             return JSONResponse({"error": f"the {spec['name']} model is not downloaded on this server"}, status_code=503)
         started = time.time()
         frames: List[np.ndarray] = []
@@ -402,19 +449,37 @@ def create_app(reader: Reader, token: Optional[str] = None, transcriber: Optiona
             # The model sees 25 fps; resample by nearest frame.
             idx = np.clip(np.round(np.arange(0, len(video) * 25.0 / fps) * fps / 25.0).astype(int), 0, len(video) - 1)
             video = video[idx]
+        improve = str(form.get("improve", "")) == "1"
         try:
-            text, crops = await _run(reader.read, video, language)
+            text, crops, features = await _run(reader.read, video, language, bool(profile))
         except NoFace:
             return JSONResponse({"error": "no face found in the frames"}, status_code=422)
         except RuntimeError as e:  # the model's process failed on this clip
             return JSONResponse({"error": f"the {spec['name']} model failed: {e}"}, status_code=500)
+        # A language with no model: the reader's own phrases, learned from the
+        # sentences they kept with the microphone on.
+        learned = None
+        how = "model" if text is not None else "none"
+        if profile and text is None:
+            learned = LEARNED.match(profile, language, features)
+            if learned["matched"]:
+                text, how = learned["text"], "learned"
+            else:
+                text, how = "", "unmatched" if learned["examples"] else "none"
         sample_id = None
         utt = str(form.get("utt", ""))[:32]
-        if str(form.get("improve", "")) == "1":
-            sample_id = keep_sample(crops, {"raw": text, "language": language, "fps": 25, "frames": int(len(video)),
-                                            "source": str(form.get("source", ""))[:40], "utt": utt if valid_utt(utt) else None})
-        return JSONResponse({"text": text, "language": language, "frames": int(len(video)),
-                             "seconds": round(time.time() - started, 2), "id": sample_id})
+        if improve:
+            meta = {"raw": text if how == "model" else None, "language": language, "fps": 25, "frames": int(len(video)),
+                    "source": str(form.get("source", ""))[:40], "utt": utt if valid_utt(utt) else None, "profile": profile}
+            if learned:   # what the lips were matched to, and how near: the numbers the thresholds are set from
+                meta.update(learned=text if how == "learned" else None, learned_nearest=learned["nearest"],
+                            learned_distance=learned["distance"], learned_margin=learned["margin"])
+            sample_id = keep_sample(crops, meta, features)
+        out = {"text": text, "how": how, "language": language, "frames": int(len(video)),
+               "seconds": round(time.time() - started, 2), "id": sample_id}
+        if learned:
+            out["learned"] = {k: learned[k] for k in ("examples", "distance", "margin", "nearest")}
+        return JSONResponse(out)
 
     async def hear(request: Request):
         if token and request.headers.get("authorization") != f"Bearer {token}":
@@ -457,9 +522,16 @@ def create_app(reader: Reader, token: Optional[str] = None, transcriber: Optiona
         ok = update_sample(str(body.get("id", "")), {"corrected": corrected, "confirmed": corrected.strip().lower() == raw.strip().lower()})
         return JSONResponse({"ok": ok}, status_code=200 if ok else 404)
 
+    async def phrases(request: Request):
+        profile = request.query_params.get("profile", "")[:32]
+        language = request.query_params.get("language", "en").lower()[:8]
+        if not valid_profile(profile) or language not in LANGUAGES:
+            return JSONResponse({"error": "profile and language"}, status_code=400)
+        return JSONResponse({"language": language, "phrases": LEARNED.phrases(profile, language)})
+
     return Starlette(
         routes=[Route("/health", health), Route("/read", read, methods=["POST"]), Route("/feedback", feedback, methods=["POST"]),
-                Route("/hear", hear, methods=["POST"])],
+                Route("/hear", hear, methods=["POST"]), Route("/phrases", phrases)],
         middleware=[Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "POST"], allow_headers=["*"])],
     )
 

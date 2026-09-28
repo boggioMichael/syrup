@@ -71,8 +71,8 @@
     <div class="mono">command &middot; colour &middot; preposition &middot; letter &middot; digit &middot; adverb<br>bin lay place set &middot; blue green red white &middot; at by in with &middot; a&ndash;z (no w) &middot; zero&ndash;nine &middot; again now please soon</div>
     <div>Drag the oval to your mouth; pinch to resize. Tap the sentence for another one.</div>
     <div class="row"><label>Open a clip<input type="file" id="file2" accept="video/*"></label><label>Record a clip<input type="file" id="file" accept="video/*" capture="user"></label></div>
-    <div><b>Any English words &mdash; with a server</b></div>
-    <div>The page looks for thelip's own server when it opens (<span class="mono">api.thelip.ai</span>); when it answers, every sentence's frames go there and come back read by an open-vocabulary English model (LRS3, 19% word error rate in the lab), in a few seconds. English only. You can also run <span class="mono">example/thelip-server</span> from the syrup repository on your own computer and put its address here.</div>
+    <div><b>Any words &mdash; with a server</b></div>
+    <div>The page looks for thelip's own server when it opens; when it answers, every sentence's frames go there and come back read by an open-vocabulary model in a few seconds &mdash; English (LRS3, 19% word error rate in the lab), Spanish, French, Portuguese, Mandarin. Languages with no lip-reading model yet, Hebrew among them, read the phrases you taught it (below). You can also run <span class="mono">example/thelip-server</span> from the syrup repository on your own computer and put its address here.</div>
     <div class="row"><input class="text" type="url" id="serverUrl" placeholder="https://&hellip;" autocapitalize="off" autocorrect="off" spellcheck="false"><button id="serverUse">Use</button><button id="serverOff" hidden>Stop</button></div>
     <div class="status" id="serverStatus"></div>
     <div><b>Language</b> (with a server; here, the 51 English words)</div>
@@ -80,7 +80,7 @@
     <div class="status" id="langStatus"></div>
     <div><b>Help thelip improve</b></div>
     <label class="toggle"><input type="checkbox" id="improve"> Keep my sentences for training</label>
-    <div>Off, nothing is kept anywhere and the microphone stays off. On, the microphone is on too: the server hears each sentence, writes down what you said (speech recognition, which is far more reliable than lips) and keeps that text with what its model saw &mdash; 96&times;96 grey crops of the mouth, not the frames, not the face, not the sound, which is dropped once it is written down. Under the subtitle you see what was heard against what was read. That is the material for training a model on real phones and real speakers; if speech recognition got it wrong, tap the subtitle and fix it.</div>
+    <div>Off, nothing is kept anywhere and the microphone stays off. On, the microphone is on too: the server hears each sentence, writes down what you said (speech recognition, which is far more reliable than lips) and keeps that text with what its model saw &mdash; 96&times;96 grey crops of the mouth, not the frames, not the face, not the sound, which is dropped once it is written down. Under the subtitle you see what was heard against what was read. That is the material for training a model on real phones and real speakers; if speech recognition got it wrong, tap the subtitle and fix it. In a language with no lip-reading model, it is also how the server learns your phrases: say one with sound once, and your lips alone read it after that. A random id this page keeps for itself goes with those sentences, so that only your own phrases are matched.</div>
     <div class="status" id="micStatus"></div>
     <div id="speed"></div>
     <div>The Lip is the lip reader of the <b>syrup</b> library. Its network is LipNet (Assael, Shillingford, Whiteson, de Freitas 2016), weights from rizkiarm/LipNet (MIT), trained on the GRID corpus (CC BY 4.0): 64 of 66 words on GRID's sample clips. A new face and a phone camera are harder than that; expect misses.</div>
@@ -104,22 +104,45 @@ __WORKER__
   let server = null, serverToken = null, serverInfo = null, serverExplicit = false, improve = false, lastRead = null, lastHeard = null, language = "en";
   // The languages the page offers, in this order; a server says which of them it can read.
   const LANGS = [["en", "English"], ["he", "עברית"], ["es", "Español"], ["ar", "العربية"], ["zh", "普通话"], ["fr", "Français"], ["de", "Deutsch"], ["pt", "Português"]];
+  const langInfo = (code) => ((serverInfo && serverInfo.languages) || []).find((l) => l.code === code) || null;
+  const hasModel = (code) => { const l = langInfo(code); return !!(l && l.available); };
+  // A language with no lip-reading model reads the phrases this reader said
+  // before with "keep my sentences" on (the server learned them from the
+  // microphone). `phrases` is how many it knows, for the current language.
+  let phrases = { language: null, count: 0 };
   function renderLanguages() {
     const sel = $("lang");
-    const known = new Map((serverInfo && serverInfo.languages || []).map((l) => [l.code, l]));
     sel.replaceChildren();
     for (const [code, name] of LANGS) {
       const o = document.createElement("option"); o.value = code;
-      const l = known.get(code);
-      o.textContent = name + (serverOn() ? (l && l.available ? "" : " — no model yet") : (code === "en" ? " — 51 words, here" : " — needs a server"));
+      o.textContent = name + (serverOn() ? (hasModel(code) ? "" : " — learns your phrases") : (code === "en" ? " — 51 words, here" : " — needs a server"));
       sel.appendChild(o);
     }
     sel.value = language;
-    const l = known.get(language);
-    $("langStatus").textContent = !serverOn() ? "" : l ? (l.available ? `${l.quality}${l.loaded ? "" : " — loads on first use"}` : l.status || "no model") : "";
+    const l = langInfo(language);
+    const n = phrases.language === language ? phrases.count : 0;
+    $("langStatus").textContent = !serverOn() ? "" : !l ? "" : l.available ? `${l.quality}${l.loaded ? "" : " — loads on first use"}`
+      : `No lip-reading model for this language yet (${l.status || "none published"}). Meanwhile it reads your own phrases: say a sentence with "keep my sentences" on, the microphone writes it down, and the next time your lips alone read it. ${n ? `${n} phrase${n === 1 ? "" : "s"} learned so far.` : "None learned yet."}`;
   }
   function setLanguage(code) {
     language = code; try { localStorage.setItem("thelip.language", code); } catch {}
+    renderLanguages();
+    refreshPhrases();
+  }
+  function storedProfile() { try { const p = localStorage.getItem("thelip.profile"); return /^[0-9a-f]{32}$/.test(p || "") ? p : null; } catch { return null; } }
+  function profileId() {
+    let p = storedProfile();
+    if (!p) { p = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join(""); try { localStorage.setItem("thelip.profile", p); } catch {} }
+    return p;
+  }
+  async function refreshPhrases() {
+    const p = storedProfile();
+    if (!serverOn() || hasModel(language) || !p) { phrases = { language, count: 0 }; renderLanguages(); return; }
+    try {
+      const r = await fetch(server.replace(/\/$/, "") + `/phrases?profile=${p}&language=${language}`, { headers: auth() });
+      const j = r.ok ? await r.json() : null;
+      phrases = { language, count: j && j.phrases ? j.phrases.length : 0 };
+    } catch { phrases = { language, count: 0 }; }
     renderLanguages();
   }
   const DEFAULT_SERVER = "https://api.thelip.ai";
@@ -172,6 +195,7 @@ __WORKER__
   setInterval(async () => { if (serverOn()) return; if (serverExplicit) await checkServer(); if (!serverOn()) discoverServer(true); }, 60000);
   function renderServer() {
     syncMic();
+    if (serverOn() && phrases.language !== language) refreshPhrases();
     $("serverUrl").value = server || "";
     $("serverOff").hidden = !server;
     const st = $("serverStatus");
@@ -198,6 +222,9 @@ __WORKER__
     body.append("language", language);
     body.append("utt", utt);
     if (improve) { body.append("improve", "1"); body.append("source", mode); }
+    // The page's random id goes only where it is needed: with kept sentences,
+    // and to read a language with no model from this reader's own phrases.
+    if (improve || !hasModel(language)) body.append("profile", profileId());
     blobs.forEach((b, i) => body.append("frames", b, `f${String(i).padStart(4, "0")}.jpg`));
     const r = await fetch(server.replace(/\/$/, "") + "/read", { method: "POST", body, headers: auth() });
     const j = await r.json().catch(() => ({}));
@@ -464,18 +491,27 @@ __WORKER__
       const blobs = await Promise.all(u.full.slice(0, keep));
       debug.server.sent++;
       const r = await readOnServer(blobs, utt);
-      debug.server.lastText = r.text;
+      debug.server.lastText = r.text; debug.server.lastHow = r.how; debug.server.lastLearned = r.learned || null;
       lips = r.text || "";
-      lastRead = { id: r.id || null, raw: lips, utt };
-      showText(lips ? lips.toLowerCase() : "(nothing read)", false);
+      lastRead = { id: r.id || null, raw: lips, utt, how: r.how || "model" };
+      const learning = !!(improve && hearing);
+      if (r.how === "learned") { showText(lips, false); showNote("↺ one of your phrases"); }
+      else if (r.how === "unmatched") showText(learning ? "(a new phrase — learned from the microphone)" : "(not one of your phrases)", true);
+      else if (r.how === "none") showText(learning ? "(your first phrase in this language — learned from the microphone)" : "(no lip-reading for this language yet — see ? for how it learns your phrases)", true);
+      else showText(lips ? lips.toLowerCase() : "(nothing read)", false);
       sub.classList.toggle("tappable", !!lips);
     } catch (e) {
       debug.server.lastError = e.message;
       showText(`server: ${e.message}`, true);
     }
     setState("idle");
-    if (hearing) { const h = await hearing; if (h && lastRead && lastRead.utt === utt) showHeard(h.heard, lips); }
+    if (hearing) {
+      const h = await hearing;
+      if (h && lastRead && lastRead.utt === utt) showHeard(h.heard, lips);
+      if (!hasModel(language)) refreshPhrases();
+    }
   }
+  function showNote(text) { const el = $("heard"); el.hidden = false; el.textContent = text; }
   // Tap the subtitle of a server reading to fix it; the fix (or "as read") goes
   // back to the server for the sample it kept, when it kept one.
   let fixing = false;
@@ -611,7 +647,7 @@ __WORKER__
     l: "abcdefghijklmnopqrstuvxyz".split(""), d: ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"], a: ["again", "now", "please", "soon"] };
   const pick = (x) => x[Math.floor(Math.random() * x.length)];
   const langName = () => (LANGS.find(([c]) => c === language) || ["en", "English"])[1];
-  const newSentence = () => { $("sentence").textContent = serverOn() ? `anything, in ${langName()}` : [pick(G.c), pick(G.k), pick(G.p), pick(G.l), pick(G.d), pick(G.a)].join(" "); say.hidden = false; };
+  const newSentence = () => { $("sentence").textContent = serverOn() ? (hasModel(language) ? `anything, in ${langName()}` : `a phrase in ${langName()}`) : [pick(G.c), pick(G.k), pick(G.p), pick(G.l), pick(G.d), pick(G.a)].join(" "); say.hidden = false; };
   say.addEventListener("click", newSentence);
   $("helpBtn").addEventListener("click", () => { $("sheet").hidden = false; });
   $("serverUse").addEventListener("click", () => {
@@ -627,7 +663,8 @@ __WORKER__
 
   const debug = { frames: 0, started: 0, finished: 0, reads: 0, lastMotion: 0, quiet: 0, lastWords: null, trace: [], server: { sent: 0, lastText: null, lastError: null, lastFeedback: null, lastHeard: null, lastHearError: null } };
   window.lipLive = { get ready() { return ready; }, get text() { return sub.textContent; }, get heard() { return $("heard").hidden ? null : $("heard").textContent; }, get server() { return serverOn() ? server : null; },
-    get lastRead() { return lastRead; }, get lastHeard() { return lastHeard; }, get mic() { return mic ? mic.ctx.state : null; }, get language() { return language; }, startFile, openFix, debug };
+    get lastRead() { return lastRead; }, get lastHeard() { return lastHeard; }, get mic() { return mic ? mic.ctx.state : null; }, get language() { return language; },
+    get profile() { return storedProfile(); }, get phrases() { return phrases; }, startFile, openFix, debug };
   loadServer();
   bootWorker();
 })();

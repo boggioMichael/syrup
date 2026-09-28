@@ -110,6 +110,25 @@ and `loaded`. A read in a language without a model answers 503 with the
 reason, and the page says "no model yet" next to it. Registry:
 `languages.py`.
 
+### A language with no model: your own phrases
+
+Until a model exists for it (Hebrew is being trained), a language is read
+from the reader's own phrases. Every sentence kept with the microphone on
+stores, next to its mouth crops, the English model's encoder output for
+them (`features.npy`: one 768-number vector per frame, the movement of the
+mouth as that encoder sees it, in any language) and, once `/hear` or a
+correction labels it, its text. A new utterance in that language is
+compared with the reader's earlier ones by dynamic time warping over those
+vectors (`phrases.py`); the nearest phrase is the reading when it is near
+enough and clearly nearer than any other phrase, else the page says it is
+not one of their phrases. Readers are told apart by a random id the page
+keeps for itself (`profile`), sent only with kept sentences and with reads
+in such a language. `GET /phrases?profile=&language=` lists what was
+learned. The match numbers (distance, margin) come back with every such
+read and are kept with the sample, so the thresholds can be set from real
+phones; the ones in `phrases.py` are a first setting (see there for what
+they were measured on).
+
 ### Trained models
 
 A model `example/thelip-train` exported — `models/<lang>-thelip-v<N>/`
@@ -173,6 +192,8 @@ mediapipe 0.10.35 without the Solutions API (hence the Tasks detector).
   sound), `POST /feedback`, CORS open, optional bearer token, `--fake`;
   samples under `THELIP_DATA` (default `<work>/data`). `languages.py` —
   the models per language.
+- `phrases.py` — a reader's own phrases, matched from the lips (dynamic
+  time warping over the encoder's features).
 - `hear.py`, `hear_worker.py` — speech recognition for the labels, in a
   process of its own (CTranslate2 next to PyTorch crashed the server on
   Windows). `trained_worker.py` — the process a trained model runs in. `version.py` —
