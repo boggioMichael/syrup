@@ -991,7 +991,8 @@ self.onmessage = (e) => {
       lips = r.text || "";
       lastRead = { id: r.id || null, raw: lips, utt, how: r.how || "model" };
       const learning = !!(improve && hearing);
-      if (r.how === "learned") { showText(lips, false); showNote("↺ one of your phrases"); }
+      if (r.how === "still") showText("(the lips did not move — nothing to read)", true);
+      else if (r.how === "learned") { showText(lips, false); showNote("↺ one of your phrases"); }
       else if (r.how === "unmatched") showText(learning ? "(a new phrase — learned from the microphone)" : "(not one of your phrases)", true);
       else if (r.how === "none") showText(learning ? "(your first phrase in this language — learned from the microphone)" : "(no lip-reading for this language yet — see ? for how it learns your phrases)", true);
       else showText(lips ? lips.toLowerCase() : "(nothing read)", false);
