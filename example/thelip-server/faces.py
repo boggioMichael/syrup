@@ -27,6 +27,7 @@ MIN_PRESENCE = 0.5       # of the frames
 MIN_IOU = 0.3
 MAX_GAP = 12             # frames a track may go unseen and still continue (0.5 s at 25 fps)
 SPEAKING = 0.05          # activity at or above which a face counts as speaking (first setting; see the measurement notes in README)
+SPEAKING_MEASURE = "enc" # which of measures() is the activity
 
 Box = Tuple[float, float, float, float]
 
@@ -80,3 +81,18 @@ def activity(features: Optional[np.ndarray]) -> float:
     f = np.asarray(features, dtype=np.float32)
     f = f / (np.linalg.norm(f, axis=1, keepdims=True) + 1e-8)
     return float(np.mean(1.0 - np.sum(f[1:] * f[:-1], axis=1)))
+
+
+def measures(crops: np.ndarray, features: Optional[np.ndarray], resnet: Optional[np.ndarray]) -> dict:
+    """Ways to tell a speaking mouth from a still one, all kept so that the
+    choice can be made from measurements: the encoder's and the front end's
+    change from frame to frame, and the lips' band of the aligned crop — how
+    much its brightness moves over time (relative to its contrast), and its
+    mean change between frames in grey levels."""
+    c = np.asarray(crops, dtype=np.float32)
+    band = c[:, 36:66, 24:72] if c.ndim == 3 and c.shape[1] >= 66 and c.shape[2] >= 72 else c
+    level = band.reshape(len(band), -1).mean(axis=1) if len(band) else np.zeros(1)
+    contrast = float(band.std(axis=(1, 2)).mean()) if len(band) else 1.0
+    return {"enc": round(activity(features), 4), "resnet": round(activity(resnet), 4),
+            "band_std": round(float(np.std(level)) / (contrast + 1.0), 4),
+            "band_diff": round(float(np.mean(np.abs(np.diff(band, axis=0)))) if len(band) > 1 else 0.0, 3)}

@@ -84,7 +84,7 @@ MODELS = os.environ.get("THELIP_MODELS") or os.path.join(WORK, "models")   # exp
 sys.path.insert(0, HERE)
 from hear import HEBREW, Transcriber  # noqa: E402
 from languages import LANGUAGES, ORDER, describe, runnable, trained_models  # noqa: E402
-from faces import SPEAKING, activity, track_faces  # noqa: E402
+from faces import SPEAKING, SPEAKING_MEASURE, measures, track_faces  # noqa: E402
 from phrases import LearnedPhrases, valid_profile  # noqa: E402
 from version import SERVER_VERSION  # noqa: E402
 FACE_MODEL = os.environ.get("THELIP_FACE_MODEL") or os.path.join(WORK, "blaze_face_short_range.tflite")
@@ -309,7 +309,8 @@ class Reader:
             for tr in tracks:
                 crops = self._crops(video, tr["landmarks"])
                 feats = self.embed(crops)
-                faces.append({"crops": crops, "features": feats, "activity": activity(feats), "box": tr["box"]})
+                m = measures(crops, feats, self.embed(crops, resnet=True))
+                faces.append({"crops": crops, "features": feats, "activity": m[SPEAKING_MEASURE], "measures": m, "box": tr["box"]})
             return self._decide(faces, lambda f: self._infer(model, f["crops"]), phrases)
 
     def _decide(self, faces: list, infer, phrases: bool) -> dict:
@@ -322,7 +323,7 @@ class Reader:
         return {"text": main["text"], "crops": main["crops"],
                 "features": main.get("features") if (phrases and main["text"] is None) else None,
                 "faces": [{"box": f["box"], "text": f["text"], "speaking": f["speaking"], "activity": round(float(f["activity"]), 4),
-                           "main": f is main} for f in faces]}
+                           "main": f is main, "measures": f.get("measures")} for f in faces]}
 
     def _crops(self, video: np.ndarray, landmarks: list) -> np.ndarray:
         return np.asarray(self.loader.video_process(video, landmarks), dtype=np.uint8)
@@ -351,10 +352,7 @@ class Reader:
                           "box": (round(0.5 * k + 0.1, 4), 0.2, 0.3, 0.5), "k": k + 1})
         return self._decide(faces, lambda f: f"FAKE {language.upper()} FACE {f['k']} READING OF {n} FRAMES" if has_model else None, phrases)
 
-    def embed(self, crops: np.ndarray) -> np.ndarray:
-        """The English model's encoder output for the crops, (T, D) float16 —
-        the movement of the mouth as the model sees it, in any language.
-        Called with the lock held."""
+    def _english(self):
         en = self.model_for("en")
         if isinstance(en, TrainedModel):   # the trained English model has no encoder here; the published one does
             from pipelines.model import AVSR  # noqa: E402
@@ -362,9 +360,17 @@ class Reader:
             base = os.path.join(CHAPLIN, "benchmarks")
             en = self.models.setdefault("en-encoder", AVSR("video", os.path.join(base, spec["model"], "model.pth"), os.path.join(base, spec["model"], "model.json"),
                                                             None, None, beam_size=1, device=self.device))
+        return en
+
+    def embed(self, crops: np.ndarray, resnet: bool = False) -> np.ndarray:
+        """The English model's encoder output for the crops, (T, D) float16 —
+        the movement of the mouth as the model sees it, in any language; with
+        `resnet`, the visual front end's output instead (T, 512), before any
+        mixing over time. Called with the lock held."""
+        en = self._english()
         data = self.loader.video_transform(self.torch.tensor(crops))
         with self.torch.no_grad():
-            enc = en.model.encode(data.to(self.device))
+            enc = en.model.encode(data.to(self.device), extract_resnet_feats=resnet) if resnet else en.model.encode(data.to(self.device))
         return enc.detach().cpu().numpy().astype(np.float16)
 
     @staticmethod
