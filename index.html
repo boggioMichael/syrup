@@ -46,6 +46,8 @@
   .fix button.quiet { background: rgba(255,255,255,.15); }
   .sheet .toggle { display: flex; align-items: center; gap: 10px; color: var(--ink); background: none; padding: 0; }
   .sheet .toggle input { display: inline-block; width: 22px; height: 22px; accent-color: var(--lip); }
+  .sheet select { font: 15px system-ui, sans-serif; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--dim); background: rgba(255,255,255,.08); color: var(--ink); max-width: 100%; }
+  .sheet select option { color: #000; }
   .sheet .status.on { color: #7BE495; }
   .sheet .row { display: flex; gap: 10px; flex-wrap: wrap; }
   @media (prefers-reduced-motion: no-preference) { .dot[data-state="listening"] { animation: pulse 1s infinite; } }
@@ -75,6 +77,9 @@
     <div>The page looks for thelip's own server when it opens (<span class="mono">api.thelip.ai</span>); when it answers, every sentence's frames go there and come back read by an open-vocabulary English model (LRS3, 19% word error rate in the lab), in a few seconds. English only. You can also run <span class="mono">example/thelip-server</span> from the syrup repository on your own computer and put its address here.</div>
     <div class="row"><input class="text" type="url" id="serverUrl" placeholder="https://&hellip;" autocapitalize="off" autocorrect="off" spellcheck="false"><button id="serverUse">Use</button><button id="serverOff" hidden>Stop</button></div>
     <div class="status" id="serverStatus"></div>
+    <div><b>Language</b> (with a server; here, the 51 English words)</div>
+    <div class="row"><select id="lang" aria-label="language"></select></div>
+    <div class="status" id="langStatus"></div>
     <div><b>Help thelip improve</b></div>
     <label class="toggle"><input type="checkbox" id="improve"> Keep my sentences for training</label>
     <div>Off, nothing is kept anywhere. On, the server keeps what its model saw &mdash; 96&times;96 grey crops of the mouth, not the frames and not the face &mdash; with what it read and, if you tap the subtitle and fix it, what you actually said. That is the material for training a model on real phones and real speakers. Tap the subtitle to correct it either way.</div>
@@ -508,7 +513,27 @@ self.onmessage = (e) => {
   const cropCanvas = $("crop"), cropCtx = cropCanvas.getContext("2d", { willReadFrequently: true });
   let worker = null, ready = false, perFrameMs = 0;
   // ---- a server for any English words (example/thelip-server) ----------------------------------
-  let server = null, serverToken = null, serverInfo = null, serverExplicit = false, improve = false, lastRead = null;
+  let server = null, serverToken = null, serverInfo = null, serverExplicit = false, improve = false, lastRead = null, language = "en";
+  // The languages the page offers, in this order; a server says which of them it can read.
+  const LANGS = [["en", "English"], ["he", "עברית"], ["es", "Español"], ["ar", "العربية"], ["zh", "普通话"], ["fr", "Français"], ["de", "Deutsch"], ["pt", "Português"]];
+  function renderLanguages() {
+    const sel = $("lang");
+    const known = new Map((serverInfo && serverInfo.languages || []).map((l) => [l.code, l]));
+    sel.replaceChildren();
+    for (const [code, name] of LANGS) {
+      const o = document.createElement("option"); o.value = code;
+      const l = known.get(code);
+      o.textContent = name + (serverOn() ? (l && l.available ? "" : " — no model yet") : (code === "en" ? " — 51 words, here" : " — needs a server"));
+      sel.appendChild(o);
+    }
+    sel.value = language;
+    const l = known.get(language);
+    $("langStatus").textContent = !serverOn() ? "" : l ? (l.available ? `${l.quality}${l.loaded ? "" : " — loads on first use"}` : l.status || "no model") : "";
+  }
+  function setLanguage(code) {
+    language = code; try { localStorage.setItem("thelip.language", code); } catch {}
+    renderLanguages();
+  }
   const DEFAULT_SERVER = "https://api.thelip.ai";
   const fullCanvas = document.createElement("canvas"), fullCtx = fullCanvas.getContext("2d");
   function loadServer() {
@@ -517,8 +542,10 @@ self.onmessage = (e) => {
       try { localStorage.setItem("thelip.server", q.get("server")); if (q.get("token")) localStorage.setItem("thelip.token", q.get("token")); else localStorage.removeItem("thelip.token"); } catch {}
       window.history.replaceState(null, "", location.pathname + location.hash);
     }
-    try { server = localStorage.getItem("thelip.server") || null; serverToken = localStorage.getItem("thelip.token") || null; improve = localStorage.getItem("thelip.improve") === "1"; } catch {}
+    try { server = localStorage.getItem("thelip.server") || null; serverToken = localStorage.getItem("thelip.token") || null; improve = localStorage.getItem("thelip.improve") === "1"; language = localStorage.getItem("thelip.language") || language; } catch {}
+    if (!LANGS.some(([c]) => c === language)) language = "en";
     $("improve").checked = improve;
+    renderLanguages();
     serverExplicit = !!server;
     if (server) checkServer(); else discoverServer();
     renderServer();
@@ -557,6 +584,7 @@ self.onmessage = (e) => {
     st.className = "status" + (serverInfo && serverInfo.ok ? " on" : "");
     st.textContent = !server ? "thelip's server is not answering right now — reading 51 words here; looking again every minute"
       : serverInfo === null ? "checking…" : serverInfo.ok ? `connected${serverExplicit ? "" : " to thelip's server"}: ${serverInfo.model} on ${serverInfo.device}` : `not reachable (${serverInfo.error}) — reading 51 words here meanwhile`;
+    renderLanguages();
   }
   async function checkServer() {
     serverInfo = null; renderServer();
@@ -571,6 +599,7 @@ self.onmessage = (e) => {
   async function readOnServer(blobs) {
     const body = new FormData();
     body.append("fps", String(FPS));
+    body.append("language", language);
     if (improve) { body.append("improve", "1"); body.append("source", mode); }
     blobs.forEach((b, i) => body.append("frames", b, `f${String(i).padStart(4, "0")}.jpg`));
     const r = await fetch(server.replace(/\/$/, "") + "/read", { method: "POST", body, headers: serverToken ? { Authorization: `Bearer ${serverToken}` } : {} });
@@ -888,7 +917,8 @@ self.onmessage = (e) => {
   const G = { c: ["bin", "lay", "place", "set"], k: ["blue", "green", "red", "white"], p: ["at", "by", "in", "with"],
     l: "abcdefghijklmnopqrstuvxyz".split(""), d: ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"], a: ["again", "now", "please", "soon"] };
   const pick = (x) => x[Math.floor(Math.random() * x.length)];
-  const newSentence = () => { $("sentence").textContent = serverOn() ? "anything, in English" : [pick(G.c), pick(G.k), pick(G.p), pick(G.l), pick(G.d), pick(G.a)].join(" "); say.hidden = false; };
+  const langName = () => (LANGS.find(([c]) => c === language) || ["en", "English"])[1];
+  const newSentence = () => { $("sentence").textContent = serverOn() ? `anything, in ${langName()}` : [pick(G.c), pick(G.k), pick(G.p), pick(G.l), pick(G.d), pick(G.a)].join(" "); say.hidden = false; };
   say.addEventListener("click", newSentence);
   $("helpBtn").addEventListener("click", () => { $("sheet").hidden = false; });
   $("serverUse").addEventListener("click", () => {
@@ -899,10 +929,11 @@ self.onmessage = (e) => {
   });
   $("serverOff").addEventListener("click", () => { server = null; serverToken = null; serverInfo = null; serverExplicit = false; try { localStorage.removeItem("thelip.server"); localStorage.removeItem("thelip.token"); } catch {} renderServer(); newSentence(); discoverServer(); });
   $("improve").addEventListener("change", (e) => { improve = e.target.checked; try { localStorage.setItem("thelip.improve", improve ? "1" : "0"); } catch {} });
+  $("lang").addEventListener("change", (e) => { setLanguage(e.target.value); newSentence(); });
   $("closeSheet").addEventListener("click", () => { $("sheet").hidden = true; });
 
   const debug = { frames: 0, started: 0, finished: 0, reads: 0, lastMotion: 0, quiet: 0, lastWords: null, trace: [], server: { sent: 0, lastText: null, lastError: null, lastFeedback: null } };
-  window.lipLive = { get ready() { return ready; }, get text() { return sub.textContent; }, get server() { return serverOn() ? server : null; }, get lastRead() { return lastRead; }, startFile, openFix, debug };
+  window.lipLive = { get ready() { return ready; }, get text() { return sub.textContent; }, get server() { return serverOn() ? server : null; }, get lastRead() { return lastRead; }, get language() { return language; }, startFile, openFix, debug };
   loadServer();
   bootWorker();
 })();
