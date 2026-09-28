@@ -1,0 +1,413 @@
+<meta charset="utf-8">
+<title>The Lip Live</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,500..900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --paper: #F2F4F6; --ink: #151A21; --ink-2: #4B5563; --ink-3: #8A94A3; --line: #D5DAE1; --panel: #FFFFFF;
+    --lip: #C7383E; --lip-soft: rgba(199, 56, 62, .12); --good: #1F8A55; --warn: #B7791F;
+    --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --body: "IBM Plex Sans", "Segoe UI", Roboto, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0F1216; --ink: #E9ECF0; --ink-2: #B4BBC6; --ink-3: #7A8493; --line: #2A313B; --panel: #171C22;
+      --lip: #FF7A70; --lip-soft: rgba(255, 122, 112, .16); --good: #4CC98A; --warn: #E0A53F; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0F1216; --ink: #E9ECF0; --ink-2: #B4BBC6; --ink-3: #7A8493; --line: #2A313B; --panel: #171C22;
+    --lip: #FF7A70; --lip-soft: rgba(255, 122, 112, .16); --good: #4CC98A; --warn: #E0A53F; color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.45 var(--body); }
+  .wrap { max-width: 560px; margin: 0 auto; padding-block: 12px 32px; padding-inline: 16px; display: grid; gap: 14px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  h1 { font: 800 22px/1 var(--display); font-stretch: 115%; letter-spacing: -.01em; margin: 0; }
+  h1 span { color: var(--lip); }
+  .eyebrow { font: 500 11px/1 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+  .stage { position: relative; width: 100%; aspect-ratio: 4 / 3; max-width: 100%; background: #000; border-radius: 10px; overflow: hidden; }
+  .stage video, .stage canvas.view { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .stage video.mirror, .stage canvas.mirror { transform: scaleX(-1); }
+  .guide { position: absolute; border: 2px solid var(--lip); border-radius: 6px; box-shadow: 0 0 0 9999px rgba(0,0,0,.28); pointer-events: none; }
+  .guide::before { content: ""; position: absolute; left: 27%; right: 27%; top: 30%; bottom: 30%; border: 1.5px dashed rgba(255,255,255,.75); border-radius: 50%; }
+  .guide .hint { position: absolute; left: 50%; top: -26px; transform: translateX(-50%); white-space: nowrap; color: #fff; font: 500 12px var(--body); text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+  .stage .empty { position: absolute; inset: 0; display: grid; place-items: center; color: #cfd5dd; text-align: center; padding: 20px; font-size: 14px; }
+  .status { position: absolute; left: 10px; top: 10px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff; font: 500 12px var(--body); }
+  .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); }
+  .status[data-state="listening"]::before { background: var(--lip); animation: pulse 1s infinite; }
+  .status[data-state="reading"]::before { background: var(--warn); }
+  .status[data-state="ready"]::before { background: var(--good); }
+  @keyframes pulse { 50% { opacity: .3; } }
+  @media (prefers-reduced-motion: reduce) { .status::before { animation: none; } }
+  .reading { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 8px; min-height: 96px; }
+  .reading .text { font: 700 clamp(26px, 7vw, 36px)/1.15 var(--display); font-stretch: 105%; letter-spacing: -.01em; text-wrap: balance; min-height: 1.2em; }
+  .reading .text .u { color: var(--ink-3); font-weight: 500; }
+  .reading .text .forming { color: var(--ink-2); }
+  .reading .meta { display: flex; flex-wrap: wrap; gap: 10px 16px; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .reading .raw { font: 400 12px var(--mono); color: var(--ink-3); }
+  .sees { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; }
+  .sees canvas { width: 160px; height: 80px; image-rendering: pixelated; border: 1px solid var(--line); border-radius: 4px; background: #000; }
+  .sees .label { font-size: 12px; color: var(--ink-3); }
+  .say { background: var(--lip-soft); border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px; }
+  .say .sentence { font: 600 18px/1.3 var(--display); }
+  .say .why { font-size: 12px; color: var(--ink-2); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button, label.button { font: 600 14px var(--body); padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+  button.primary, label.button.primary { background: var(--lip); border-color: var(--lip); color: #fff; }
+  button:focus-visible, label.button:focus-visible { outline: 2px solid var(--lip); outline-offset: 2px; }
+  button[disabled] { opacity: .5; cursor: default; }
+  button.small { padding: 6px 10px; font-size: 13px; }
+  input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .history { display: grid; gap: 6px; }
+  .history .item { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: baseline; padding: 8px 10px; border-left: 3px solid var(--line); font-size: 14px; }
+  .history .item .c { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .notes { font-size: 13px; color: var(--ink-2); display: grid; gap: 6px; }
+  .notes b { color: var(--ink); }
+  .grammar { font: 400 12px/1.6 var(--mono); color: var(--ink-3); overflow-x: auto; }
+  .lag { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .warnbox { border: 1px solid var(--warn); border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">syrup · example · in the browser</div>
+      <h1>The <span>Lip</span> Live</h1>
+    </div>
+    <div class="lag" id="lag"></div>
+  </header>
+
+  <div class="stage" id="stage">
+    <video id="cam" playsinline muted autoplay hidden></video>
+    <canvas id="view" class="view" hidden></canvas>
+    <div class="guide" id="guide" hidden><span class="hint">mouth in the frame, lips on the oval</span></div>
+    <div class="empty" id="empty">Loading the network…</div>
+    <div class="status" id="status" data-state="idle">loading</div>
+  </div>
+
+  <div class="row" id="controls">
+    <button class="primary" id="camera" disabled>Use the camera</button>
+    <label class="button primary" id="recordLabel" hidden tabindex="0">Record a clip<input type="file" id="file" accept="video/*" capture="user"></label>
+    <label class="button" id="openLabel" tabindex="0">Open a video<input type="file" id="file2" accept="video/*"></label>
+    <button class="small" id="smaller" title="smaller frame" hidden>−</button>
+    <button class="small" id="bigger" title="bigger frame" hidden>+</button>
+  </div>
+
+  <section class="reading" aria-live="polite">
+    <div class="text" id="text"></div>
+    <div class="raw" id="raw"></div>
+    <div class="meta" id="meta"><span>No audio is used. Words in [brackets?] are uncertain.</span></div>
+  </section>
+
+  <div class="sees">
+    <canvas id="crop" width="100" height="50"></canvas>
+    <div class="label">What the network sees: a 100×50 crop of the frame, the same crop LipNet was trained on. Keep your lips inside the oval and your face still.</div>
+  </div>
+
+  <div class="say">
+    <div class="eyebrow">Say this (mouth only, no voice needed)</div>
+    <div class="sentence" id="sentence">set blue with e five now</div>
+    <div class="row"><button class="small" id="another">Another sentence</button></div>
+    <div class="why">The network knows 51 words in one sentence shape: <span class="grammar">command · colour · preposition · letter · digit · adverb</span>. It reads those and nothing else.</div>
+  </div>
+
+  <div class="history" id="history"></div>
+
+  <div class="notes">
+    <div><b>What this is.</b> LipNet (Assael et al. 2016), the same weights The Lip reads with, running here in JavaScript, in your browser, on the phone. Nothing leaves the device. 64 of 66 words on the GRID sample clips; a new face and a phone camera are harder than the lab data it learned from, so expect misses, and speak the sentence at a normal pace.</div>
+    <div><b>Live.</b> With the camera, an utterance is read as soon as your lips go still; on a fast phone the words form while you speak. From a recording, the clip plays at the speed the network reads it, with the subtitle forming underneath.</div>
+    <div class="grammar">command: bin lay place set · colour: blue green red white · preposition: at by in with · letter: a–z (no w) · digit: zero–nine · adverb: again now please soon</div>
+  </div>
+</div>
+
+<script id="worker-src" type="text/plain">
+__WORKER__
+</script>
+<script id="weights" type="text/plain">__WEIGHTS_B64__</script>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const FPS = 25, W = 100, H = 50;
+  const cam = $("cam"), view = $("view"), guide = $("guide"), status = $("status"), empty = $("empty");
+  const cropCanvas = $("crop"), cropCtx = cropCanvas.getContext("2d", { willReadFrequently: true });
+  const stage = $("stage");
+  let worker = null, ready = false, perFrameMs = 0;
+  let mode = "idle";                 // idle | camera | file
+  let guideBox = null;               // in source video pixels: {x, y, w, h}
+  let source = null;                 // the element frames are read from (video)
+  let sourceSize = { w: 0, h: 0 };
+  let mirror = false;
+  let history = [];
+
+  // ---- the network, in a worker ------------------------------------------------
+  function bootWorker() {
+    const b64 = $("weights").textContent.trim();
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const src = $("worker-src").textContent;
+    worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+    worker.onmessage = onWorker;
+    worker.postMessage({ type: "init", weights: bytes.buffer }, [bytes.buffer]);
+  }
+
+  const pending = new Map();   // frame index -> resolve
+  let readResolve = null;
+  function onWorker(e) {
+    const m = e.data;
+    if (m.type === "ready") {
+      ready = true; perFrameMs = m.perFrameMs;
+      $("lag").textContent = `${perFrameMs.toFixed(0)} ms per frame on this device`;
+      empty.textContent = "Use the camera, or record a clip of yourself saying a sentence.";
+      setStatus("idle", "ready");
+      $("camera").disabled = !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        $("camera").hidden = true; $("recordLabel").hidden = false;
+      }
+    } else if (m.type === "processed") {
+      const r = pending.get(m.index); if (r) { pending.delete(m.index); r(); }
+    } else if (m.type === "reading") {
+      if (readResolve) { const r = readResolve; readResolve = null; r(m); }
+    }
+  }
+  function sendFrame(index, data) {
+    return new Promise((resolve) => { pending.set(index, resolve); worker.postMessage({ type: "frame", index, data }, [data.buffer]); });
+  }
+  function read(from, to, final) {
+    return new Promise((resolve) => { readResolve = resolve; worker.postMessage({ type: "read", from, to, final }); });
+  }
+
+  // ---- frames -------------------------------------------------------------------
+  function setStatus(state, text) { status.dataset.state = state; status.textContent = text; }
+
+  /** The 100x50 crop of the guide box from the source, as the network wants it. */
+  function cropFrame() {
+    const g = guideBox;
+    cropCtx.drawImage(source, g.x, g.y, g.w, g.h, 0, 0, W, H);
+    const img = cropCtx.getImageData(0, 0, W, H).data;
+    const out = new Float32Array(W * H * 3);
+    let sum = 0;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4, o = (x * H + y) * 3;   // width-major, as LipNet stores frames
+        out[o] = img[i] / 255; out[o + 1] = img[i + 1] / 255; out[o + 2] = img[i + 2] / 255;
+        sum += img[i] + img[i + 1] + img[i + 2];
+      }
+    }
+    return { data: out, mean: sum / (W * H * 3 * 255) };
+  }
+
+  function layoutGuide() {
+    if (!guideBox || !sourceSize.w) return;
+    const r = stage.getBoundingClientRect();
+    const scale = Math.max(r.width / sourceSize.w, r.height / sourceSize.h); // object-fit: cover
+    const dx = (r.width - sourceSize.w * scale) / 2, dy = (r.height - sourceSize.h * scale) / 2;
+    let left = dx + guideBox.x * scale;
+    if (mirror) left = r.width - (dx + (guideBox.x + guideBox.w) * scale);
+    guide.style.left = `${left}px`; guide.style.top = `${dy + guideBox.y * scale}px`;
+    guide.style.width = `${guideBox.w * scale}px`; guide.style.height = `${guideBox.h * scale}px`;
+    guide.hidden = false;
+  }
+
+  function defaultGuide() {
+    // A mouth about 45% of the frame width, the frame 2:1, a bit below the centre of the picture.
+    const w = Math.round(sourceSize.w * 0.36), h = Math.round(w / 2);
+    guideBox = { x: Math.round((sourceSize.w - w) / 2), y: Math.round(sourceSize.h * 0.62 - h / 2), w, h };
+    const m = location.hash.match(/^#g(\d+)-(\d+)-(\d+)-(\d+)$/);
+    if (m) guideBox = { x: +m[1], y: +m[2], w: +m[3], h: +m[4] };
+    layoutGuide();
+  }
+  function resizeGuide(factor) {
+    const cx = guideBox.x + guideBox.w / 2, cy = guideBox.y + guideBox.h / 2;
+    const w = Math.max(40, Math.min(sourceSize.w, guideBox.w * factor)), h = w / 2;
+    guideBox = { x: Math.round(cx - w / 2), y: Math.round(cy - h / 2), w: Math.round(w), h: Math.round(h) };
+    layoutGuide();
+  }
+  $("smaller").addEventListener("click", () => resizeGuide(0.9));
+  $("bigger").addEventListener("click", () => resizeGuide(1.1));
+  window.addEventListener("resize", layoutGuide);
+
+  // ---- utterances: read when the lips have moved and gone still ------------------
+  const PRE = 10, POST = 8, MAX = 75, STILL = 12;
+  let utter = null;        // {frames: [Float32Array], sent, still, reads, finished}
+  let last = null;         // previous crop, for motion
+  let preRoll = [];
+  let quiet = 0.004;       // what "still" measures on this camera (learned while nothing moves)
+  const recent = [];       // last few motion values; their median ignores compression flicker
+  let anyUtterance = false;
+  const lastFrames = [];   // file mode: the last 75 crops, for a clip with no detected utterance
+
+  function motionOf(a, b) {
+    if (!a) return 0;
+    let s = 0; const n = a.length;
+    for (let i = 0; i < n; i += 3) s += Math.abs(a[i] - b[i]);
+    return s / (n / 3);
+  }
+  function smoothed(m) {
+    recent.push(m); if (recent.length > 5) recent.shift();
+    return [...recent].sort((a, b) => a - b)[recent.length >> 1];
+  }
+
+  let busy = Promise.resolve();
+  function queue(fn) { busy = busy.then(fn).catch((e) => console.error(e)); return busy; }
+
+  async function onFrame() {
+    if (!ready || !source) return;
+    const { data } = cropFrame();
+    if (mode === "file") { lastFrames.push(data); if (lastFrames.length > MAX) lastFrames.shift(); }
+    const motion = smoothed(motionOf(last, data));
+    last = data;
+    const moving = motion > Math.max(quiet * 3, 0.008);
+    if (!utter && !moving) quiet = quiet * 0.9 + motion * 0.1;
+    if (!utter) {
+      preRoll.push(data); if (preRoll.length > PRE) preRoll.shift();
+      if (moving) {
+        utter = { frames: [...preRoll], sent: 0, still: 0, reads: 0, finished: false };
+        anyUtterance = true;
+        preRoll = [];
+        worker.postMessage({ type: "reset" });
+        setStatus("listening", "lips moving…");
+      }
+      return;
+    }
+    utter.frames.push(data);
+    utter.still = moving ? 0 : utter.still + 1;
+    const done = utter.still >= STILL || utter.frames.length >= MAX;
+    const u = utter;
+    queue(async () => {
+      while (u.sent < u.frames.length) { await sendFrame(u.sent, u.frames[u.sent].slice()); u.sent++; }
+      const n = u.frames.length;
+      if (done && !u.finished) {
+        u.finished = true;
+        setStatus("reading", "reading…");
+        // Keep POST frames of the stillness after the last movement, drop the rest.
+        const to = Math.max(0, Math.min(n - 1, n - u.still + POST - 1));
+        const r = await read(0, to, true);
+        show(r.words, true, r.ms);
+        setStatus("idle", mode === "camera" ? "waiting for lips" : "playing at the network's pace");
+      } else if (!u.finished && n - u.reads >= 12 && perFrameMs < 45) {
+        u.reads = n;
+        const r = await read(0, n - 1, false);
+        show(r.words, false, r.ms);
+      }
+    });
+    if (done) utter = null;
+  }
+
+  function show(words, final, ms) {
+    const settled = final ? words : words.slice(0, Math.max(0, words.length - 1));
+    const forming = final ? [] : words.slice(-1);
+    const text = $("text");
+    text.replaceChildren();
+    for (const w of settled) { const s = document.createElement("span"); s.className = w.confidence < 0.5 ? "u" : ""; s.textContent = (w.confidence < 0.5 ? `[${w.text}?] ` : `${w.text} `); text.appendChild(s); }
+    for (const w of forming) { const s = document.createElement("span"); s.className = "forming"; s.textContent = w.raw + " "; text.appendChild(s); }
+    if (final) {
+      $("raw").textContent = words.length ? `network letters: ${words.map((w) => w.raw).join(" ")}` : "nothing read: no letters came out of the network";
+      const conf = words.length ? words.reduce((a, w) => a + w.confidence, 0) / words.length : 0;
+      $("meta").replaceChildren(...[`decoded in ${ms.toFixed(0)} ms`, words.length ? `confidence ${Math.round(conf * 100)}%` : "", "no audio used"].filter(Boolean).map((t) => { const s = document.createElement("span"); s.textContent = t; return s; }));
+      if (words.length) {
+        history.unshift({ text: words.map((w) => (w.confidence < 0.5 ? `[${w.text}?]` : w.text)).join(" "), conf });
+        history = history.slice(0, 8);
+        $("history").replaceChildren(...history.map((h) => { const d = document.createElement("div"); d.className = "item"; d.innerHTML = `<span></span><span class="c"></span>`; d.firstChild.textContent = h.text; d.lastChild.textContent = `${Math.round(h.conf * 100)}%`; return d; }));
+      }
+    }
+  }
+
+  // ---- camera mode ------------------------------------------------------------------
+  let rafId = 0, nextT = 0;
+  async function startCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 25 } } });
+      cam.srcObject = stream;
+      await cam.play();
+    } catch (e) {
+      empty.hidden = false;
+      empty.textContent = "The camera is not available here (a browser page needs https, and this viewer may refuse it). Record a clip instead.";
+      $("recordLabel").hidden = false; $("camera").hidden = true;
+      return;
+    }
+    mode = "camera"; source = cam; mirror = true; cam.classList.add("mirror");
+    sourceSize = { w: cam.videoWidth, h: cam.videoHeight };
+    cam.hidden = false; view.hidden = true; empty.hidden = true;
+    $("smaller").hidden = $("bigger").hidden = false;
+    defaultGuide();
+    setStatus("idle", "waiting for lips");
+    nextT = performance.now();
+    const loop = (now) => {
+      rafId = requestAnimationFrame(loop);
+      if (now >= nextT) {
+        nextT += 1000 / FPS;
+        if (now - nextT > 200) nextT = now;
+        onFrame();
+      }
+    };
+    rafId = requestAnimationFrame(loop);
+  }
+  $("camera").addEventListener("click", startCamera);
+
+  // ---- file mode: the clip plays at the speed the network reads it ---------------------
+  async function startFile(file) {
+    if (rafId) cancelAnimationFrame(rafId);
+    if (cam.srcObject) { cam.srcObject.getTracks().forEach((t) => t.stop()); cam.srcObject = null; }
+    mode = "file"; mirror = false; cam.classList.remove("mirror");
+    const url = URL.createObjectURL(file);
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = url;
+    await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error("cannot decode this video")); });
+    source = v; sourceSize = { w: v.videoWidth, h: v.videoHeight };
+    cam.hidden = true; view.hidden = false; empty.hidden = true;
+    view.width = v.videoWidth; view.height = v.videoHeight;
+    const vctx = view.getContext("2d");
+    $("smaller").hidden = $("bigger").hidden = false;
+    defaultGuide();
+    utter = null; last = null; preRoll = []; anyUtterance = false; recent.length = 0;
+    worker.postMessage({ type: "reset" });
+    setStatus("listening", "playing at the network's pace");
+    const duration = v.duration;
+    const seekTo = (t) => new Promise((res) => { const done = () => { v.removeEventListener("seeked", done); res(); }; v.addEventListener("seeked", done); v.currentTime = t; });
+    for (let i = 0; i * (1 / FPS) < duration; i++) {
+      if (source !== v) return;        // another file started
+      await seekTo(i / FPS);
+      vctx.drawImage(v, 0, 0);
+      await onFrame();
+      await busy;                      // pace the playback to the network
+      $("lag").textContent = `${(i / FPS).toFixed(1)} / ${duration.toFixed(1)} s`;
+    }
+    // Whatever was still forming at the end is read now; a clip in which the
+    // lips never seemed to move is read whole (its last 75 frames).
+    if (utter || !anyUtterance) {
+      const u = utter ?? { frames: preRoll.concat(), sent: 0 };
+      utter = null;
+      if (!anyUtterance) { u.frames = lastFrames.slice(-MAX); worker.postMessage({ type: "reset" }); }
+      if (u.frames.length > 2) {
+        await queue(async () => {
+          while (u.sent < u.frames.length) { await sendFrame(u.sent, u.frames[u.sent].slice()); u.sent++; }
+          setStatus("reading", "reading…");
+          const r = await read(0, u.frames.length - 1, true);
+          show(r.words, true, r.ms);
+        });
+      }
+    }
+    setStatus("ready", "done");
+    URL.revokeObjectURL(url);
+  }
+  for (const id of ["file", "file2"]) {
+    $(id).addEventListener("change", (e) => { const f = e.target.files[0]; if (f) startFile(f); e.target.value = ""; });
+  }
+  for (const id of ["recordLabel", "openLabel"]) {
+    $(id).addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $(id).querySelector("input").click(); } });
+  }
+
+  // ---- a sentence to say -------------------------------------------------------------
+  const G = { command: ["bin", "lay", "place", "set"], colour: ["blue", "green", "red", "white"], preposition: ["at", "by", "in", "with"],
+    letter: "abcdefghijklmnopqrstuvxyz".split(""), digit: ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"], adverb: ["again", "now", "please", "soon"] };
+  const pick = (a) => a[Math.floor(Math.random() * a.length)];
+  $("another").addEventListener("click", () => { $("sentence").textContent = [pick(G.command), pick(G.colour), pick(G.preposition), pick(G.letter), pick(G.digit), pick(G.adverb)].join(" "); });
+
+  window.lipLive = { get ready() { return ready; }, get history() { return history; }, startFile };
+  bootWorker();
+})();
+</script>

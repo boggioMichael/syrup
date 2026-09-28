@@ -22,3 +22,7 @@ __pycache__/
 /example/**/__pycache__/
 /example/chrome-extension/dist/
 /example/shared-types/dist/
+/example/web-live/*.bin
+/example/web-live/*.f32
+/example/web-live/the-lip-live.html
+/example/web-live/test/page.png
