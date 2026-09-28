@@ -188,7 +188,9 @@ def main() -> None:
     if args.fake:
         cmd.append("--fake")
     say("starting the server" + ("" if args.fake else " (loading the model takes a minute the first time)"))
-    env = dict(os.environ, THELIP_HOME=WORK, PYTHONIOENCODING="utf-8")
+    # UTF-8 mode: Chaplin opens its token list without an encoding, and a
+    # Windows with a Hebrew (or any non-Latin) locale would decode it as cp1255.
+    env = dict(os.environ, THELIP_HOME=WORK, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
     server = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
     tunnel = None
     try:

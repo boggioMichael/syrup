@@ -43,6 +43,7 @@ echo installing packages ^(PyTorch and mediapipe; a few minutes the first time^)
 
 set "THELIP_HOME=%WORK%"
 set "PYTHONIOENCODING=utf-8"
+set "PYTHONUTF8=1"
 "%VENV%\Scripts\python.exe" run.py %*
 echo.
 pause
