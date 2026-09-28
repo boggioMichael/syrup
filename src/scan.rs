@@ -22,19 +22,15 @@ pub(crate) fn for_each_run(row: &[u8], mut found: impl FnMut(usize, usize)) {
 
 /// Index of the first non-zero byte, testing eight at a time.
 pub(crate) fn first_nonzero(bytes: &[u8]) -> Option<usize> {
-    let mut chunks = bytes.chunks_exact(8);
+    let (chunks, remainder) = bytes.as_chunks::<8>();
     let mut offset = 0;
-    for chunk in &mut chunks {
-        if u64::from_ne_bytes(chunk.try_into().expect("8 bytes")) != 0 {
+    for chunk in chunks {
+        if u64::from_ne_bytes(*chunk) != 0 {
             return chunk.iter().position(|&v| v != 0).map(|i| offset + i);
         }
         offset += 8;
     }
-    chunks
-        .remainder()
-        .iter()
-        .position(|&v| v != 0)
-        .map(|i| offset + i)
+    remainder.iter().position(|&v| v != 0).map(|i| offset + i)
 }
 
 #[cfg(test)]

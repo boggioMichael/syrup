@@ -49,8 +49,10 @@ pub fn channel_image(image: &RgbaImage, region: Rect, channel: Channel) -> GrayI
         // Pixels as arrays rather than slices: no bounds checks, so each
         // per-channel loop below is a plain map the compiler vectorises.
         let pixels = raw[start..start + row_len * 4]
-            .chunks_exact(4)
-            .map(|p| -> [u8; 4] { p.try_into().expect("4-byte pixels") });
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .copied();
         match channel {
             Channel::Luma => {
                 for (value, p) in out_row.iter_mut().zip(pixels) {

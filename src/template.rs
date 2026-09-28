@@ -269,7 +269,7 @@ impl Plane {
             .take(self.height)
         {
             let row = self.row(y, 0, self.width);
-            for (k, pair) in row.chunks_exact(2).enumerate() {
+            for (k, pair) in row.as_chunks::<2>().0.iter().enumerate() {
                 odd[k] = u16::from(pair[0]);
                 even[k + 1] = u16::from(pair[1]);
             }

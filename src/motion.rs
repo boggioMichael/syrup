@@ -59,12 +59,6 @@ fn moved(a: [u8; 4], b: [u8; 4], threshold: u8) -> bool {
     weighted_difference(a, b) >= u32::from(threshold) << 16
 }
 
-/// A four-byte chunk of a row as one pixel.
-#[inline]
-fn as_pixel(chunk: &[u8]) -> [u8; 4] {
-    chunk.try_into().expect("rows are split into 4-byte pixels")
-}
-
 /// Horizontal runs of moved pixels, and how many pixels moved in total,
 /// computed in one pass over the two frames.
 ///
@@ -109,12 +103,9 @@ fn motion_runs(
         // One verdict byte per pixel, computed without branches so the loop
         // vectorises; runs are then read off the verdicts.
         let mut moved_in_row = 0u32;
-        for (verdict, (pa, pb)) in verdicts
-            .iter_mut()
-            .zip(row_a.chunks_exact(4).zip(row_b.chunks_exact(4)))
-        {
-            let (pa, pb) = (as_pixel(pa), as_pixel(pb));
-            let moved = u8::from(weighted_difference(pa, pb) >= limit);
+        let (pixels_a, pixels_b) = (row_a.as_chunks::<4>().0, row_b.as_chunks::<4>().0);
+        for (verdict, (pa, pb)) in verdicts.iter_mut().zip(pixels_a.iter().zip(pixels_b)) {
+            let moved = u8::from(weighted_difference(*pa, *pb) >= limit);
             *verdict = moved;
             moved_in_row += u32::from(moved);
         }

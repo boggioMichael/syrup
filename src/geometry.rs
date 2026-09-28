@@ -27,8 +27,10 @@ pub(crate) fn row_pixels(
     let start = (y as usize * width + x0 as usize) * 4;
     let end = (y as usize * width + x1 as usize + 1) * 4;
     image.as_raw()[start..end]
-        .chunks_exact(4)
-        .map(Rgba::from_slice)
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|pixel| Rgba::from_slice(pixel.as_slice()))
         .enumerate()
         .map(move |(offset, pixel)| (x0 + offset as u32, pixel))
 }
