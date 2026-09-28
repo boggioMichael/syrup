@@ -16,9 +16,12 @@ use per language and stay loaded.
 from __future__ import annotations
 
 import argparse
+import faulthandler
 import json
 import os
 import sys
+
+faulthandler.enable()   # a crash in a native library still leaves the Python frames in server.log
 
 
 def main() -> None:

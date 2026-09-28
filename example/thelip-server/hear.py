@@ -77,7 +77,11 @@ class Transcriber:
             cmd += ["--threads", str(self.threads)]
         if self.fake_worker:
             cmd.append("--fake")
-        env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+        # CTranslate2 picks AVX-512 code paths on CPUs that have them; on the
+        # owner's AMD Zen 5 that ended the worker with an access violation.
+        # AVX2 is as fast as it matters here and runs everywhere.
+        env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8",
+                   CT2_FORCE_CPU_ISA=os.environ.get("THELIP_CT2_ISA", "AVX2"))
         self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=env)
         line = self.proc.stdout.readline()
         try:
@@ -103,11 +107,14 @@ class Transcriber:
                     return reply
             except OSError:
                 pass
+            code = self.proc.poll() if self.proc else None
+            why = f"exited with {code & 0xFFFFFFFF:#010x}" if code not in (None, 0) else "stopped answering"
             if attempt == 2:
+                print(f"the speech worker {why} again; giving up on this utterance", flush=True)
                 break
-            print("the speech worker stopped answering; starting it again", flush=True)
+            print(f"the speech worker {why}; starting it again", flush=True)
             self.stop()
-        raise RuntimeError("the speech worker gave no answer")
+        raise RuntimeError(f"the speech worker gave no answer ({why})")
 
     def stop(self) -> None:
         if self.proc and self.proc.poll() is None:
