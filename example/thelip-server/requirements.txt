@@ -22,4 +22,4 @@ faster-whisper
 # ctranslate2 4.5 and later end with an access violation while loading a model
 # on some Windows machines (the owner's included); 4.4.0 loads.
 ctranslate2==4.4.0
-setuptools   # ctranslate2 4.4.0 imports pkg_resources, which a fresh venv on Python 3.12 lacks
+setuptools<81   # ctranslate2 4.4.0 imports pkg_resources, which setuptools 81 removed
