@@ -28,6 +28,7 @@ import sys
 import time
 import urllib.request
 import zipfile
+from typing import Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Downloads and the Python environment live under THELIP_HOME (thelip-server.cmd
@@ -129,17 +130,84 @@ def cloudflared_path() -> str:
     return path
 
 
-def wait_health(port: int, timeout: float) -> dict:
+def try_health(url: str, timeout: float = 3) -> Optional[dict]:
     import json
 
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "thelip-server/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            body = json.load(r)
+            return body if isinstance(body, dict) and body.get("ok") else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def wait_health(port: int, timeout: float) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2) as r:
-                return json.load(r)
-        except Exception:
-            time.sleep(1)
+        health = try_health(f"http://127.0.0.1:{port}/health")
+        if health:
+            return health
+        time.sleep(1)
     raise SystemExit("the server did not come up; see server.log")
+
+
+class Tunnel:
+    """One cloudflared quick tunnel to the local server. Every line it prints
+    goes to tunnel.log; the public address is taken from those lines; the
+    tunnel counts as open only once its /health answers from the outside,
+    since a fresh quick tunnel can sit on Cloudflare's error 1033 for a while
+    or never route at all, in which case it is started again."""
+
+    def __init__(self, binary: str, origin: str):
+        self.binary, self.origin = binary, origin
+        self.proc: Optional[subprocess.Popen] = None
+        self.public: Optional[str] = None
+        self.log = open(os.path.join(HERE, "tunnel.log"), "a", buffering=1)
+
+    def _start(self) -> None:
+        import threading
+
+        self.public = None
+        self.proc = subprocess.Popen([self.binary, "tunnel", "--url", self.origin, "--no-autoupdate"],
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+
+        def drain():
+            for line in iter(self.proc.stdout.readline, ""):
+                self.log.write(line)
+                m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line)
+                if m and not self.public:
+                    self.public = m.group(0)
+
+        threading.Thread(target=drain, daemon=True).start()
+
+    def stop(self) -> None:
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(10)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+
+    def open(self, attempts: int = 3) -> str:
+        for attempt in range(1, attempts + 1):
+            self._start()
+            deadline = time.time() + 60
+            while time.time() < deadline and not self.public and self.proc.poll() is None:
+                time.sleep(0.5)
+            if self.public:
+                say(f"tunnel address: {self.public}; checking that it answers")
+                deadline = time.time() + 90
+                while time.time() < deadline and self.proc.poll() is None:
+                    if try_health(self.public + "/health", timeout=8):
+                        return self.public
+                    time.sleep(3)
+            say(f"the tunnel did not answer (attempt {attempt} of {attempts}); starting it again")
+            self.stop()
+        raise SystemExit("the tunnel never answered; run again, or use --no-tunnel for this machine only")
+
+    def alive(self) -> bool:
+        return bool(self.proc and self.proc.poll() is None and self.public and try_health(self.public + "/health", timeout=8))
 
 
 def show_link(link: str) -> None:
@@ -179,62 +247,64 @@ def main() -> None:
         ensure_models()
     tunnel_bin = None if args.no_tunnel else cloudflared_path()
 
-    log = open(os.path.join(HERE, "server.log"), "a", buffering=1)
-    cmd = [sys.executable, os.path.join(HERE, "server.py"), "--port", str(args.port), "--beam", str(args.beam)]
-    if args.no_lm:
-        cmd.append("--no-lm")
-    if args.token:
-        cmd += ["--token", args.token]
-    if args.fake:
-        cmd.append("--fake")
-    say("starting the server" + ("" if args.fake else " (loading the model takes a minute the first time)"))
-    # UTF-8 mode: Chaplin opens its token list without an encoding, and a
-    # Windows with a Hebrew (or any non-Latin) locale would decode it as cp1255.
-    env = dict(os.environ, THELIP_HOME=WORK, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
-    server = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
+    origin = f"http://127.0.0.1:{args.port}"
+    server = None
+    if try_health(origin + "/health"):
+        say(f"a thelip-server is already running on this computer at {origin}; using it (close its window to stop it)")
+    else:
+        log = open(os.path.join(HERE, "server.log"), "a", buffering=1)
+        cmd = [sys.executable, os.path.join(HERE, "server.py"), "--port", str(args.port), "--beam", str(args.beam)]
+        if args.no_lm:
+            cmd.append("--no-lm")
+        if args.token:
+            cmd += ["--token", args.token]
+        if args.fake:
+            cmd.append("--fake")
+        say("starting the server" + ("" if args.fake else " (loading the model takes a minute the first time)"))
+        # UTF-8 mode: Chaplin opens its token list without an encoding, and a
+        # Windows with a Hebrew (or any non-Latin) locale would decode it as cp1255.
+        env = dict(os.environ, THELIP_HOME=WORK, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+        server = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
     tunnel = None
     try:
         health = wait_health(args.port, timeout=900)
         say(f"server up: {health.get('model')} on {health.get('device')}")
-        origin = f"http://127.0.0.1:{args.port}"
+        public = origin
         if tunnel_bin:
             say("opening the tunnel")
-            tunnel = subprocess.Popen([tunnel_bin, "tunnel", "--url", origin, "--no-autoupdate"],
-                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-            deadline = time.time() + 120
-            public = None
-            while time.time() < deadline and tunnel.poll() is None:
-                line = tunnel.stdout.readline()
-                if not line:
-                    break
-                m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line)
-                if m:
-                    public = m.group(0)
-                    break
-            if not public:
-                raise SystemExit("the tunnel gave no address; run again, or use --no-tunnel for this machine only")
-            origin = public
-            # Keep draining the tunnel's log so its pipe never fills.
-            import threading
-
-            tlog = open(os.path.join(HERE, "tunnel.log"), "a", buffering=1)
-            threading.Thread(target=lambda: [tlog.write(l) for l in iter(tunnel.stdout.readline, "")], daemon=True).start()
-        link = f"{SITE}?server={origin}" + (f"&token={args.token}" if args.token else "")
+            tunnel = Tunnel(tunnel_bin, origin)
+            public = tunnel.open()
+        link = f"{SITE}?server={public}" + (f"&token={args.token}" if args.token else "")
         show_link(link)
         say("Ctrl+C stops the server.")
-        while server.poll() is None:
-            time.sleep(1)
+        misses = 0
+        while server is None or server.poll() is None:
+            time.sleep(30)
+            if tunnel is None:
+                continue
+            if tunnel.alive():
+                misses = 0
+                continue
+            misses += 1
+            if misses >= 3:
+                say("the tunnel stopped answering; opening a new one")
+                tunnel.stop()
+                public = tunnel.open()
+                link = f"{SITE}?server={public}" + (f"&token={args.token}" if args.token else "")
+                show_link(link)
+                misses = 0
         raise SystemExit(f"the server stopped (exit {server.returncode}); see server.log")
     except KeyboardInterrupt:
         say("stopping")
     finally:
-        for p in (tunnel, server):
-            if p and p.poll() is None:
-                p.terminate()
-                try:
-                    p.wait(10)
-                except subprocess.TimeoutExpired:
-                    p.kill()
+        if tunnel:
+            tunnel.stop()
+        if server and server.poll() is None:
+            server.terminate()
+            try:
+                server.wait(10)
+            except subprocess.TimeoutExpired:
+                server.kill()
 
 
 if __name__ == "__main__":
