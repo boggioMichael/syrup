@@ -3,7 +3,8 @@
 `sbwe5n.webm`, `sbwe5n.wav` and `grid/*.webm` are the sample clips of the
 GRID audiovisual sentence corpus (Cooke, Barker, Cunningham & Shao, 2006;
 CC BY 4.0) that ship with rizkiarm/LipNet's evaluation set, converted to
-WebM (and the one clip's sound to 16 kHz WAV). They let the page and a
+WebM (and the one clip's sound to 16 kHz WAV; `sbwe5n-sound.webm` is that
+clip with its sound, Opus, for hearing a clip's own sound). They let the page and a
 thelip-server be tried and measured from a browser without a camera or a
 microphone: the page's tests, the speech recognition check, and the
 distances between different sentences that phrases.py's thresholds are
