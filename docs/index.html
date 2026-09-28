@@ -1118,6 +1118,17 @@ self.onmessage = (e) => {
     // is allowed. Whatever play() does, the clip goes on after at most a second.
     try { await Promise.race([v.play(), new Promise((res) => setTimeout(res, 1000))]); } catch {}
     v.pause();
+    // A recording made in a browser (MediaRecorder) often does not say how long it
+    // is until the player has looked at its end: ask it to, once.
+    if (!isFinite(v.duration)) {
+      await new Promise((res) => {
+        const t = setTimeout(res, 4000);
+        v.addEventListener("durationchange", function f() { if (isFinite(v.duration)) { clearTimeout(t); v.removeEventListener("durationchange", f); res(); } });
+        v.currentTime = 1e7;
+      });
+    }
+    if (!isFinite(v.duration) || v.duration <= 0) { cleanup(); return noCamera("This video does not say how long it is; try saving it again or another clip."); }
+    const duration = Math.min(v.duration, 120);   // two minutes at most
     source = v; sourceSize = { w: v.videoWidth, h: v.videoHeight }; fullCanvas.width = 0;
     msg.hidden = true; cam.hidden = true; view.hidden = false;
     view.width = v.videoWidth; view.height = v.videoHeight; view.style.objectFit = "contain";
@@ -1134,7 +1145,7 @@ self.onmessage = (e) => {
       const timer = setTimeout(done, 2500);
       v.addEventListener("seeked", done); v.currentTime = t;
     });
-    const total = Math.max(1, Math.floor(v.duration * FPS));
+    const total = Math.max(1, Math.floor(duration * FPS));
     if (serverOn()) {
       // With a server: the whole clip, in windows of up to MAX_SERVER frames, read
       // there; the server finds the faces, so no oval and no motion detection needed.
@@ -1165,7 +1176,7 @@ self.onmessage = (e) => {
       cleanup();
       return;
     }
-    for (let i = 0; i * (1 / FPS) < v.duration; i++) {
+    for (let i = 0; i * (1 / FPS) < duration; i++) {
       if (source !== v) { cleanup(); return; }
       await seekTo(i / FPS);
       vctx.drawImage(v, 0, 0);

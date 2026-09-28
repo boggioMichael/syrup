@@ -165,6 +165,27 @@ try {
           faceEls.length === 2 && faceEls[0].speaking && /fake es face 1 reading/.test(faceEls[0].said) && !faceEls[1].speaking && /not speaking/.test(faceEls[1].said), JSON.stringify(faceEls));
     await page2.screenshot({ path: path.join(here, "faces.png") });
 
+    // A clip recorded in a browser (MediaRecorder) does not state its duration at first.
+    const recorded = await page2.evaluate(async (b64) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const v = document.createElement("video"); v.muted = true; v.src = URL.createObjectURL(new Blob([bytes], { type: "video/webm" })); document.body.appendChild(v);
+      await new Promise((r) => (v.onloadedmetadata = r));
+      const c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight; const ctx = c.getContext("2d");
+      const rec = new MediaRecorder(c.captureStream(25), { mimeType: "video/webm;codecs=vp8" }); const chunks = [];
+      rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); }; rec.start(200);
+      for (let i = 0; i < 50; i++) { await new Promise((r) => { v.addEventListener("seeked", r, { once: true }); v.currentTime = i / 25; }); ctx.drawImage(v, 0, 0); await new Promise((r) => setTimeout(r, 40)); }
+      rec.stop(); await new Promise((r) => (rec.onstop = r)); v.remove();
+      const blob = new Blob(chunks, { type: "video/webm" });
+      const probe = document.createElement("video"); probe.muted = true; probe.src = URL.createObjectURL(blob);
+      await new Promise((r) => (probe.onloadedmetadata = r));
+      window.lipLive.debug.server.fileFrames = null;
+      window.lipLive.startFile(new File([blob], "recorded.webm", { type: "video/webm" }));
+      return { stated: String(probe.duration) };
+    }, clip);
+    await page2.waitForFunction(() => window.lipLive.debug.server.fileFrames, null, { timeout: 90000 }).catch(() => {});
+    const recFrames = await page2.evaluate(() => window.lipLive.debug.server.fileFrames);
+    check("a browser recording without a stated duration is read for its real length", recorded.stated === "Infinity" && recFrames >= 40 && recFrames <= 150, JSON.stringify({ recorded, recFrames }));
+
     // A server a link set (a throwaway tunnel, usually) that has died: thelip's server takes its place.
     await page2.evaluate(() => { localStorage.setItem("thelip.server", "http://127.0.0.1:8799"); localStorage.setItem("thelip.token", "old"); });
     await page2.reload();
