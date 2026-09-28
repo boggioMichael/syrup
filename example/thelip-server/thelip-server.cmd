@@ -38,7 +38,7 @@ if not exist "%VENV%\Scripts\python.exe" (
   %PY% -m venv "%VENV%" || (echo could not create the environment & pause & exit /b 1)
 )
 echo installing packages ^(PyTorch and mediapipe; a few minutes the first time^)
-"%VENV%\Scripts\python.exe" -m pip install --quiet --upgrade pip setuptools wheel
+"%VENV%\Scripts\python.exe" -m pip install --quiet --upgrade pip wheel
 "%VENV%\Scripts\python.exe" -m pip install --quiet -r requirements.txt || (echo pip install failed; see above & pause & exit /b 1)
 
 set "THELIP_HOME=%WORK%"
