@@ -88,6 +88,28 @@ and "py launcher" ticked. macOS/Linux: `python3 -m venv .venv &&
   http server from it. `--token secret` makes the server refuse frames
   without that token (the link carries it).
 
+## Languages
+
+The page's "?" sheet has a language list; the choice goes with every
+sentence. What the server can read, with the authors' numbers on their own
+test sets (a phone is harder), all non-commercial weights:
+
+| | model | quality | fetched by |
+|---|---|---|---|
+| English | LRS3_V_WER19.1 (Auto-AVSR) | 19.1% WER on LRS3 | Hugging Face |
+| Spanish | CMU-MOSEAS es (VSR for Multiple Languages, Ma et al. 2022) | 44.5% WER | the authors' Google Drive (`gdown`) |
+| Portuguese | CMU-MOSEAS pt | 51.4% WER | Google Drive |
+| French | CMU-MOSEAS fr | 58.6% WER | Google Drive |
+| Mandarin | CMLR | 8.0% CER (news readers) | Google Drive |
+| **Hebrew** | none exists, anywhere | — | being trained: `example/thelip-train` |
+| Arabic, German | MuAViC (Meta AI, CC BY-NC), AV-HuBERT/fairseq | — | not wired yet |
+
+`run.py --languages en,es` limits what is downloaded (about 370 MB per
+language); `/health` lists each language with `available` (files present)
+and `loaded`. A read in a language without a model answers 503 with the
+reason, and the page says "no model yet" next to it. Registry:
+`languages.py`.
+
 ## Privacy, and learning from use
 
 Frames leave the phone only when a server is set, only for the sentence
@@ -121,8 +143,9 @@ mediapipe 0.10.35 without the Solutions API (hence the Tasks detector).
 ## Files
 
 - `server.py` — the HTTP server: `GET /health`, `POST /read` (multipart:
-  `fps`, `frames`…, `improve`), `POST /feedback`, CORS open, optional bearer
-  token, `--fake`; samples under `THELIP_DATA` (default `<work>/data`).
+  `fps`, `frames`…, `language`, `improve`), `POST /feedback`, CORS open,
+  optional bearer token, `--fake`; samples under `THELIP_DATA` (default
+  `<work>/data`). `languages.py` — the models per language.
 - `run.py` — fetches Chaplin, the models and cloudflared, starts the
   server and the tunnel, prints the link and the QR code, writes `link.txt`.
 - `thelip-server.cmd` — the Windows launcher: Python, `.venv`, packages,

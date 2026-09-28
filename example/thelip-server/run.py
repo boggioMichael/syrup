@@ -41,12 +41,8 @@ FACE_MODEL = os.path.join(WORK, "blaze_face_short_range.tflite")
 FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite"
 CHAPLIN_COMMIT = "7aee1f8fca776ce4f63690063310b53573b7d804"
 CHAPLIN_ZIP = f"https://github.com/amanvirparhar/chaplin/archive/{CHAPLIN_COMMIT}.zip"
-MODELS = [
-    ("benchmarks/LRS3/models/LRS3_V_WER19.1/model.json", "https://huggingface.co/Amanvir/LRS3_V_WER19.1/resolve/main/model.json", 1_000),
-    ("benchmarks/LRS3/models/LRS3_V_WER19.1/model.pth", "https://huggingface.co/Amanvir/LRS3_V_WER19.1/resolve/main/model.pth", 900_000_000),
-    ("benchmarks/LRS3/language_models/lm_en_subword/model.json", "https://huggingface.co/Amanvir/lm_en_subword/resolve/main/model.json", 500),
-    ("benchmarks/LRS3/language_models/lm_en_subword/model.pth", "https://huggingface.co/Amanvir/lm_en_subword/resolve/main/model.pth", 150_000_000),
-]
+sys.path.insert(0, HERE)
+from languages import LANGUAGES, runnable  # noqa: E402
 SITE = "https://thelip.ai/"
 # A Cloudflare named tunnel (a fixed address such as https://api.thelip.ai)
 # instead of a throwaway one: the tunnel's token in tunnel-token.txt, the
@@ -104,9 +100,60 @@ def ensure_chaplin() -> None:
     shutil.move(os.path.join(WORK, root), CHAPLIN_DIR)
 
 
-def ensure_models() -> None:
-    for rel, url, min_size in MODELS:
-        download(url, os.path.join(CHAPLIN_DIR, rel), min_size)
+def drive_download(url: str, dest_dir: str, what: str) -> None:
+    """A model archive from the authors' Google Drive (a bit.ly link to it):
+    fetched with gdown, then model.json and model.pth put in dest_dir."""
+    if os.path.isfile(os.path.join(dest_dir, "model.pth")) and os.path.isfile(os.path.join(dest_dir, "model.json")):
+        return
+    import gdown
+
+    os.makedirs(dest_dir, exist_ok=True)
+    say(f"downloading {what} from the authors' Google Drive ({url})")
+    tmp = os.path.join(dest_dir, "download")
+    os.makedirs(tmp, exist_ok=True)
+    got = gdown.download(url, os.path.join(tmp, "archive"), quiet=False, fuzzy=True)
+    if not got:
+        raise SystemExit(f"could not download {what}; open {url} in a browser and unpack model.json and model.pth into {dest_dir}")
+    found = {}
+    if zipfile.is_zipfile(got):
+        with zipfile.ZipFile(got) as z:
+            for name in z.namelist():
+                base = os.path.basename(name)
+                if base in ("model.json", "model.pth"):
+                    with z.open(name) as src, open(os.path.join(dest_dir, base), "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+                    found[base] = True
+    else:
+        import tarfile
+
+        if tarfile.is_tarfile(got):
+            with tarfile.open(got) as t:
+                for m in t.getmembers():
+                    base = os.path.basename(m.name)
+                    if base in ("model.json", "model.pth"):
+                        with t.extractfile(m) as src, open(os.path.join(dest_dir, base), "wb") as dst:
+                            shutil.copyfileobj(src, dst)
+                        found[base] = True
+    shutil.rmtree(tmp, ignore_errors=True)
+    if not ("model.json" in found and "model.pth" in found):
+        raise SystemExit(f"{what}: the download did not hold model.json and model.pth; unpack it by hand into {dest_dir}")
+
+
+def ensure_models(codes) -> None:
+    for code in codes:
+        spec = LANGUAGES[code]
+        if not runnable(code):
+            say(f"{spec['name']}: {spec['status']}")
+            continue
+        model_dir = os.path.join(CHAPLIN_DIR, "benchmarks", spec["model"])
+        lm_dir = os.path.join(CHAPLIN_DIR, "benchmarks", spec["lm"])
+        if "files" in spec:
+            for rel, (url, min_size) in spec["files"].items():
+                dest = os.path.join(lm_dir, rel[3:]) if rel.startswith("lm/") else os.path.join(model_dir, rel)
+                download(url, dest, min_size)
+        else:
+            drive_download(spec["drive"]["model"], model_dir, f"the {spec['name']} model")
+            drive_download(spec["drive"]["lm"], lm_dir, f"the {spec['name']} language model")
     download(FACE_MODEL_URL, FACE_MODEL, 100_000)
 
 
@@ -297,11 +344,16 @@ def main() -> None:
     ap.add_argument("--no-publish", action="store_true", help="do not write the address to thelip.ai's server.json")
     ap.add_argument("--token", default=os.environ.get("THELIP_TOKEN") or None)
     ap.add_argument("--fake", action="store_true")
+    ap.add_argument("--languages", default="en,es,fr,pt,zh", help="which models to fetch (comma-separated codes; en is always loaded)")
     args = ap.parse_args()
 
     if not args.fake:
         ensure_chaplin()
-        ensure_models()
+        codes = [c.strip().lower() for c in args.languages.split(",") if c.strip()]
+        unknown = [c for c in codes if c not in LANGUAGES]
+        if unknown:
+            raise SystemExit(f"unknown language codes {unknown}; known: {', '.join(LANGUAGES)}")
+        ensure_models(["en"] + [c for c in codes if c != "en"])
     tunnel_bin = None if args.no_tunnel else cloudflared_path()
 
     origin = f"http://127.0.0.1:{args.port}"

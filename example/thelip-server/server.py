@@ -14,14 +14,17 @@ encoder, a transformer decoder with a subword language model.
 Routes
     GET  /health            -> {"ok": true, "model": ..., "device": ..., "fake": bool}
     POST /read              multipart: fps=<number>, frames=<jpeg>... in order,
+                            language=<code> (en default; see languages.py),
                             improve=1 to keep the mouth crops for training
                             -> {"text": "HELLO THERE", "frames": 62, "seconds": 3.1, "id": ...}
-                            422 when no face is found in the frames
+                            422 when no face is found in the frames; 400 for an unknown
+                            language; 503 for a language whose model is not on this server
     POST /feedback          json: {"id": ..., "raw": ..., "corrected": ...}
                             -> {"ok": true}; the correction joins the kept crops
 
-English only, no audio, one speaker: the largest face in the frames. Text
-comes back in the model's upper-case tokens. Nothing is stored unless the
+No audio, one speaker: the largest face in the frames. Languages are the
+models in languages.py, loaded on first use; text comes back as the model
+writes it (upper case for the English one). Nothing is stored unless the
 request says improve=1: then the 96x96 grey mouth crops the model saw (not
 the frames, not the face) and the texts are written under data/<id>/, the
 material for training a better model on real phones and real speakers.
@@ -61,9 +64,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # because PyTorch's DLLs fail to initialise from a path with non-ASCII characters.
 WORK = os.environ.get("THELIP_HOME") or HERE
 CHAPLIN = os.environ.get("THELIP_CHAPLIN") or os.path.join(WORK, "chaplin")
+sys.path.insert(0, HERE)
+from languages import LANGUAGES, ORDER, describe, runnable  # noqa: E402
 FACE_MODEL = os.environ.get("THELIP_FACE_MODEL") or os.path.join(WORK, "blaze_face_short_range.tflite")
 DATA = os.environ.get("THELIP_DATA") or os.path.join(WORK, "data")
-CONFIG = "configs/LRS3_V_WER19.1.ini"
 MODEL_NAME = "LRS3_V_WER19.1 (Auto-AVSR, Ma et al. 2023) via Chaplin"
 MAX_FRAMES = 400
 
@@ -103,7 +107,8 @@ class FaceKeypoints:
 
 
 class Reader:
-    """The model behind /read. `fake=True` needs no torch and no weights."""
+    """The models behind /read, one per language, loaded on first use.
+    `fake=True` needs no torch and no weights."""
 
     def __init__(self, fake: bool = False, beam: int = 20, lm: bool = True, threads: Optional[int] = None):
         self.fake = fake
@@ -111,6 +116,7 @@ class Reader:
         self.device = "none"
         self.beam = beam
         self.lm = lm
+        self.models: dict = {}
         if fake:
             return
         import torch  # noqa: WPS433 (loaded here so --fake works without it)
@@ -129,40 +135,52 @@ class Reader:
             raise SystemExit(f"Chaplin is not at {CHAPLIN}; run.py downloads it")
         os.chdir(CHAPLIN)
         sys.path.insert(0, CHAPLIN)
-        from configparser import ConfigParser
-
-        cfg = ConfigParser()
-        cfg.read(CONFIG)
-        for key in ("model_path", "model_conf", "rnnlm", "rnnlm_conf"):
-            path = cfg.get("model", key)
-            if not os.path.isfile(path):
-                raise SystemExit(f"missing {path} under {CHAPLIN}; run.py downloads the model files")
-        from pipelines.model import AVSR  # noqa: E402
         from pipelines.data.data_module import AVSRDataLoader  # noqa: E402
 
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.loader = AVSRDataLoader("video", speed_rate=1, detector="mediapipe")
         self.detector = FaceKeypoints(FACE_MODEL)
-        self.model = AVSR(
-            "video", cfg.get("model", "model_path"), cfg.get("model", "model_conf"),
-            cfg.get("model", "rnnlm") if lm else None, cfg.get("model", "rnnlm_conf") if lm else None,
-            penalty=cfg.getfloat("decode", "penalty"), ctc_weight=cfg.getfloat("decode", "ctc_weight"),
-            lm_weight=cfg.getfloat("decode", "lm_weight") if lm else 0.0, beam_size=beam, device=self.device,
-        )
         self.torch = torch
+        self.model_for("en")  # the default language, ready before the first request
 
-    def read(self, video: np.ndarray):
+    def available(self, code: str) -> bool:
+        return runnable(code) and describe(code, CHAPLIN)["available"]
+
+    def model_for(self, code: str):
+        """The AVSR model of a language, loaded the first time it is asked for."""
+        if code in self.models:
+            return self.models[code]
+        from pipelines.model import AVSR  # noqa: E402
+
+        spec = LANGUAGES[code]
+        base = os.path.join(CHAPLIN, "benchmarks")
+        model_dir, lm_dir = os.path.join(base, spec["model"]), os.path.join(base, spec["lm"])
+        if not os.path.isfile(os.path.join(model_dir, "model.pth")):
+            raise SystemExit(f"missing {model_dir}/model.pth; run.py downloads the model files")
+        use_lm = self.lm and os.path.isfile(os.path.join(lm_dir, "model.pth"))
+        beam = self.beam if code == "en" else min(self.beam, spec["beam"])
+        print(f"loading {spec['name']} ({spec['quality']})", flush=True)
+        self.models[code] = AVSR(
+            "video", os.path.join(model_dir, "model.pth"), os.path.join(model_dir, "model.json"),
+            os.path.join(lm_dir, "model.pth") if use_lm else None, os.path.join(lm_dir, "model.json") if use_lm else None,
+            penalty=spec["penalty"], ctc_weight=spec["ctc_weight"], lm_weight=spec["lm_weight"] if use_lm else 0.0,
+            beam_size=beam, device=self.device,
+        )
+        return self.models[code]
+
+    def read(self, video: np.ndarray, language: str = "en"):
         """video: (T, H, W, 3) RGB uint8 at 25 fps -> (transcript, mouth crops
-        (T, 96, 96) uint8 grey — what the model saw, or None when fake)."""
+        (T, 96, 96) uint8 grey — what the model saw)."""
         if self.fake:
-            return f"FAKE READING OF {len(video)} FRAMES", np.zeros((len(video), 96, 96), np.uint8)
+            return f"FAKE {language.upper()} READING OF {len(video)} FRAMES", np.zeros((len(video), 96, 96), np.uint8)
         with self.lock:
+            model = self.model_for(language)
             landmarks = self.detector.detect(video)
             if all(l is None for l in landmarks):
                 raise NoFace()
             crops = self.loader.video_process(video, landmarks)
             data = self.loader.video_transform(self.torch.tensor(crops))
-            return self.model.infer(data), np.asarray(crops, dtype=np.uint8)
+            return model.infer(data), np.asarray(crops, dtype=np.uint8)
 
 
 class NoFace(Exception):
@@ -208,9 +226,18 @@ def decode_jpeg(data: bytes) -> np.ndarray:
 
 
 def create_app(reader: Reader, token: Optional[str] = None) -> Starlette:
+    def languages():
+        out = []
+        for code in ORDER:
+            entry = describe(code, None if reader.fake else CHAPLIN)
+            entry["loaded"] = code in reader.models
+            out.append(entry)
+        return out
+
     async def health(request: Request):
         return JSONResponse({"ok": True, "model": MODEL_NAME, "device": reader.device, "fake": reader.fake,
-                             "beam": reader.beam, "lm": reader.lm, "max_frames": MAX_FRAMES, "keeps": "mouth crops and texts, only when asked (improve=1)"})
+                             "beam": reader.beam, "lm": reader.lm, "max_frames": MAX_FRAMES,
+                             "languages": languages(), "keeps": "mouth crops and texts, only when asked (improve=1)"})
 
     async def read(request: Request):
         if token and request.headers.get("authorization") != f"Bearer {token}":
@@ -225,6 +252,13 @@ def create_app(reader: Reader, token: Optional[str] = None) -> Starlette:
             fps = float(form.get("fps", "25"))
         except ValueError:
             fps = 25.0
+        language = str(form.get("language", "en")).lower()[:8]
+        if language not in LANGUAGES:
+            return JSONResponse({"error": f"unknown language {language!r}"}, status_code=400)
+        if not runnable(language):
+            return JSONResponse({"error": f"no model for {LANGUAGES[language]['name']}: {LANGUAGES[language]['status']}"}, status_code=503)
+        if not reader.fake and not reader.available(language):
+            return JSONResponse({"error": f"the {LANGUAGES[language]['name']} model is not downloaded on this server"}, status_code=503)
         started = time.time()
         frames: List[np.ndarray] = []
         for f in files:
@@ -237,14 +271,15 @@ def create_app(reader: Reader, token: Optional[str] = None) -> Starlette:
             idx = np.clip(np.round(np.arange(0, len(video) * 25.0 / fps) * fps / 25.0).astype(int), 0, len(video) - 1)
             video = video[idx]
         try:
-            text, crops = await _run(reader.read, video)
+            text, crops = await _run(reader.read, video, language)
         except NoFace:
             return JSONResponse({"error": "no face found in the frames"}, status_code=422)
         sample_id = None
         if str(form.get("improve", "")) == "1":
-            sample_id = keep_sample(crops, {"raw": text, "fps": 25, "frames": int(len(video)),
+            sample_id = keep_sample(crops, {"raw": text, "language": language, "fps": 25, "frames": int(len(video)),
                                             "source": str(form.get("source", ""))[:40]})
-        return JSONResponse({"text": text, "frames": int(len(video)), "seconds": round(time.time() - started, 2), "id": sample_id})
+        return JSONResponse({"text": text, "language": language, "frames": int(len(video)),
+                             "seconds": round(time.time() - started, 2), "id": sample_id})
 
     async def feedback(request: Request):
         if token and request.headers.get("authorization") != f"Bearer {token}":

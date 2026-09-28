@@ -76,6 +76,9 @@ def main() -> int:
                 time.sleep(0.1)
         status, headers, body = call("GET", "/health", headers={"Origin": "https://thelip.ai"})
         check("health answers", status == 200 and body["ok"] is True and body["fake"] is True, body)
+        langs = {l["code"]: l for l in body.get("languages", [])}
+        check("health lists the languages, Hebrew first after English", [l["code"] for l in body["languages"]][:2] == ["en", "he"] and langs["he"]["available"] is False and "status" in langs["he"], body.get("languages"))
+        check("the runnable ones carry their quality and licence", langs["es"]["available"] and "44.5%" in langs["es"]["quality"] and "non-commercial" in langs["es"]["licence"], langs.get("es"))
         check("CORS allows thelip.ai", headers.get("access-control-allow-origin") == "*", headers)
 
         req = urllib.request.Request(f"http://127.0.0.1:{PORT}/read", method="OPTIONS")
@@ -92,7 +95,16 @@ def main() -> int:
         check("token required", status == 401, body)
         auth = {"Authorization": "Bearer t0k"}
         status, _, body = call("POST", "/read", data, ctype, auth)
-        check("30 frames at 25 fps read", status == 200 and body["text"] == "FAKE READING OF 30 FRAMES" and body["frames"] == 30, body)
+        check("30 frames at 25 fps read", status == 200 and body["text"] == "FAKE EN READING OF 30 FRAMES" and body["frames"] == 30 and body["language"] == "en", body)
+        ctype, data = multipart([("fps", "25"), ("language", "es")], [("frames", f"f{i:04d}.jpg", jpeg()) for i in range(10)])
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        check("a language goes with the read", status == 200 and body["text"] == "FAKE ES READING OF 10 FRAMES" and body["language"] == "es", body)
+        ctype, data = multipart([("fps", "25"), ("language", "he")], [("frames", "a.jpg", jpeg())])
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        check("a language without a model is 503 with the reason", status == 503 and "Hebrew" in body["error"], body)
+        ctype, data = multipart([("fps", "25"), ("language", "xx")], [("frames", "a.jpg", jpeg())])
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        check("an unknown language is 400", status == 400, body)
 
         ctype, data = multipart([("fps", "30")], [("frames", f"f{i:04d}.jpg", jpeg()) for i in range(30)])
         status, _, body = call("POST", "/read", data, ctype, auth)
@@ -104,12 +116,12 @@ def main() -> int:
         sample = body.get("id")
         check("improve=1 keeps a sample and returns its id", status == 200 and isinstance(sample, str) and len(sample) == 32, body)
         folder = os.path.join(DATA, sample or "none")
-        check("the sample holds the crops and the reading", os.path.isfile(os.path.join(folder, "crops.npy")) and json.load(open(os.path.join(folder, "meta.json")))["raw"] == "FAKE READING OF 12 FRAMES", os.listdir(folder) if os.path.isdir(folder) else "no folder")
+        check("the sample holds the crops and the reading", os.path.isfile(os.path.join(folder, "crops.npy")) and json.load(open(os.path.join(folder, "meta.json")))["raw"] == "FAKE EN READING OF 12 FRAMES", os.listdir(folder) if os.path.isdir(folder) else "no folder")
         import numpy as np
 
         crops = np.load(os.path.join(folder, "crops.npy"))
         check("crops are (T, 96, 96) uint8", crops.shape == (12, 96, 96) and crops.dtype == np.uint8, str(crops.shape))
-        status, _, body = call("POST", "/feedback", json.dumps({"id": sample, "raw": "FAKE READING OF 12 FRAMES", "corrected": "hello there"}).encode(), "application/json", auth)
+        status, _, body = call("POST", "/feedback", json.dumps({"id": sample, "raw": "FAKE EN READING OF 12 FRAMES", "corrected": "hello there"}).encode(), "application/json", auth)
         meta = json.load(open(os.path.join(folder, "meta.json")))
         check("feedback records the correction", status == 200 and meta.get("corrected") == "hello there" and meta.get("confirmed") is False, meta)
         status, _, body = call("POST", "/feedback", json.dumps({"id": "../evil", "raw": "", "corrected": ""}).encode(), "application/json", auth)

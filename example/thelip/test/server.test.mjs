@@ -48,12 +48,12 @@ try {
   let text = "";
   while (Date.now() < deadline) {
     text = await page.$eval("#sub", (e) => e.textContent.trim());
-    if (/^fake reading of \d+ frames$/.test(text)) break;
+    if (/^fake en reading of \d+ frames$/.test(text)) break;
     await new Promise((r) => setTimeout(r, 250));
   }
   const debug = await page.evaluate(() => window.lipLive.debug);
   console.log("     debug:", JSON.stringify(debug));
-  check("the frames went to the server and its answer is the subtitle", /^fake reading of \d+ frames$/.test(text), text);
+  check("the frames went to the server and its answer is the subtitle", /^fake en reading of \d+ frames$/.test(text), text);
   const n = +(text.match(/(\d+) frames/) || [])[1];
   check("a sentence's worth of frames was sent (20..250)", n >= 20 && n <= 250, String(n));
   check("no local words were shown for that utterance", debug.finished === 0 && debug.reads === 0, JSON.stringify(debug));
@@ -79,21 +79,29 @@ try {
     await page2.click("#helpBtn");
     check("the sheet says it is thelip's server", /connected to thelip's server/.test(await page2.$eval("#serverStatus", (e) => e.textContent)));
     check("keeping sentences is off by default", !(await page2.$eval("#improve", (e) => e.checked)));
+    const options = await page2.$$eval("#lang option", (os) => os.map((o) => [o.value, o.textContent]));
+    check("the language list starts English, Hebrew, Spanish, Arabic, Chinese, French, German", options.map((o) => o[0]).join(",").startsWith("en,he,es,ar,zh,fr,de"), JSON.stringify(options));
+    check("languages without a model say so", options.find((o) => o[0] === "he")[1].includes("no model yet") && !options.find((o) => o[0] === "es")[1].includes("no model"), JSON.stringify(options));
+    await page2.selectOption("#lang", "es");
+    check("the language is remembered and the prompt follows it", await page2.evaluate(() => localStorage.getItem("thelip.language") === "es" && window.lipLive.language === "es") && (await page2.$eval("#sentence", (e) => e.textContent)) === "anything, in Español");
+    check("the sheet shows that language's quality", /44\.5%/.test(await page2.$eval("#langStatus", (e) => e.textContent)), await page2.$eval("#langStatus", (e) => e.textContent));
     await page2.click("#improve");
     check("the switch is remembered", await page2.evaluate(() => localStorage.getItem("thelip.improve") === "1"));
     await page2.click("#closeSheet");
     await page2.waitForFunction(() => window.lipLive.lastRead && window.lipLive.lastRead.id, null, { timeout: 90000 });
     const read = await page2.evaluate(() => window.lipLive.lastRead);
     check("with the switch on, the server kept a sample and the page holds its id", /^[0-9a-f]{32}$/.test(read.id), JSON.stringify(read));
-    // Tap the subtitle, fix the text, send it.
+    check("the read went in the chosen language", /^FAKE ES READING/.test(read.raw), read.raw);
+    // Tap the subtitle, fix the text, send it. (The fake camera keeps talking, so
+    // the subtitle is read the moment the fix lands, before the next sentence.)
     await page2.evaluate(() => window.lipLive.openFix());
     await page2.fill(".fix input", "hello there");
-    await page2.press(".fix input", "Enter");
+    const shown = await page2.evaluate(() => { const i = document.querySelector(".fix input"); i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); return document.querySelector("#sub").textContent.trim(); });
+    check("the subtitle shows the correction", shown === "hello there", shown);
     await page2.waitForFunction(() => window.lipLive.debug.server.lastFeedback && window.lipLive.debug.server.lastFeedback.corrected === "hello there", null, { timeout: 10000 });
     await new Promise((r) => setTimeout(r, 800));
-    check("the subtitle shows the correction", (await page2.$eval("#sub", (e) => e.textContent.trim())) === "hello there");
     const meta = JSON.parse(fs.readFileSync(path.join(dataDir, read.id, "meta.json"), "utf8"));
-    check("the correction reached the kept sample", meta.corrected === "hello there" && meta.raw === read.raw, JSON.stringify(meta));
+    check("the correction reached the kept sample, with the language", meta.corrected === "hello there" && meta.raw === read.raw && meta.language === "es", JSON.stringify(meta));
     check("the sample holds the crops", fs.existsSync(path.join(dataDir, read.id, "crops.npy")));
   } finally { api2.kill(); }
   console.log(failures ? `${failures} FAILED` : "ALL PASSED");

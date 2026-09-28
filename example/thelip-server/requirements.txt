@@ -16,3 +16,4 @@ starlette
 uvicorn
 python-multipart
 qrcode
+gdown
