@@ -20,6 +20,17 @@ PORT = 8797
 DATA = os.path.join(HERE, "test-data")
 
 
+def jpeg2(left, right, w=96, h=40) -> bytes:
+    """Two halves of different shades: two "faces" for the fake server."""
+    from PIL import Image
+
+    im = Image.new("RGB", (w, h), (right, right, right))
+    im.paste(Image.new("RGB", (w // 2, h), (left, left, left)), (0, 0))
+    buf = io.BytesIO()
+    im.save(buf, "JPEG")
+    return buf.getvalue()
+
+
 def jpeg(w=64, h=48, shade=128) -> bytes:
     from PIL import Image
 
@@ -96,6 +107,28 @@ def main() -> int:
         nonlocal failures
         print(("ok   " if cond else "FAIL ") + name + (f": {detail}" if detail and not cond else ""))
         failures += 0 if cond else 1
+
+    # Following several faces through a stretch of frames (faces.py).
+    sys.path.insert(0, HERE)
+    import numpy as np
+    from faces import activity, track_faces
+
+    kp = lambda x, y: np.array([[x - 10, y - 10], [x + 10, y - 10], [x, y], [x, y + 15]])  # noqa: E731
+    dets = []
+    for t in range(20):
+        frame = [((100 + t, 50, 80, 100), kp(140 + t, 100)), ((400 - t, 60, 50, 60), kp(425 - t, 90))]
+        if t in (7,):
+            frame = frame[:1]                     # the small face missed once
+        if t < 5:
+            frame.append(((250, 10, 20, 20), kp(260, 20)))   # a fleeting third face
+        dets.append(frame)
+    tracks = track_faces(dets, 640, 360)
+    check("two faces followed through the frames, the largest first, a fleeting one dropped",
+          len(tracks) == 2 and tracks[0]["box"][2] > tracks[1]["box"][2] and abs(tracks[0]["box"][0] - (109.5 / 640)) < 0.01, [t["box"] for t in tracks])
+    check("a frame where a face was missed is left for the alignment to fill", tracks[1]["landmarks"][7] is None and tracks[1]["landmarks"][8] is not None)
+    still = np.tile(np.random.default_rng(1).normal(size=(1, 16)), (30, 1))
+    moving = np.random.default_rng(2).normal(size=(30, 16))
+    check("activity: a still mouth near 0, a moving one well above", activity(still) < 1e-6 and activity(moving) > 0.5, (activity(still), activity(moving)))
 
     # The worker protocol, without torch: the server's client end against trained_worker.py --fake.
     sys.argv.append("--fake")
@@ -253,6 +286,19 @@ def main() -> int:
         ctype, data = multipart([("fps", "25"), ("language", "ar")], ramp(30, 40, 220))
         status, _, body = call("POST", "/read", data, ctype, auth)
         check("without a profile Arabic is still 503", status == 503, body)
+
+        # Two faces: the one whose mouth moves is read, the still one is not.
+        frames = [("frames", f"f{i:04d}.jpg", jpeg2(60 + (i % 5) * 35, 120)) for i in range(30)]
+        ctype, data = multipart([("fps", "25")], frames)
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        faces = body.get("faces") or []
+        check("several faces: each with its box and whether it spoke; the speaking one read and main",
+              status == 200 and len(faces) == 2 and faces[0]["speaking"] and faces[0]["main"] and faces[0]["text"] == "FAKE EN FACE 1 READING OF 30 FRAMES"
+              and not faces[1]["speaking"] and faces[1]["text"] is None and body["text"] == faces[0]["text"] and len(faces[0]["box"]) == 4, body)
+        frames = [("frames", f"f{i:04d}.jpg", jpeg2(60 + (i % 5) * 35, 40 + (i % 3) * 60)) for i in range(30)]
+        ctype, data = multipart([("fps", "25")], frames)
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        check("two people speaking at once are both read", status == 200 and [f["text"] for f in body.get("faces", [])] == ["FAKE EN FACE 1 READING OF 30 FRAMES", "FAKE EN FACE 2 READING OF 30 FRAMES"], body)
 
         ctype, data = multipart([("fps", "25")], [])
         status, _, body = call("POST", "/read", data, ctype, auth)

@@ -110,6 +110,25 @@ and `loaded`. A read in a language without a model answers 503 with the
 reason, and the page says "no model yet" next to it. Registry:
 `languages.py`.
 
+### Several faces
+
+Every face in the frames is found (BlazeFace gives them all) and followed
+through the stretch by overlap from frame to frame (`faces.py`); one seen
+in under half the frames is dropped, at most four are kept, largest
+first. With one face nothing changes. With several, each face's mouth is
+cropped and aligned on its own, the English model's encoder describes it
+frame by frame, and a face whose description changes like speech
+(`activity`, the mean cosine distance between consecutive frames, at or
+above `SPEAKING`) is read; a still one is marked not speaking and gets no
+text, so that a listener's mouth is not made to say something. Two people
+speaking at once are both read — their voices would mix in a microphone,
+their lips do not. `/read` then answers with `faces`: each face's box (as
+fractions of the frame), text, `speaking`, `activity`, and which is the
+`main` one (the largest speaking face, whose reading is also `text`). The
+page draws a frame around each face and its words under it. Kept samples
+record how many faces there were (`faces` in meta.json), since the
+microphone cannot tell whose voice it heard.
+
 ### A language with no model: your own phrases
 
 Until a model exists for it (Hebrew is being trained), a language is read
@@ -192,6 +211,8 @@ mediapipe 0.10.35 without the Solutions API (hence the Tasks detector).
   sound), `POST /feedback`, CORS open, optional bearer token, `--fake`;
   samples under `THELIP_DATA` (default `<work>/data`). `languages.py` —
   the models per language.
+- `faces.py` — following several faces through a stretch, and whether each
+  was speaking.
 - `phrases.py` — a reader's own phrases, matched from the lips (dynamic
   time warping over the encoder's features).
 - `hear.py`, `hear_worker.py` — speech recognition for the labels, in a

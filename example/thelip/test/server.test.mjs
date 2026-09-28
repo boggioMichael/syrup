@@ -3,7 +3,7 @@
 // frames to the server (thelip-server --fake here) and shows what it answers.
 //   NODE_PATH=$(npm root -g) node test/server.test.mjs
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
@@ -97,7 +97,11 @@ try {
     const heard = await page2.evaluate(() => window.lipLive.lastHeard);
     check("the sound of the utterance was heard by the server and joined the sample", heard && /^FAKE HEARD \d+\.\ds$/.test(heard.heard) && (heard.id === null || heard.id === read.id) && heard.seconds > 0.3, JSON.stringify(heard));
     await page2.waitForFunction(() => window.lipLive.heard, null, { timeout: 5000 }).catch(() => {});
-    check("what was heard shows under the subtitle", /🎤 FAKE HEARD/.test(await page2.evaluate(() => window.lipLive.heard || "")), await page2.evaluate(() => window.lipLive.heard));
+    check("what was heard shows under the subtitle, word by word, with the lips' score", /🎤 heard\s*fake heard .*— \d+ of \d+/.test(await page2.evaluate(() => window.lipLive.heard || "")), await page2.evaluate(() => window.lipLive.heard));
+    const align = await page2.evaluate(() => window.lipLive.debug.server.lastAlign);
+    check("the lips' line is shown again against it, marked right and wrong", align && align.hits >= 1 && (await page2.evaluate(() => document.querySelectorAll("#sub .hit").length)) >= 1 && (await page2.evaluate(() => document.querySelectorAll("#sub .wrong").length)) >= 1 && /👄/.test(await page2.evaluate(() => window.lipLive.text)), JSON.stringify(align));
+    await page2.screenshot({ path: path.join(here, "server.png") });
+    check("the sheet keeps a running score", /the lips got \d+ of \d+ words/.test(await page2.$eval("#tally", (e) => e.textContent)), await page2.$eval("#tally", (e) => e.textContent));
     // Tap the subtitle, fix the text, send it. (The fake camera keeps talking, so
     // the subtitle is read the moment the fix lands, before the next sentence.)
     await page2.evaluate(() => window.lipLive.openFix());
@@ -143,6 +147,23 @@ try {
     const fileRead = await page2.evaluate(() => ({ text: window.lipLive.debug.server.lastText, frames: window.lipLive.debug.server.fileFrames, shown: window.lipLive.text }));
     const sent = Number((fileRead.text.match(/OF (\d+) FRAMES/) || [])[1]);
     check("an opened clip is read on the server, all of it (~3 s = ~74 frames)", sent >= 70 && sent <= 76 && fileRead.frames >= 70 && /fake es reading/.test(fileRead.shown), JSON.stringify(fileRead));
+
+    // Two people in a clip (the fake server sees two faces in a frame twice as wide as tall;
+    // the left one's brightness moves like a speaking mouth, the right one's does not).
+    const two = path.join(os.tmpdir(), "thelip-two-faces.webm");
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:s=192x64:d=3:r=25,format=yuv420p,geq=lum='if(lt(X,W/2),128+70*sin(2*PI*T*3),120)':cb=128:cr=128",
+      "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "30", two]);
+    const twoB64 = fs.readFileSync(two).toString("base64");
+    await page2.evaluate(async (b64) => {
+      window.lipLive.debug.server.fileFrames = null; window.lipLive.debug.server.lastFaces = null;
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      window.lipLive.startFile(new File([bytes], "two.webm", { type: "video/webm" }));
+    }, twoB64);
+    await page2.waitForFunction(() => window.lipLive.debug.server.fileFrames && window.lipLive.debug.server.lastFaces, null, { timeout: 90000 }).catch(() => {});
+    const faceEls = await page2.$$eval("#faces .face", (els) => els.map((e) => ({ speaking: e.classList.contains("speaking"), said: e.querySelector(".said").textContent })));
+    check("two faces in a clip: a frame around each, the speaking one's words under it, the other marked not speaking",
+          faceEls.length === 2 && faceEls[0].speaking && /fake es face 1 reading/.test(faceEls[0].said) && !faceEls[1].speaking && /not speaking/.test(faceEls[1].said), JSON.stringify(faceEls));
+    await page2.screenshot({ path: path.join(here, "faces.png") });
 
     // A server a link set (a throwaway tunnel, usually) that has died: thelip's server takes its place.
     await page2.evaluate(() => { localStorage.setItem("thelip.server", "http://127.0.0.1:8799"); localStorage.setItem("thelip.token", "old"); });

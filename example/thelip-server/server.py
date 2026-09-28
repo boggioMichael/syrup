@@ -21,7 +21,9 @@ Routes
                             profile=<the page's id> to read a language without a model
                             from the phrases this reader kept before (phrases.py)
                             -> {"text": "HELLO THERE", "how": "model"|"learned"|"unmatched"|"none",
-                                "frames": 62, "seconds": 3.1, "id": ...}
+                                "frames": 62, "seconds": 3.1, "id": ...,
+                                "faces": [{"box": [x, y, w, h] as fractions, "text", "speaking",
+                                           "activity", "main"}, ...] when there are several faces}
                             422 when no face is found in the frames; 400 for an unknown
                             language; 503 for a language whose model is not on this server
     GET  /phrases?profile=&language=   the phrases learned for that reader and language
@@ -82,6 +84,7 @@ MODELS = os.environ.get("THELIP_MODELS") or os.path.join(WORK, "models")   # exp
 sys.path.insert(0, HERE)
 from hear import HEBREW, Transcriber  # noqa: E402
 from languages import LANGUAGES, ORDER, describe, runnable, trained_models  # noqa: E402
+from faces import SPEAKING, activity, track_faces  # noqa: E402
 from phrases import LearnedPhrases, valid_profile  # noqa: E402
 from version import SERVER_VERSION  # noqa: E402
 FACE_MODEL = os.environ.get("THELIP_FACE_MODEL") or os.path.join(WORK, "blaze_face_short_range.tflite")
@@ -108,6 +111,20 @@ class FaceKeypoints:
             base_options=BaseOptions(model_asset_path=model_path),
             running_mode=vision.RunningMode.IMAGE, min_detection_confidence=0.5)
         self.detector = vision.FaceDetector.create_from_options(options)
+
+    def detect_all(self, video: np.ndarray) -> list:
+        """Every face in every frame: per frame a list of (box (x, y, w, h) in pixels, keypoints 4 x 2)."""
+        out = []
+        for frame in video:
+            h, w = frame.shape[:2]
+            image = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=np.ascontiguousarray(frame))
+            faces = []
+            for d in self.detector.detect(image).detections:
+                bb = d.bounding_box
+                kps = np.array([[int(d.keypoints[i].x * w), int(d.keypoints[i].y * h)] for i in range(4)])
+                faces.append(((float(bb.origin_x), float(bb.origin_y), float(bb.width), float(bb.height)), kps))
+            out.append(faces)
+        return out
 
     def detect(self, video: np.ndarray) -> list:
         out = []
@@ -272,22 +289,67 @@ class Reader:
         model saw; the visual encoder's features (T, D), when `phrases` asks for
         them and there is no model to read with — see phrases.py)."""
         if self.fake:
-            has_model = runnable(language) or language in trained_models(MODELS)
-            text = f"FAKE {language.upper()} READING OF {len(video)} FRAMES" if has_model else None
-            crops = np.zeros((len(video), 96, 96), np.uint8)
-            return text, crops, self.fake_features(video) if (phrases and text is None) else None
+            return self._fake_read(video, language, phrases)
         with self.lock:
             model = self.model_for(language) if self.available(language) else None
-            landmarks = self.detector.detect(video)
-            if all(l is None for l in landmarks):
+            height, width = video.shape[1:3]
+            dets = self.detector.detect_all(video)
+            if not any(dets):
                 raise NoFace()
-            crops = np.asarray(self.loader.video_process(video, landmarks), dtype=np.uint8)
-            text = None
-            if isinstance(model, TrainedModel):
-                text = model.infer(crops)
-            elif model is not None:
-                text = model.infer(self.loader.video_transform(self.torch.tensor(crops)))
-            return text, crops, self.embed(crops) if (phrases and text is None) else None
+            tracks = track_faces(dets, width, height)
+            if not tracks:   # faces too fleeting to follow: the largest in each frame, as before
+                tracks = [{"landmarks": [max(f, key=lambda d: d[0][2] * d[0][3])[1] if f else None for f in dets], "box": None}]
+            if len(tracks) == 1:
+                crops = self._crops(video, tracks[0]["landmarks"])
+                text = self._infer(model, crops)
+                return {"text": text, "crops": crops, "features": self.embed(crops) if (phrases and text is None) else None, "faces": None}
+            # Several faces: each one's mouth, its encoder features, and whether it
+            # moved like speech; the speaking ones are read, the largest of them is the main.
+            faces = []
+            for tr in tracks:
+                crops = self._crops(video, tr["landmarks"])
+                feats = self.embed(crops)
+                faces.append({"crops": crops, "features": feats, "activity": activity(feats), "box": tr["box"]})
+            return self._decide(faces, lambda f: self._infer(model, f["crops"]), phrases)
+
+    def _decide(self, faces: list, infer, phrases: bool) -> dict:
+        """Several faces, largest first, each with "activity": which spoke, their texts, the main one."""
+        speaking = [f for f in faces if f["activity"] >= SPEAKING] or [max(faces, key=lambda f: f["activity"])]
+        for f in faces:
+            f["speaking"] = any(f is g for g in speaking)
+            f["text"] = infer(f) if f["speaking"] else None
+        main = speaking[0]
+        return {"text": main["text"], "crops": main["crops"],
+                "features": main.get("features") if (phrases and main["text"] is None) else None,
+                "faces": [{"box": f["box"], "text": f["text"], "speaking": f["speaking"], "activity": round(float(f["activity"]), 4),
+                           "main": f is main} for f in faces]}
+
+    def _crops(self, video: np.ndarray, landmarks: list) -> np.ndarray:
+        return np.asarray(self.loader.video_process(video, landmarks), dtype=np.uint8)
+
+    def _infer(self, model, crops: np.ndarray):
+        if isinstance(model, TrainedModel):
+            return model.infer(crops)
+        if model is not None:
+            return model.infer(self.loader.video_transform(self.torch.tensor(crops)))
+        return None
+
+    def _fake_read(self, video: np.ndarray, language: str, phrases: bool) -> dict:
+        """No model: a fixed text. A frame at least twice as wide as tall holds two
+        faces side by side (tests), speaking when its half changes brightness."""
+        has_model = runnable(language) or language in trained_models(MODELS)
+        n = len(video)
+        height, width = video.shape[1:3]
+        crops = np.zeros((n, 96, 96), np.uint8)
+        if width < 2 * height:
+            text = f"FAKE {language.upper()} READING OF {n} FRAMES" if has_model else None
+            return {"text": text, "crops": crops, "features": self.fake_features(video) if (phrases and text is None) else None, "faces": None}
+        faces = []
+        for k, half in enumerate((video[:, :, : width // 2], video[:, :, width // 2:])):
+            brightness = half.reshape(n, -1).mean(axis=1) / 255.0
+            faces.append({"crops": crops, "features": self.fake_features(half), "activity": float(np.std(brightness)),
+                          "box": (round(0.5 * k + 0.1, 4), 0.2, 0.3, 0.5), "k": k + 1})
+        return self._decide(faces, lambda f: f"FAKE {language.upper()} FACE {f['k']} READING OF {n} FRAMES" if has_model else None, phrases)
 
     def embed(self, crops: np.ndarray) -> np.ndarray:
         """The English model's encoder output for the crops, (T, D) float16 —
@@ -451,7 +513,8 @@ def create_app(reader: Reader, token: Optional[str] = None, transcriber: Optiona
             video = video[idx]
         improve = str(form.get("improve", "")) == "1"
         try:
-            text, crops, features = await _run(reader.read, video, language, bool(profile))
+            res = await _run(reader.read, video, language, bool(profile))
+            text, crops, features = res["text"], res["crops"], res["features"]
         except NoFace:
             return JSONResponse({"error": "no face found in the frames"}, status_code=422)
         except RuntimeError as e:  # the model's process failed on this clip
@@ -470,7 +533,8 @@ def create_app(reader: Reader, token: Optional[str] = None, transcriber: Optiona
         utt = str(form.get("utt", ""))[:32]
         if improve:
             meta = {"raw": text if how == "model" else None, "language": language, "fps": 25, "frames": int(len(video)),
-                    "source": str(form.get("source", ""))[:40], "utt": utt if valid_utt(utt) else None, "profile": profile}
+                    "source": str(form.get("source", ""))[:40], "utt": utt if valid_utt(utt) else None, "profile": profile,
+                    "faces": len(res["faces"]) if res.get("faces") else 1}
             if learned:   # what the lips were matched to, and how near: the numbers the thresholds are set from
                 meta.update(learned=text if how == "learned" else None, learned_nearest=learned["nearest"],
                             learned_distance=learned["distance"], learned_margin=learned["margin"])
@@ -479,6 +543,11 @@ def create_app(reader: Reader, token: Optional[str] = None, transcriber: Optiona
                "seconds": round(time.time() - started, 2), "id": sample_id}
         if learned:
             out["learned"] = {k: learned[k] for k in ("examples", "distance", "margin", "nearest")}
+        if res.get("faces"):
+            out["faces"] = res["faces"]
+            for f in out["faces"]:   # the main face's reading is the one the phrases and the page's subtitle use
+                if f["main"]:
+                    f["text"] = text
         return JSONResponse(out)
 
     async def hear(request: Request):
