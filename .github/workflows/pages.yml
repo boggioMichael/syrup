@@ -5,6 +5,9 @@ name: Pages
 # Pages was enabled by the first push of that branch; nothing to click.
 # Each run adds one commit to gh-pages whose tree is docs/ as it is on the
 # pushed commit, and skips the commit when nothing under docs/ changed.
+# server.json is the exception: thelip-server writes the running server's
+# address there (run.py's publish_pointer), so the copy on gh-pages is kept
+# over the repository's placeholder.
 on:
   push:
     branches: [main, claude/intents-2]
@@ -31,9 +34,15 @@ jobs:
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
           set -eu
-          tree=$(git write-tree --prefix=docs/)
           if git fetch --depth 1 origin gh-pages; then
             parent=$(git rev-parse FETCH_HEAD)
+            if git cat-file -e "$parent:server.json" 2>/dev/null; then
+              git show "$parent:server.json" > docs/server.json   # the running server's address stays
+              git add docs/server.json
+            fi
+          fi
+          tree=$(git write-tree --prefix=docs/)
+          if [ -n "${parent:-}" ]; then
             if [ "$(git rev-parse "$parent^{tree}")" = "$tree" ]; then
               echo "gh-pages already has docs/ from this tree; nothing to publish"
               exit 0
