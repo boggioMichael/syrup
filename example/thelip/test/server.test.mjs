@@ -103,6 +103,15 @@ try {
     const meta = JSON.parse(fs.readFileSync(path.join(dataDir, read.id, "meta.json"), "utf8"));
     check("the correction reached the kept sample, with the language", meta.corrected === "hello there" && meta.raw === read.raw && meta.language === "es", JSON.stringify(meta));
     check("the sample holds the crops", fs.existsSync(path.join(dataDir, read.id, "crops.npy")));
+
+    // A server a link set (a throwaway tunnel, usually) that has died: thelip's server takes its place.
+    await page2.evaluate(() => { localStorage.setItem("thelip.server", "http://127.0.0.1:8799"); localStorage.setItem("thelip.token", "old"); });
+    await page2.reload();
+    await page2.waitForFunction(() => window.lipLive && window.lipLive.ready, null, { timeout: 60000 });
+    await page2.waitForFunction(() => window.lipLive.server === "http://127.0.0.1:8797", null, { timeout: 20000 });
+    check("a dead server from a link gives way to thelip's server, and is forgotten",
+          await page2.evaluate(() => localStorage.getItem("thelip.server") === null && localStorage.getItem("thelip.token") === null && window.lipLive.language === "es"));
+    check("the sheet says so", /connected to thelip's server/.test(await page2.$eval("#serverStatus", (e) => e.textContent)));
   } finally { api2.kill(); }
   console.log(failures ? `${failures} FAILED` : "ALL PASSED");
   if (failures) process.exit(1);

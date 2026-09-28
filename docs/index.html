@@ -559,8 +559,10 @@ self.onmessage = (e) => {
     catch { return null; } finally { clearTimeout(t); }
   }
   let discovering = false;
-  async function discoverServer() {
-    if (discovering || serverExplicit) return;
+  // `force`: the server a link set (a throwaway tunnel, usually) has stopped
+  // answering; thelip's own server, if it answers, takes its place.
+  async function discoverServer(force) {
+    if (discovering || (serverExplicit && !force)) return;
     discovering = true;
     try {
       const candidates = [];
@@ -569,14 +571,17 @@ self.onmessage = (e) => {
       }
       candidates.push(DEFAULT_SERVER);
       for (const url of candidates) {
-        if (serverExplicit) return;
+        if (serverOn()) return;
         const info = await probe(url, 5000);
-        if (info) { server = url; serverToken = null; serverInfo = info; renderServer(); newSentence(); return; }
+        if (info) {
+          if (serverExplicit) { serverExplicit = false; try { localStorage.removeItem("thelip.server"); localStorage.removeItem("thelip.token"); } catch {} }
+          server = url; serverToken = null; serverInfo = info; renderServer(); newSentence(); return;
+        }
       }
       if (!serverExplicit && !serverOn()) { server = null; serverInfo = null; renderServer(); }
     } finally { discovering = false; }
   }
-  setInterval(() => { if (!serverOn()) discoverServer(); }, 60000);
+  setInterval(async () => { if (serverOn()) return; if (serverExplicit) await checkServer(); if (!serverOn()) discoverServer(true); }, 60000);
   function renderServer() {
     $("serverUrl").value = server || "";
     $("serverOff").hidden = !server;
@@ -593,7 +598,7 @@ self.onmessage = (e) => {
       serverInfo = r.ok ? await r.json() : { ok: false, error: `HTTP ${r.status}` };
     } catch (e) { serverInfo = { ok: false, error: e.message || "network" }; }
     renderServer();
-    if (serverInfo.ok) newSentence();
+    if (serverInfo.ok) newSentence(); else if (serverExplicit) discoverServer(true);
   }
   const serverOn = () => !!(server && serverInfo && serverInfo.ok);
   async function readOnServer(blobs) {
