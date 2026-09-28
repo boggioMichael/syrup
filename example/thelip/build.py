@@ -32,6 +32,9 @@ def main():
     page = page.replace("__WORKER__", worker_src).replace("__WEIGHTS_B64__", weights)
     if args.standalone:
         page = ('<!doctype html>\n<html lang="en">\n<head>\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
+                # A camera needs a secure page: a plain-http visit moves to https before the page loads.
+                '<script>if(location.protocol==="http:"&&!/^(localhost|127\\.0\\.0\\.1|\\[::1\\])$/.test(location.hostname))'
+                'location.replace("https://"+location.host+location.pathname+location.search+location.hash)</script>\n'
                 '<style>[hidden]{display:none!important} :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>\n'
                 + page + "\n</html>\n")
     with open(args.out, "w") as f:

@@ -61,7 +61,7 @@ was found.
 | `example/thelip/` | **thelip.syrup**: The Lip in the browser, on a phone (the network in a Web Worker, camera or a recorded clip) | engine matches numpy to 2e-6; reads a GRID clip in Chromium |
 | `example/ios/` | the SwiftUI app (Vision, AVFoundation, Core ML, remote backend) | written without a compiler; not built here |
 | `example/shared-types/`, `example/ml/`, `example/docs/` | the JSON contract, model scripts behind licence gates, and the design, model survey, benchmarks, API and setup docs | — |
-| `docs/` | the GitHub Pages site: the thelip.syrup page and the demo GIFs | published to the `gh-pages` branch by `.github/workflows/pages.yml` |
+| `docs/` | the GitHub Pages site, thelip.ai: the thelip.syrup page and the demo GIFs | published to the `gh-pages` branch by `.github/workflows/pages.yml` |
 
 ## The convention
 
@@ -194,7 +194,7 @@ of every piece: [`example/README.md`](example/README.md).
 
 ## thelip.syrup
 
-The Lip on your phone: **https://boggiomichael.github.io/syrup/**
+The Lip on your phone: **https://thelip.ai/**
 runs the lip reader in the browser (a Web Worker, plain JavaScript, no
 upload, no audio). Point the camera at your mouth, say a sentence from its
 vocabulary, and read it back. Source in [`example/thelip`](example/thelip).

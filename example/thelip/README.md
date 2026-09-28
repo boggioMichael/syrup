@@ -3,9 +3,11 @@
 The Lip in your browser, on a phone: point the camera at your mouth (or
 record a clip) and say a sentence; the words are read from your lips, in
 the browser, with no audio and nothing uploaded. The live site is
-**https://boggiomichael.github.io/syrup/** (GitHub Pages: `docs/index.html`,
-committed to the `gh-pages` branch by `.github/workflows/pages.yml` on
-every push that changes `docs/`; `docs/thelip/` redirects there).
+**https://thelip.ai/** (GitHub Pages: `docs/index.html`, committed to the
+`gh-pages` branch by `.github/workflows/pages.yml` on every push that
+changes `docs/`; `docs/CNAME` names the domain; the GitHub address
+boggiomichael.github.io/syrup/ redirects there). A plain-http visit is sent
+to https by the page itself, because a camera needs a secure page.
 
 - `thelip.js` — the engine: The Lip's network (LipNet, Assael et al. 2016;
   weights rizkiarm/LipNet, MIT) in plain JavaScript: int8 weights
@@ -46,10 +48,10 @@ core (37 ms with doubles, which V8 runs faster than float32 stores); a recent ph
 sample clips with the int8 weights; a new face and a phone camera are
 harder than the lab data.
 
-## Your own domain
+## The domain
 
-GitHub Pages serves the same site under a domain you own, at
-`https://<domain>/`, in two steps:
+thelip.ai is served by GitHub Pages; the same two steps put the site
+under any domain:
 
 1. At the registrar, point the domain at GitHub Pages: for the apex
    (`thelip.ai`) four `A` records to `185.199.108.153`, `185.199.109.153`,
@@ -63,4 +65,6 @@ GitHub Pages serves the same site under a domain you own, at
 
 Do step 1 first: the moment `docs/CNAME` is published, GitHub redirects
 `boggiomichael.github.io/syrup/` to the domain, so a domain that does not
-resolve yet takes the site down with it.
+resolve yet takes the site down with it. Both were done on 2026-09-28:
+the four `A` records at the registrar, then `docs/CNAME`; the certificate
+was issued within minutes.
