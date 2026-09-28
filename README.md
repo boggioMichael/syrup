@@ -204,7 +204,8 @@ For **any words**, run [`example/thelip-server`](example/thelip-server)
 on a computer: the page finds it by itself (or a printed link points the
 page at it) and reads with open-vocabulary models running there — English
 (Auto-AVSR on LRS3), Spanish, French, Portuguese, Mandarin (non-commercial
-weights). Readers can keep their sentences, labelled by what the microphone heard
+weights) — every face in the picture on its own, even two people talking
+at once. Readers can keep their sentences, labelled by what the microphone heard
 (speech recognition, so nobody types) and corrected with a tap; that, and
 video whose licence allows it, is what [`example/thelip-train`](example/thelip-train)
 trains on: English adapted to phones, and the first Hebrew lip-reading
