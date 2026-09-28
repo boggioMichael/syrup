@@ -61,7 +61,7 @@ was found.
 | `example/thelip/` | **thelip.syrup**: The Lip in the browser, on a phone (the network in a Web Worker, camera or a recorded clip) | engine matches numpy to 2e-6; reads a GRID clip in Chromium |
 | `example/ios/` | the SwiftUI app (Vision, AVFoundation, Core ML, remote backend) | written without a compiler; not built here |
 | `example/shared-types/`, `example/ml/`, `example/docs/` | the JSON contract, model scripts behind licence gates, and the design, model survey, benchmarks, API and setup docs | — |
-| `docs/` | the GitHub Pages site: the thelip.syrup page and the demo GIFs | deployed by `.github/workflows/pages.yml` |
+| `docs/` | the GitHub Pages site: the thelip.syrup page and the demo GIFs | published to the `gh-pages` branch by `.github/workflows/pages.yml` |
 
 ## The convention
 
@@ -325,7 +325,8 @@ cd ../thelip && node test/engine.test.mjs && python3 build.py && NODE_PATH=$(npm
 ```
 
 CI (`.github/workflows/ci.yml`) runs the Rust checks on Linux, Windows and
-macOS and all of the above on Linux; `pages.yml` publishes `docs/`.
+macOS and all of the above on Linux; `pages.yml` publishes `docs/` to the
+`gh-pages` branch, which GitHub Pages serves.
 
 Tests run against synthetic, in-code fixtures plus one public-domain
 photograph (`tests/fixtures`); no network access is required. The native

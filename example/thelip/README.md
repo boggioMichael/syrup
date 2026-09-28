@@ -4,7 +4,8 @@ The Lip in your browser, on a phone: point the camera at your mouth (or
 record a clip) and say a sentence; the words are read from your lips, in
 the browser, with no audio and nothing uploaded. The live site is
 **https://boggiomichael.github.io/syrup/thelip/** (GitHub Pages, from
-`docs/thelip/`, deployed by `.github/workflows/pages.yml` on push).
+`docs/thelip/`, committed to the `gh-pages` branch by
+`.github/workflows/pages.yml` on every push that changes `docs/`).
 
 - `thelip.js` — the engine: The Lip's network (LipNet, Assael et al. 2016;
   weights rizkiarm/LipNet, MIT) in plain JavaScript: int8 weights
