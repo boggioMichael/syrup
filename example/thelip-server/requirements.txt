@@ -1,8 +1,10 @@
 # thelip-server: the model needs PyTorch; the preprocessing needs mediapipe
 # (Python 3.10-3.12, its Tasks API), OpenCV and scikit-image; the server is Starlette.
-torch
-torchvision
-torchaudio
+# torch is pinned to 2.8.0: 2.9 and later fail to initialise their DLLs on some
+# Windows machines (pytorch/pytorch#166628); 2.8.0 has CPU wheels for 3.9-3.13.
+torch==2.8.0
+torchvision==0.23.0
+torchaudio==2.8.0
 numpy<2
 mediapipe>=0.10.14
 opencv-python

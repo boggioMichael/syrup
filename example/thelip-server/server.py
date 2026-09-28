@@ -31,6 +31,18 @@ import threading
 import time
 from typing import List, Optional
 
+# torch before anything else that loads native DLLs: on Windows, torch 2.9+
+# fails to initialise (WinError 1114) when imported after some of them
+# (pytorch/pytorch#166628). --fake runs without torch.
+if "--fake" not in sys.argv:
+    try:
+        import torch  # noqa: F401
+    except OSError as _err:  # the DLL error, explained before giving up
+        from diagnose import explain_dll_failure
+
+        explain_dll_failure(_err)
+        raise
+
 import numpy as np
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
