@@ -51,7 +51,7 @@
 - `example/thelip`: The Lip in the browser, on a phone — the network in
   plain JavaScript in a Web Worker (int8 weights, incremental
   convolutions), camera or recorded clip, utterance detection, readings
-  that form while you speak; deployed to GitHub Pages from `docs/thelip`.
+  that form while you speak; deployed to GitHub Pages from `docs/`.
 
 ### The Lip
 - `python/thelip`: lip reading from muted video with live subtitles —

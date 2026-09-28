@@ -3,9 +3,9 @@
 The Lip in your browser, on a phone: point the camera at your mouth (or
 record a clip) and say a sentence; the words are read from your lips, in
 the browser, with no audio and nothing uploaded. The live site is
-**https://boggiomichael.github.io/syrup/thelip/** (GitHub Pages, from
-`docs/thelip/`, committed to the `gh-pages` branch by
-`.github/workflows/pages.yml` on every push that changes `docs/`).
+**https://boggiomichael.github.io/syrup/** (GitHub Pages: `docs/index.html`,
+committed to the `gh-pages` branch by `.github/workflows/pages.yml` on
+every push that changes `docs/`; `docs/thelip/` redirects there).
 
 - `thelip.js` — the engine: The Lip's network (LipNet, Assael et al. 2016;
   weights rizkiarm/LipNet, MIT) in plain JavaScript: int8 weights
@@ -24,7 +24,7 @@ the browser, with no audio and nothing uploaded. The live site is
   artifact, a plain-http page) it says so and offers the clip.
 - `build.py` — inlines everything into one file: `thelip.syrup.html` (page
   content, for a claude.ai artifact) or, with `--standalone`, a complete
-  document for hosting (`docs/thelip/index.html`).
+  document for hosting (`docs/index.html`).
 - `test/page.test.mjs` — the built page in Chromium reads a silent GRID
   clip through the clip path; `test/camera.test.mjs` — Chromium's fake
   camera plays the clip on a loop and the page, opening the camera on
@@ -33,7 +33,7 @@ the browser, with no audio and nothing uploaded. The live site is
 ```sh
 python3 ../ml/conversion/export_thelip_weights.py --out thelip-weights.bin --reference sbwe5n
 node test/engine.test.mjs
-python3 build.py && python3 build.py --standalone --out ../../docs/thelip/index.html
+python3 build.py && python3 build.py --standalone --out ../../docs/index.html
 NODE_PATH=$(npm root -g) node test/page.test.mjs && NODE_PATH=$(npm root -g) node test/camera.test.mjs
 ```
 
@@ -49,10 +49,10 @@ harder than the lab data.
 ## Your own domain
 
 GitHub Pages serves the same site under a domain you own, at
-`https://<domain>/thelip/`, in two steps:
+`https://<domain>/`, in two steps:
 
 1. At the registrar, point the domain at GitHub Pages: for the apex
-   (`syrup.ai`) four `A` records to `185.199.108.153`, `185.199.109.153`,
+   (`thelip.ai`) four `A` records to `185.199.108.153`, `185.199.109.153`,
    `185.199.110.153`, `185.199.111.153` (and `AAAA` records to
    `2606:50c0:8000::153`, `2606:50c0:8001::153`, `2606:50c0:8002::153`,
    `2606:50c0:8003::153`); for `www` or another subdomain, one `CNAME`

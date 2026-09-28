@@ -9,7 +9,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 const here = path.dirname(fileURLToPath(import.meta.url));
-// SERVE_DIR / PAGE_PATH test another copy, e.g. the standalone build in docs/thelip.
+// SERVE_DIR / PAGE_PATH test another copy, e.g. the standalone build in docs/.
 const root = process.env.SERVE_DIR || path.resolve(here, "..");
 const pagePath = process.env.PAGE_PATH || "/thelip.syrup.html";
 const server = spawn("python3", ["-m", "http.server", "8793", "--bind", "127.0.0.1"], { cwd: root, stdio: "ignore" });
