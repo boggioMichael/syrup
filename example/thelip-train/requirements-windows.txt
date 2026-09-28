@@ -1,0 +1,18 @@
+# thelip-train on a Windows PC with an NVIDIA card. PyTorch itself comes first, from
+# PyTorch's CUDA 12.8 index (thelip-train.cmd; RTX 50-series cards need CUDA 12.8);
+# the rest from PyPI. Whisper runs on CUDA PyTorch through transformers here.
+pytorch-lightning>=2.0,<2.6
+sentencepiece
+numpy<2
+mediapipe>=0.10.14
+scikit-image
+scipy
+six
+av
+gdown
+yt-dlp[default]
+transformers>=4.44,<5
+huggingface_hub
+imageio-ffmpeg
+faster-whisper
+ctranslate2==4.4.0

@@ -16,9 +16,15 @@ import os
 import re
 from typing import List, Optional
 
-from .common import DIRS, say
+from .common import DIRS, ffmpeg_exe, say
 
 WHISPER = {"he": "ivrit-ai/whisper-large-v3-turbo-ct2", "*": "large-v3"}
+# The same models in Hugging Face's format, for the PyTorch backend: on a Windows PC
+# with an NVIDIA card, CUDA PyTorch runs Whisper without CTranslate2's CUDA libraries.
+HF_WHISPER = {"he": "ivrit-ai/whisper-large-v3-turbo", "*": "openai/whisper-large-v3-turbo"}
+# Only the start of a long video is transcribed: segment keeps at most 20 minutes of
+# clips per video, and a transcript of the rest would never be used.
+MAX_LABEL_SECONDS = int(os.environ.get("THELIP_MAX_LABEL_SECONDS", "1800"))
 
 
 def _parse_cues(path: str) -> List[dict]:
@@ -95,7 +101,85 @@ def whisper_model(language: str, device: str = "auto"):
     return name, _models[name]
 
 
-def transcribe(video: str, language: str, device: str = "auto") -> dict:
+def backend() -> str:
+    """"torch" when PyTorch sees a CUDA card and transformers is installed (the Windows PC),
+    else "ctranslate2" (faster-whisper; a Linux GPU box, or a CPU)."""
+    choice = os.environ.get("THELIP_WHISPER_BACKEND")
+    if choice:
+        return choice
+    try:
+        import torch
+        import transformers  # noqa: F401
+
+        return "torch" if torch.cuda.is_available() else "ctranslate2"
+    except Exception:  # noqa: BLE001
+        return "ctranslate2"
+
+
+def decode_audio(video: str, seconds: int = MAX_LABEL_SECONDS):
+    """The sound of a video's first `seconds`, mono float32 at 16 kHz, through ffmpeg."""
+    import subprocess
+
+    import numpy as np
+
+    raw = subprocess.run([ffmpeg_exe(), "-v", "error", "-i", video, "-t", str(seconds), "-vn", "-ac", "1", "-ar", "16000", "-f", "f32le", "-"],
+                         check=True, capture_output=True).stdout
+    return np.frombuffer(raw, dtype=np.float32).copy()
+
+
+_hf: dict = {}
+
+
+def hf_pipeline(language: str):
+    name = HF_WHISPER.get(language, HF_WHISPER["*"])
+    if name not in _hf:
+        import torch
+        from transformers import pipeline
+
+        say(f"loading Whisper {name} (PyTorch, CUDA)")
+        try:
+            _hf[name] = pipeline("automatic-speech-recognition", model=name, torch_dtype=torch.float16, device="cuda:0")
+        except Exception as e:  # noqa: BLE001
+            if name == HF_WHISPER["*"]:
+                raise
+            say(f"  {name} unavailable ({e}); using {HF_WHISPER['*']} with language={language}")
+            name = HF_WHISPER["*"]
+            _hf[name] = _hf.get(name) or pipeline("automatic-speech-recognition", model=name, torch_dtype=torch.float16, device="cuda:0")
+    return name, _hf[name]
+
+
+def transcribe_torch(video: str, language: str, whole: bool = False) -> dict:
+    """Whisper through transformers on CUDA, with word times (cross-attention alignment);
+    the words grouped into segments at pauses over a second."""
+    name, pipe = hf_pipeline(language)
+    audio = decode_audio(video, 24 * 3600 if whole else MAX_LABEL_SECONDS)
+    if audio.size < 16000:
+        return {"language": language, "how": f"whisper:{name}", "segments": []}
+    out = pipe({"raw": audio, "sampling_rate": 16000}, chunk_length_s=30, batch_size=8, return_timestamps="word",
+               generate_kwargs={"language": language, "task": "transcribe"})
+    words = []
+    for c in out.get("chunks") or []:
+        text = (c.get("text") or "").strip()
+        s, e = (c.get("timestamp") or (None, None))
+        if not text or s is None:
+            continue
+        e = e if e is not None and e > s else s + 0.3
+        words.append({"w": text, "s": float(s), "e": float(e), "p": 1.0})
+    segments, cur = [], []
+    for w in words:
+        if cur and w["s"] - cur[-1]["e"] > 1.0:
+            segments.append(cur)
+            cur = []
+        cur.append(w)
+    if cur:
+        segments.append(cur)
+    return {"language": language, "how": f"whisper:{name}",
+            "segments": [{"start": g[0]["s"], "end": g[-1]["e"], "text": " ".join(w["w"] for w in g), "words": g} for g in segments]}
+
+
+def transcribe(video: str, language: str, device: str = "auto", whole: bool = False) -> dict:
+    if backend() == "torch":
+        return transcribe_torch(video, language, whole)
     name, model = whisper_model(language, device)
     segments, info = model.transcribe(video, language=language, word_timestamps=True, vad_filter=True, beam_size=5)
     out = []
@@ -119,7 +203,12 @@ def label_video(video: str, language: str, device: str = "auto") -> str:
             with open(out, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False)
             return out
-    data = transcribe(video, language, device)
+    info_path = os.path.splitext(video)[0] + ".info.json"
+    local = False
+    if os.path.isfile(info_path):
+        with open(info_path, encoding="utf-8") as f:
+            local = bool(json.load(f).get("local"))
+    data = transcribe(video, language, device, whole=local)   # the owner's own recordings: all of it
     with open(out, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
     return out

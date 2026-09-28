@@ -17,16 +17,23 @@ import subprocess
 import urllib.request
 from typing import Iterable, Optional
 
-from .common import DIRS, say
+from .common import DIRS, ffmpeg_exe, say, video_seconds
 from .sources import SOURCES, enumerate_source
+
+# 480p at most: a talking face fills enough of it for a 96x96 mouth crop (the segment
+# stage drops faces too small), and a third of 720p's disk and download time.
+MAX_HEIGHT = int(os.environ.get("THELIP_MAX_HEIGHT", "480"))
 
 
 def probe_duration(path: str) -> Optional[float]:
-    try:
-        out = subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path], text=True)
-        return float(out.strip())
-    except (subprocess.CalledProcessError, ValueError, OSError):
-        return None
+    return video_seconds(path)
+
+
+def js_runtimes() -> dict:
+    """yt-dlp needs a JavaScript runtime for YouTube's challenges since late 2025: Node.js
+    or Deno when one is installed."""
+    found = {name: {} for name in ("deno", "node") if shutil.which(name)}
+    return found
 
 
 def fetch_item(item: dict, out_dir: str) -> Optional[str]:
@@ -35,7 +42,10 @@ def fetch_item(item: dict, out_dir: str) -> Optional[str]:
     video = base + ".mp4"
     if os.path.isfile(base + ".info.json") and os.path.isfile(video):
         return video
-    if item.get("direct"):
+    if item.get("local"):   # the owner's own file: one H.264 mp4 for everything downstream
+        subprocess.check_call([ffmpeg_exe(), "-v", "error", "-y", "-i", item["local"], "-vf", f"scale=-2:'min({MAX_HEIGHT},ih)'",
+                               "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-movflags", "+faststart", video])
+    elif item.get("direct"):
         ext = os.path.splitext(item["direct"].split("?")[0])[1].lower() or ".bin"
         tmp = base + ".download" + ext
         req = urllib.request.Request(item["direct"], headers={"User-Agent": "thelip-train/1.0"})
@@ -44,7 +54,7 @@ def fetch_item(item: dict, out_dir: str) -> Optional[str]:
         if ext == ".mp4":
             os.replace(tmp, video)
         else:  # Wikimedia's .webm / .ogv: one container for everything downstream
-            subprocess.check_call(["ffmpeg", "-v", "error", "-y", "-i", tmp, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-movflags", "+faststart", video])
+            subprocess.check_call([ffmpeg_exe(), "-v", "error", "-y", "-i", tmp, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-movflags", "+faststart", video])
             os.remove(tmp)
         if item.get("captions_url"):
             try:
@@ -55,13 +65,16 @@ def fetch_item(item: dict, out_dir: str) -> Optional[str]:
     else:
         import yt_dlp
 
+        h = MAX_HEIGHT
         opts = {
             "quiet": True, "no_warnings": True, "outtmpl": base + ".%(ext)s",
-            "format": "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/b[height<=720]",
-            "merge_output_format": "mp4",
+            "format": f"bv*[height<={h}][ext=mp4]+ba[ext=m4a]/b[height<={h}][ext=mp4]/bv*[height<={h}]+ba/b[height<={h}]",
+            "merge_output_format": "mp4", "ffmpeg_location": ffmpeg_exe(),
             "writesubtitles": bool(item.get("captions")), "writeautomaticsub": False,
             "subtitleslangs": [item["captions"]] if item.get("captions") else [], "subtitlesformat": "vtt",
         }
+        if js_runtimes():
+            opts["js_runtimes"] = js_runtimes()
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([item["url"]])
         if not os.path.isfile(video):
@@ -69,7 +82,7 @@ def fetch_item(item: dict, out_dir: str) -> Optional[str]:
                 if name.startswith(item["id"] + ".") and name.split(".")[-1] in ("mkv", "webm", "mp4"):
                     src = os.path.join(out_dir, name)
                     if src != video:
-                        subprocess.check_call(["ffmpeg", "-v", "error", "-y", "-i", src, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", video])
+                        subprocess.check_call([ffmpeg_exe(), "-v", "error", "-y", "-i", src, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", video])
                         os.remove(src)
                     break
     if not os.path.isfile(video):
@@ -89,10 +102,11 @@ def fetch_source(name: str, max_hours: float, max_items: int = 400) -> float:
     have = sum((json.load(open(os.path.join(out_dir, n), encoding="utf-8")).get("duration") or 0)
                for n in os.listdir(out_dir) if n.endswith(".info.json")) / 3600 if os.path.isdir(out_dir) else 0.0
     say(f"{name}: {have:.1f} h on disk, target {max_hours:.1f} h ({spec['licence']})")
-    if have >= max_hours:
+    if have >= max_hours and spec["kind"] != "local-folder":
         return have
+    local = spec["kind"] == "local-folder"   # the owner's recordings: all of them, whatever the target
     for item in enumerate_source(name, max_items=max_items):
-        if have >= max_hours:
+        if have >= max_hours and not local:
             break
         if os.path.isfile(os.path.join(out_dir, item["id"] + ".info.json")):
             continue

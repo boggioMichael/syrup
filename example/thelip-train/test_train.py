@@ -78,6 +78,13 @@ def main() -> int:
           all(r["source"] in ("phone", parts["_holdout"]) for r in parts["test"]) and parts["_holdout"] == "b"
           and not ({(r["source"], r["video"]) for r in parts["train"]} & {(r["source"], r["video"]) for r in parts["val"]}), parts["_holdout"])
 
+    # a new language: the readers' own phone samples mostly train (their faces), a quarter test
+    he_rows = [{"path": f"phone/s{i:02d}.mp4", "frames": 50, "text": "שלום", "language": "he", "source": "phone", "video": f"s{i:02d}", "seconds": 2.0} for i in range(40)]
+    he_parts = manifest.split(he_rows)
+    check("a new language trains on most phone samples and keeps some for val and test",
+          len(he_parts["train"]) >= 20 and he_parts["val"] and he_parts["test"] and len(he_parts["test"]) <= 20,
+          {k: len(v) for k, v in he_parts.items() if k != "_holdout"})
+
     class Stub:
         def ids(self, text):
             return [2 + (ord(ch) % 50) for ch in text.replace(" ", "▁")]
@@ -87,6 +94,17 @@ def main() -> int:
     line = open(os.path.join(common.DIRS["manifests"], "en", "train.csv"), encoding="utf-8").readline().rstrip("\n")
     check("manifest rows are dataset,rel_path,frames,ids as Auto-AVSR reads them", line.count(",") == 3 and line.startswith("a,v") and line.split(",")[2] == "50", line)
     check("root_dir/labels points at the manifests", os.path.islink(os.path.join(common.DIRS["clips"], "labels")))
+    # the owner's own recordings, from a folder
+    from thelip_train import sources
+
+    mine = sources.my_videos_folder("he")
+    os.makedirs(mine, exist_ok=True)
+    for name in ("שיחה 1.MOV", "clip-2.mp4", "notes.txt"):
+        open(os.path.join(mine, name), "wb").close()
+    found = list(sources.enumerate_source("my-videos-he"))
+    check("the owner's recordings in my-videos/he are a source, each file an item with its licence",
+          sorted(i["title"] for i in found) == ["clip-2.mp4", "שיחה 1.MOV"] and all(i["local"] and i["language"] == "he" and "own" in i["licence"] for i in found)
+          and all(i["id"].startswith("my_") and i["id"].isascii() for i in found), found)
     # thelip-server's kept samples: typed, heard or confirmed texts become clips
     import numpy as np
 
@@ -113,6 +131,9 @@ def main() -> int:
         src = open(os.path.join(copy, "train.py"), encoding="utf-8").read()
         check("the training copy logs to CSV, needs no SLURM, obeys a wall-clock limit",
               "CSVLogger" in src and "WandbLogger" not in src and 'environ.get("SLURM_JOB_ID"' in src and "THELIP_MAX_TIME" in src)
+        dm = open(os.path.join(copy, "datamodule", "data_module.py"), encoding="utf-8").read()
+        check("on one GPU (a Windows PC) it needs no DDP or synced batch norm; precision and data workers come from the environment",
+              'else "auto"' in src and "sync_batchnorm=args.gpus * args.num_nodes > 1" in src and "THELIP_PRECISION" in src and "THELIP_NUM_WORKERS" in dm)
     else:
         print("skip the Auto-AVSR patch (no checkout; set THELIP_AUTO_AVSR)")
     # crops from GRID with syrup's points and Chaplin's alignment

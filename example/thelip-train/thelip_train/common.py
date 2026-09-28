@@ -147,3 +147,62 @@ def jsonl_append(path: str, row: dict) -> None:
 
 def hours(seconds: float) -> str:
     return f"{seconds / 3600:.1f} h"
+
+
+# ---- tools that differ between a Linux GPU box and a Windows PC ----------------------------------
+
+def ffmpeg_exe() -> str:
+    """ffmpeg on the PATH (a Linux box), else the one imageio-ffmpeg ships (Windows has none)."""
+    import shutil
+
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return exe
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:  # noqa: BLE001
+        return "ffmpeg"
+
+
+def video_seconds(path: str) -> Optional[float]:
+    """A video's length, read by PyAV or OpenCV (no ffprobe needed)."""
+    try:
+        import av
+
+        with av.open(path) as c:
+            if c.duration:
+                return c.duration / 1_000_000
+            s = next((s for s in c.streams if s.type == "video"), None)
+            if s is not None and s.duration and s.time_base:
+                return float(s.duration * s.time_base)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import cv2
+
+        cap = cv2.VideoCapture(path)
+        frames, fps = cap.get(cv2.CAP_PROP_FRAME_COUNT), cap.get(cv2.CAP_PROP_FPS)
+        cap.release()
+        return frames / fps if frames and fps else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def link_dir(target: str, link: str) -> None:
+    """link -> target: a symlink, or on Windows (no symlinks without developer mode) a junction, else a copy."""
+    import shutil
+    import subprocess
+
+    if os.path.exists(link):
+        return
+    try:
+        os.symlink(target, link, target_is_directory=True)
+        return
+    except OSError:
+        pass
+    if os.name == "nt":
+        subprocess.run(["cmd", "/c", "mklink", "/J", link, target], capture_output=True)
+    if not os.path.exists(link):
+        shutil.copytree(target, link)

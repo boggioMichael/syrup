@@ -8,9 +8,12 @@ input_length,token_id` and the video at `root_dir/dataset_name/rel_path`;
 here dataset_name is the source and rel_path the clip inside it, so
 root_dir is the clips folder, and `labels` there is a link to the manifests.
 
-Splits are by video (never by clip): every consented phone sample is test
-(that is what matters), one whole source is held out for test when there
-are several, val is a few percent of the rest by video.
+Splits are by video (never by clip): one whole source is held out for test
+when there are several, val is a few percent of the rest by video. The
+consented phone samples: for English every one is test (that is what
+matters, and the published model already reads English); for a new
+language, with no model to measure and so little else to learn from, three
+in four go to training (the readers' own faces) and one in four to test.
 """
 from __future__ import annotations
 
@@ -19,7 +22,11 @@ import os
 import random
 from typing import Dict, List, Optional
 
-from .common import DIRS, jsonl_read, say
+import zlib
+
+from .common import DIRS, jsonl_read, link_dir, say
+
+PHONE_TEST_SHARE = {"en": 1.0, "*": 0.25}
 
 
 class Tokenizer:
@@ -48,6 +55,11 @@ def all_clips(language: str) -> List[dict]:
     return rows
 
 
+def phone_goes_to_test(row: dict) -> bool:
+    share = PHONE_TEST_SHARE.get(row.get("language"), PHONE_TEST_SHARE["*"])
+    return (zlib.crc32(str(row.get("video")).encode()) % 1000) / 1000 < share
+
+
 def split(rows: List[dict], holdout_source: Optional[str] = None, val_fraction: float = 0.03, seed: int = 7) -> Dict[str, List[dict]]:
     sources = sorted({r["source"] for r in rows if r["source"] != "phone"})
     if holdout_source is None and len(sources) > 1:
@@ -63,12 +75,22 @@ def split(rows: List[dict], holdout_source: Optional[str] = None, val_fraction: 
     parts = {"train": [], "val": [], "test": []}
     for r in rows:
         key = (r["source"], r["video"])
-        if r["source"] == "phone" or r["source"] == holdout_source:
+        if (r["source"] == "phone" and phone_goes_to_test(r)) or r["source"] == holdout_source:
             parts["test"].append(r)
+        elif r["source"] == "phone":
+            parts["train"].append(r)
         elif key in val_videos:
             parts["val"].append(r)
         else:
             parts["train"].append(r)
+    # Too little video for a split by video (a new language, mostly phone samples): val
+    # and test still need a few clips each, taken from training one in so many.
+    for name, every in (("val", 30), ("test", 20)):
+        if not parts[name] and len(parts["train"]) >= 2:
+            moved = parts["train"][::every] or parts["train"][:1]
+            ids = {id(r) for r in moved}
+            parts[name] = moved
+            parts["train"] = [r for r in parts["train"] if id(r) not in ids]
     parts["_holdout"] = holdout_source
     return parts
 
@@ -88,7 +110,7 @@ def write_manifests(language: str, tokenizer: Tokenizer, holdout_source: Optiona
                 ids = tokenizer.ids(r["text"])
                 if not ids:
                     continue
-                source, rel = r["path"].split("/", 1)
+                source, rel = r["path"].replace("\\", "/").split("/", 1)
                 f.write(f"{source},{rel},{r['frames']},{' '.join(str(i) for i in ids)}\n")
         summary["counts"][name] = len(parts[name])
         summary["hours"][name] = round(sum(r["seconds"] for r in parts[name]) / 3600, 2)
@@ -96,9 +118,7 @@ def write_manifests(language: str, tokenizer: Tokenizer, holdout_source: Optiona
     with open(os.path.join(out_dir, "split.json"), "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=1)
     # Auto-AVSR wants root_dir/labels/<file>: link the manifests in.
-    labels_link = os.path.join(DIRS["clips"], "labels")
-    if not os.path.exists(labels_link):
-        os.symlink(DIRS["manifests"], labels_link)
+    link_dir(DIRS["manifests"], os.path.join(DIRS["clips"], "labels"))
     say(f"{language}: {summary['counts']} clips, {summary['hours']} hours; test holds out {parts['_holdout']} and every phone sample")
     return summary
 

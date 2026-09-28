@@ -38,7 +38,7 @@ CHAPLIN = ("https://github.com/amanvirparhar/chaplin.git", "7aee1f8fca776ce4f636
 
 PLAN = {   # sources per language, and the share of the language's video hours each gets
     "en": [("nasa", 0.25), ("whitehouse", 0.25), ("youtube-cc-en", 0.2), ("mit-ocw", 0.15), ("wikimedia-en", 0.15)],
-    "he": [("youtube-cc-he", 0.8), ("wikimedia-he", 0.2)],
+    "he": [("my-videos-he", 0.0), ("youtube-cc-he", 0.8), ("wikimedia-he", 0.2)],
     "es": [("youtube-cc-es", 1.0)], "fr": [("youtube-cc-fr", 1.0)], "de": [("youtube-cc-de", 1.0)], "ar": [("youtube-cc-ar", 1.0)],
 }
 TRAINING = {  # epochs, learning rate: adapt the whole English model gently; a new language learns a new decoder
@@ -48,10 +48,34 @@ ESTIMATE_HOURS = {"fetch": 0.5, "label": 0.15, "segment": 0.25, "train_min": 2.0
 
 
 def clone(url: str, commit: str, dest: str) -> None:
-    if os.path.isdir(os.path.join(dest, ".git")):
+    """A pinned commit of a GitHub repository: git when there is one, else the
+    commit's zip archive (a Windows PC often has no git on its PATH)."""
+    import shutil
+
+    if os.path.isdir(os.path.join(dest, ".git")) or os.path.isfile(os.path.join(dest, ".pinned")):
         return
-    subprocess.check_call(["git", "clone", "-q", url, dest])
-    subprocess.check_call(["git", "-C", dest, "checkout", "-q", commit])
+    if shutil.which("git"):
+        subprocess.check_call(["git", "clone", "-q", url, dest])
+        subprocess.check_call(["git", "-C", dest, "checkout", "-q", commit])
+        return
+    import io
+    import urllib.request
+    import zipfile
+
+    archive = url[: -len(".git")] + f"/archive/{commit}.zip"
+    say(f"fetching {archive}")
+    req = urllib.request.Request(archive, headers={"User-Agent": "thelip-train/1.0"})
+    with urllib.request.urlopen(req, timeout=300) as r:
+        data = r.read()
+    parent = os.path.dirname(dest)
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        root = z.namelist()[0].split("/")[0]
+        z.extractall(parent)
+    if os.path.isdir(dest):
+        shutil.rmtree(dest)
+    shutil.move(os.path.join(parent, root), dest)
+    with open(os.path.join(dest, ".pinned"), "w") as f:
+        f.write(commit + "\n")
 
 
 def stage(state: dict, key: str) -> bool:
@@ -63,7 +87,7 @@ def mark(state: dict, key: str, value=True) -> None:
     save_state(state)
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--languages", default="en,he")
     ap.add_argument("--hours", type=float, default=40, help="wall-clock budget for this machine")
@@ -73,7 +97,13 @@ def main() -> None:
     ap.add_argument("--push", default=None, help="Hugging Face repo prefix to publish to, e.g. boggioMichael/thelip")
     ap.add_argument("--only", default=None, help="run one stage only (tools, fetch, label, segment, phone, manifest, baseline, train, evaluate, export)")
     ap.add_argument("--smoke", action="store_true", help="a few videos, one epoch, a small evaluation: every stage once, quickly, before the real run")
-    args = ap.parse_args()
+    ap.add_argument("--max-frames", type=int, default=None, help="frames per training batch (default THELIP_MAX_FRAMES or 1600; about 640 on a 12 GB card)")
+    ap.add_argument("--serve-dir", default=None, help="thelip-server's models/ folder: the exported model is copied there")
+    return ap
+
+
+def main(argv=None) -> None:
+    args = build_parser().parse_args(argv)
     if args.smoke:
         args.video_hours = ",".join(f"{p.split('=')[0]}=0.3" for p in args.video_hours.split(",") if p)
         say("smoke run: 0.3 h of video per language, at most 12 items per source, one epoch, 40 clips evaluated")
@@ -160,7 +190,7 @@ def main() -> None:
                 return
             cfg = TRAINING.get(lang, TRAINING["*"])
             per_lang = left / max(1, len([l for l in languages if not stage(state, f'train:{l}')]))
-            averaged = train(lang, run="v1", epochs=1 if args.smoke else cfg["epochs"], lr=cfg["lr"], max_hours=per_lang)
+            averaged = train(lang, run="v1", epochs=1 if args.smoke else cfg["epochs"], lr=cfg["lr"], max_hours=per_lang, max_frames=args.max_frames)
             mark(state, f"train:{lang}", averaged)
             say(f"train:{lang} done -> {averaged} {budget.line()}")
         averaged = state.get("done", {}).get(f"train:{lang}")
@@ -174,6 +204,14 @@ def main() -> None:
             results = json.load(open(results_path, encoding="utf-8")) if os.path.isfile(results_path) else {}
             out = export(lang, "v1", averaged, results, split, push_to=f"{args.push}-{lang}" if args.push else None)
             mark(state, f"export:{lang}", out)
+            if args.serve_dir and not args.smoke:
+                import shutil
+
+                dest = os.path.join(args.serve_dir, os.path.basename(out))
+                if os.path.isdir(dest):
+                    shutil.rmtree(dest)
+                shutil.copytree(out, dest)
+                say(f"copied {out} to {dest}: thelip-server serves it from its next start")
 
     say(f"done {budget.line()}")
     for lang in languages:

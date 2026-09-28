@@ -236,7 +236,7 @@ def segment_video(video: str, label_path: str, info: dict, landmarker: Landmarke
     say(f"  {stem}: face big enough in {faced * 100:.0f}% of the video ({len(samples)} checks)")
     kept, seconds, rows = 0, 0.0, []
     for n, u in enumerate(utterances(label)):
-        if seconds > MAX_MINUTES_PER_VIDEO * 60:
+        if seconds > MAX_MINUTES_PER_VIDEO * 60 and not info.get("local"):   # the owner's own recordings: all of them
             break
         start, end = max(0.0, u["start"] - PAD), u["end"] + PAD
         text = normalise(u["text"], language)
@@ -261,7 +261,7 @@ def segment_video(video: str, label_path: str, info: dict, landmarker: Landmarke
         write_clip(np.asarray(crops, dtype=np.uint8), clip)
         with open(os.path.join(out_dir, f"{n:04d}.txt"), "w", encoding="utf-8") as f:
             f.write(text + "\n")
-        row = {"path": os.path.relpath(clip, DIRS["clips"]), "frames": len(frames), "text": text, "language": language,
+        row = {"path": os.path.relpath(clip, DIRS["clips"]).replace(os.sep, "/"), "frames": len(frames), "text": text, "language": language,
                "source": source, "video": stem, "licence": info.get("licence"), "seconds": round(len(frames) / FPS, 2), "how": label.get("how")}
         jsonl_append(manifest, row)
         rows.append(row)
@@ -334,7 +334,7 @@ def phone_samples(data_dir: str, language: str) -> List[dict]:
         if not text:
             continue
         text = normalise(text, language)
-        rel = os.path.join("phone", sid + ".mp4")
+        rel = "phone/" + sid + ".mp4"
         if rel in have:
             continue
         crops = np.load(crops_path)

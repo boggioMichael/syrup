@@ -1,7 +1,9 @@
-"""Fine-tuning with Auto-AVSR's training code, unchanged except for three
+"""Fine-tuning with Auto-AVSR's training code, unchanged except for the
 lines it needs outside the authors' cluster (no wandb, no SLURM, a wall-clock
-limit), run in a per-language copy of the repository whose tokenizer files
-are the language's own.
+limit; and on one GPU no distributed strategy — Windows has no NCCL — with
+the precision and the data workers set from the environment), run in a
+per-language copy of the repository whose tokenizer files are the
+language's own.
 
 English: the whole model starts from the authors' VSR checkpoint trained on
 3,448 hours (vsr_trlrs2lrs3vox2avsp_base, 20.3% WER on LRS3) and adapts to
@@ -62,6 +64,15 @@ def prepare_copy(language: str) -> str:
              'logger=CSVLogger(args.exp_dir, name=args.exp_name),\n        max_time=os.environ.get("THELIP_MAX_TIME") or None,'),
             ('args.slurm_job_id = os.environ["SLURM_JOB_ID"]', 'args.slurm_job_id = os.environ.get("SLURM_JOB_ID", "0")'),
             ("    ensemble(args)\n", "    # checkpoints are averaged by thelip_train.train.average_last\n"),
+            # One GPU (a PC): no DDP (NCCL does not exist on Windows), no synced batch norm;
+            # bf16 on a card that has it, set by THELIP_PRECISION.
+            ("        sync_batchnorm=True,\n", "        sync_batchnorm=args.gpus * args.num_nodes > 1,\n"),
+            ("        strategy=DDPStrategy(find_unused_parameters=False),\n",
+             '        strategy=DDPStrategy(find_unused_parameters=False) if args.gpus * args.num_nodes > 1 else "auto",\n'
+             '        precision=os.environ.get("THELIP_PRECISION") or "32-true",\n'),
+        ])
+        _patch(os.path.join(dst, "datamodule", "data_module.py"), [
+            ("        num_workers=10,\n", '        num_workers=int(os.environ.get("THELIP_NUM_WORKERS") or 10),\n'),
         ])
     if language != "en":
         model, units = train_tokenizer(language)
@@ -100,8 +111,11 @@ def average_last(run_dir: str, k: int = 5) -> str:
 
 
 def train(language: str, run: str, epochs: int, lr: float, max_hours: Optional[float] = None,
-          max_frames: int = 1600, gpus: int = 1, resume: bool = True) -> str:
-    """Runs the fine-tuning; returns the averaged model path."""
+          max_frames: Optional[int] = None, gpus: int = 1, resume: bool = True) -> str:
+    """Runs the fine-tuning; returns the averaged model path. max_frames: frames per
+    batch (THELIP_MAX_FRAMES, else 1600, the authors' per-GPU figure; a 12 GB card
+    wants about half, in bf16)."""
+    max_frames = max_frames or int(os.environ.get("THELIP_MAX_FRAMES") or 1600)
     copy = prepare_copy(language)
     manifests = os.path.join(DIRS["manifests"], language)
     for name in ("train", "val", "test"):
@@ -125,7 +139,7 @@ def train(language: str, run: str, epochs: int, lr: float, max_hours: Optional[f
         m = int((max_hours - h) * 60)
         env["THELIP_MAX_TIME"] = f"00:{h:02d}:{m:02d}:00"
     say(f"{language}/{run}: {' '.join(cmd[1:])}" + (f" (wall clock at most {env.get('THELIP_MAX_TIME')})" if max_hours else ""))
-    log = open(os.path.join(DIRS["exp"], language, f"{run}.log"), "a", buffering=1)
+    log = open(os.path.join(DIRS["exp"], language, f"{run}.log"), "a", buffering=1, encoding="utf-8")
     proc = subprocess.run(cmd, cwd=copy, env=env, stdout=log, stderr=subprocess.STDOUT)
     if proc.returncode != 0:
         raise SystemExit(f"training exited with {proc.returncode}; see {log.name}")

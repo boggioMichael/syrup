@@ -54,7 +54,22 @@ SOURCES: Dict[str, dict] = {
     "youtube-cc-ar": {"language": "ar", "kind": "youtube-cc-search", "licence": "CC BY (YouTube licence field)", "queries": ["مقابلة", "محاضرة", "فلوق"]},
     # ---- thelip.ai's own consented samples: mouth crops already ---------------------------
     "phone": {"language": "*", "kind": "thelip-samples", "licence": "consented users of thelip.ai (the improve switch)"},
+    # ---- the owner's own recordings, dropped in a folder (my-videos/<language>/ next to the
+    #      work folder): long clips of the reader speaking, the best material for their face --
+    "my-videos-he": {"language": "he", "kind": "local-folder", "licence": "the owner's own recordings", "folder": "he"},
+    "my-videos-en": {"language": "en", "kind": "local-folder", "licence": "the owner's own recordings", "folder": "en"},
 }
+
+VIDEO_EXTENSIONS = (".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".3gp")
+
+
+def my_videos_folder(language_folder: str) -> str:
+    import os
+
+    from .common import WORK
+
+    root = os.environ.get("THELIP_TRAIN_ROOT") or os.path.dirname(WORK)
+    return os.path.join(root, "my-videos", language_folder)
 
 
 def _get_json(url: str, timeout: int = 60) -> dict:
@@ -184,6 +199,21 @@ def enumerate_source(name: str, max_items: int = 200, min_seconds: int = 60, max
                        "author": re.sub(r"<[^>]+>", "", (meta.get("Artist") or {}).get("value") or "")[:200]}
                 if len(seen) >= max_items:
                     return
+    elif kind == "local-folder":
+        import os
+
+        folder = my_videos_folder(spec["folder"])
+        if not os.path.isdir(folder):
+            return
+        for fn in sorted(os.listdir(folder)):
+            if not fn.lower().endswith(VIDEO_EXTENSIONS):
+                continue
+            import zlib
+
+            # ASCII ids (the paths go through PyTorch), unique even for names in Hebrew
+            stem = re.sub(r"[^A-Za-z0-9_-]", "_", os.path.splitext(fn)[0])[:40].strip("_") or "clip"
+            yield {"id": f"my_{stem}_{zlib.crc32(fn.encode('utf-8')):08x}", "url": os.path.join(folder, fn), "local": os.path.join(folder, fn), "title": fn,
+                   "duration": None, "licence": spec["licence"], "language": spec["language"], "source": name}
     elif kind == "thelip-samples":
         return
     else:
