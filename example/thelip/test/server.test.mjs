@@ -30,7 +30,7 @@ try {
   browser = await chromium.launch({ channel: "chromium", headless: true, args: [
     "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", `--use-file-for-fake-video-capture=${path.join(here, "sbwe5n.y4m")}`,
   ] });
-  const context = await browser.newContext({ viewport: { width: 390, height: 800 }, permissions: ["camera"] });
+  const context = await browser.newContext({ viewport: { width: 390, height: 800 }, permissions: ["camera", "microphone"] });
   const page = await context.newPage();
   page.on("pageerror", (e) => console.error("page error:", e.message));
   await page.goto(`http://127.0.0.1:8795${pagePath}?server=http://127.0.0.1:8798&token=t0k#g127-176-113-57`);
@@ -87,11 +87,17 @@ try {
     check("the sheet shows that language's quality", /44\.5%/.test(await page2.$eval("#langStatus", (e) => e.textContent)), await page2.$eval("#langStatus", (e) => e.textContent));
     await page2.click("#improve");
     check("the switch is remembered", await page2.evaluate(() => localStorage.getItem("thelip.improve") === "1"));
+    await page2.waitForFunction(() => window.lipLive.mic === "running", null, { timeout: 15000 }).catch(() => {});
+    check("the switch turns the microphone on", (await page2.evaluate(() => window.lipLive.mic)) === "running", await page2.$eval("#micStatus", (e) => e.textContent));
     await page2.click("#closeSheet");
-    await page2.waitForFunction(() => window.lipLive.lastRead && window.lipLive.lastRead.id, null, { timeout: 90000 });
+    await page2.waitForFunction(() => window.lipLive.lastRead && window.lipLive.lastRead.id && window.lipLive.lastHeard, null, { timeout: 90000 });
     const read = await page2.evaluate(() => window.lipLive.lastRead);
     check("with the switch on, the server kept a sample and the page holds its id", /^[0-9a-f]{32}$/.test(read.id), JSON.stringify(read));
     check("the read went in the chosen language", /^FAKE ES READING/.test(read.raw), read.raw);
+    const heard = await page2.evaluate(() => window.lipLive.lastHeard);
+    check("the sound of the utterance was heard by the server and joined the sample", heard && /^FAKE HEARD \d+\.\ds$/.test(heard.heard) && (heard.id === null || heard.id === read.id) && heard.seconds > 0.3, JSON.stringify(heard));
+    await page2.waitForFunction(() => window.lipLive.heard, null, { timeout: 5000 }).catch(() => {});
+    check("what was heard shows under the subtitle", /🎤 FAKE HEARD/.test(await page2.evaluate(() => window.lipLive.heard || "")), await page2.evaluate(() => window.lipLive.heard));
     // Tap the subtitle, fix the text, send it. (The fake camera keeps talking, so
     // the subtitle is read the moment the fix lands, before the next sentence.)
     await page2.evaluate(() => window.lipLive.openFix());
@@ -102,6 +108,7 @@ try {
     await new Promise((r) => setTimeout(r, 800));
     const meta = JSON.parse(fs.readFileSync(path.join(dataDir, read.id, "meta.json"), "utf8"));
     check("the correction reached the kept sample, with the language", meta.corrected === "hello there" && meta.raw === read.raw && meta.language === "es", JSON.stringify(meta));
+    check("the sample carries what was heard, with its confidence", /^FAKE HEARD/.test(meta.heard || "") && meta.heard_confidence === 0.9, JSON.stringify(meta));
     check("the sample holds the crops", fs.existsSync(path.join(dataDir, read.id, "crops.npy")));
 
     // A server a link set (a throwaway tunnel, usually) that has died: thelip's server takes its place.

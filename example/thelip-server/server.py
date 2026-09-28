@@ -23,13 +23,20 @@ Routes
                             language; 503 for a language whose model is not on this server
     POST /feedback          json: {"id": ..., "raw": ..., "corrected": ...}
                             -> {"ok": true}; the correction joins the kept crops
+    POST /hear              multipart: audio=<wav>, language=<code>, utt=<the read's utt>, improve=1
+                            -> {"heard": "hello there", "confidence": 0.8, "seconds": 2.1, "id": ...}
+                            what the microphone heard (faster-whisper), written to the sample the
+                            read with the same `utt` kept; the sound itself is dropped
 
-No audio, one speaker: the largest face in the frames. Languages are the
-models in languages.py, loaded on first use; text comes back as the model
-writes it (upper case for the English one). Nothing is stored unless the
-request says improve=1: then the 96x96 grey mouth crops the model saw (not
-the frames, not the face) and the texts are written under data/<id>/, the
+One speaker: the largest face in the frames. Languages are the models in
+languages.py, loaded on first use; text comes back as the model writes it
+(upper case for the English one). Nothing is stored unless the request
+says improve=1: then the 96x96 grey mouth crops the model saw (not the
+frames, not the face) and the texts are written under data/<id>/, the
 material for training a better model on real phones and real speakers.
+With the page's microphone switch on, the sound of the utterance comes
+too (/hear): speech recognition writes down what was said, so that the
+kept sample is labelled without anyone typing; the sound is not kept.
 """
 from __future__ import annotations
 
@@ -69,6 +76,7 @@ CHAPLIN = os.environ.get("THELIP_CHAPLIN") or os.path.join(WORK, "chaplin")
 AUTO_AVSR = os.environ.get("THELIP_AUTO_AVSR") or os.path.join(WORK, "auto_avsr")
 MODELS = os.environ.get("THELIP_MODELS") or os.path.join(WORK, "models")   # exports of example/thelip-train
 sys.path.insert(0, HERE)
+from hear import HEBREW, Transcriber  # noqa: E402
 from languages import LANGUAGES, ORDER, describe, runnable, trained_models  # noqa: E402
 from version import SERVER_VERSION  # noqa: E402
 FACE_MODEL = os.environ.get("THELIP_FACE_MODEL") or os.path.join(WORK, "blaze_face_short_range.tflite")
@@ -274,6 +282,29 @@ class NoFace(Exception):
     pass
 
 
+# A read and the sound of the same utterance arrive as two requests, in
+# either order, sharing the page's `utt` id: this links them for an hour.
+LINKS: dict = {}
+LINKS_LOCK = threading.Lock()
+
+
+def link(utt: str, **fields) -> dict:
+    """Records fields under the utterance id; returns the entry (id, heard...)."""
+    now = time.time()
+    with LINKS_LOCK:
+        for key in [k for k, v in LINKS.items() if now - v["t"] > 3600]:
+            del LINKS[key]
+        entry = LINKS.setdefault(utt, {"t": now})
+        entry.update(fields)
+        return dict(entry)
+
+
+def valid_utt(utt: str) -> bool:
+    import re
+
+    return bool(re.fullmatch(r"[0-9a-f]{8,32}", utt or ""))
+
+
 def keep_sample(crops: np.ndarray, meta: dict) -> str:
     """Write one training sample: the crops and what was read. Returns its id."""
     import json
@@ -283,6 +314,11 @@ def keep_sample(crops: np.ndarray, meta: dict) -> str:
     folder = os.path.join(DATA, sample_id)
     os.makedirs(folder, exist_ok=True)
     np.save(os.path.join(folder, "crops.npy"), crops)
+    utt = meta.get("utt")
+    if utt and valid_utt(utt):
+        entry = link(utt, id=sample_id)
+        if entry.get("heard") is not None:   # the sound was heard before the frames were read
+            meta = dict(meta, heard=entry["heard"], heard_confidence=entry.get("heard_confidence"), heard_model=entry.get("heard_model"))
     with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(dict(meta, id=sample_id, kept=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())), f, ensure_ascii=False, indent=1)
     return sample_id
@@ -312,7 +348,7 @@ def decode_jpeg(data: bytes) -> np.ndarray:
         return np.asarray(im.convert("RGB"))
 
 
-def create_app(reader: Reader, token: Optional[str] = None) -> Starlette:
+def create_app(reader: Reader, token: Optional[str] = None, transcriber: Optional[Transcriber] = None) -> Starlette:
     def languages():
         out = []
         trained = trained_models(MODELS)
@@ -327,9 +363,11 @@ def create_app(reader: Reader, token: Optional[str] = None) -> Starlette:
         return out
 
     async def health(request: Request):
+        hears = bool(transcriber and transcriber.available)
         return JSONResponse({"ok": True, "version": SERVER_VERSION, "model": MODEL_NAME, "device": reader.device, "fake": reader.fake,
                              "beam": reader.beam, "lm": reader.lm, "max_frames": MAX_FRAMES,
-                             "languages": languages(), "keeps": "mouth crops and texts, only when asked (improve=1)"})
+                             "languages": languages(), "keeps": "mouth crops and texts, only when asked (improve=1)",
+                             "hears": hears, "whisper": {"default": transcriber.size, "he": HEBREW} if hears else None})
 
     async def read(request: Request):
         if token and request.headers.get("authorization") != f"Bearer {token}":
@@ -371,11 +409,41 @@ def create_app(reader: Reader, token: Optional[str] = None) -> Starlette:
         except RuntimeError as e:  # the model's process failed on this clip
             return JSONResponse({"error": f"the {spec['name']} model failed: {e}"}, status_code=500)
         sample_id = None
+        utt = str(form.get("utt", ""))[:32]
         if str(form.get("improve", "")) == "1":
             sample_id = keep_sample(crops, {"raw": text, "language": language, "fps": 25, "frames": int(len(video)),
-                                            "source": str(form.get("source", ""))[:40]})
+                                            "source": str(form.get("source", ""))[:40], "utt": utt if valid_utt(utt) else None})
         return JSONResponse({"text": text, "language": language, "frames": int(len(video)),
                              "seconds": round(time.time() - started, 2), "id": sample_id})
+
+    async def hear(request: Request):
+        if token and request.headers.get("authorization") != f"Bearer {token}":
+            return JSONResponse({"error": "bad token"}, status_code=401)
+        if not (transcriber and transcriber.available):
+            return JSONResponse({"error": "this server does not hear (faster-whisper is not installed, or --whisper none)"}, status_code=503)
+        form = await request.form()
+        audio = form.get("audio")
+        if audio is None or not hasattr(audio, "read"):
+            return JSONResponse({"error": "no audio"}, status_code=400)
+        data = await audio.read()
+        if len(data) > 4_000_000:
+            return JSONResponse({"error": "at most 4 MB of audio"}, status_code=413)
+        language = str(form.get("language", "en")).lower()[:8]
+        if language not in LANGUAGES:
+            return JSONResponse({"error": f"unknown language {language!r}"}, status_code=400)
+        utt = str(form.get("utt", ""))[:32]
+        started = time.time()
+        try:
+            result = await _run(transcriber.hear, data, language)
+        except Exception as e:  # noqa: BLE001  (a bad wav, a model that failed to load)
+            return JSONResponse({"error": f"could not hear: {type(e).__name__}: {e}"}, status_code=400)
+        sample_id = None
+        if str(form.get("improve", "")) == "1" and valid_utt(utt):
+            entry = link(utt, heard=result["heard"], heard_confidence=result["confidence"], heard_model=result["model"])
+            sample_id = entry.get("id")
+            if sample_id:
+                update_sample(sample_id, {"heard": result["heard"], "heard_confidence": result["confidence"], "heard_model": result["model"]})
+        return JSONResponse(dict(result, id=sample_id, language=language, took=round(time.time() - started, 2)))
 
     async def feedback(request: Request):
         if token and request.headers.get("authorization") != f"Bearer {token}":
@@ -390,7 +458,8 @@ def create_app(reader: Reader, token: Optional[str] = None) -> Starlette:
         return JSONResponse({"ok": ok}, status_code=200 if ok else 404)
 
     return Starlette(
-        routes=[Route("/health", health), Route("/read", read, methods=["POST"]), Route("/feedback", feedback, methods=["POST"])],
+        routes=[Route("/health", health), Route("/read", read, methods=["POST"]), Route("/feedback", feedback, methods=["POST"]),
+                Route("/hear", hear, methods=["POST"])],
         middleware=[Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "POST"], allow_headers=["*"])],
     )
 
@@ -410,12 +479,16 @@ def main(argv=None) -> None:
     ap.add_argument("--threads", type=int, default=None)
     ap.add_argument("--token", default=os.environ.get("THELIP_TOKEN") or None)
     ap.add_argument("--fake", action="store_true", help="no model; answer with a fixed text")
+    ap.add_argument("--whisper", default="medium", help="speech recognition model for /hear: small, medium, large-v3-turbo, or none")
     args = ap.parse_args(argv)
     import uvicorn
 
     reader = Reader(fake=args.fake, beam=args.beam, lm=not args.no_lm, threads=args.threads)
+    transcriber = None if args.whisper == "none" else Transcriber(args.whisper, reader.device, fake=args.fake, threads=args.threads)
+    if transcriber and not transcriber.available:
+        print("faster-whisper is not installed: /hear is off (pip install faster-whisper)", flush=True)
     print(f"thelip-server: {MODEL_NAME if not args.fake else 'fake'} on {reader.device}; http://{args.host}:{args.port}")
-    uvicorn.run(create_app(reader, args.token), host=args.host, port=args.port, log_level="warning")
+    uvicorn.run(create_app(reader, args.token, transcriber), host=args.host, port=args.port, log_level="warning")
 
 
 if __name__ == "__main__":

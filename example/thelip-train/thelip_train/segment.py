@@ -299,8 +299,9 @@ def segment_source(name: str, landmarker: Optional[Landmarker] = None) -> int:
 
 
 def phone_samples(data_dir: str, language: str) -> List[dict]:
-    """thelip-server's kept samples (crops.npy + meta.json) as clips: only the
-    ones a person corrected or confirmed, so the text is what was said."""
+    """thelip-server's kept samples (crops.npy + meta.json) as clips: the ones
+    with a text that is what was said — typed by the person, heard by the
+    server's speech recognition, or confirmed by the person."""
     rows = []
     if not os.path.isdir(data_dir):
         return rows
@@ -316,7 +317,18 @@ def phone_samples(data_dir: str, language: str) -> List[dict]:
             meta = json.load(f)
         if meta.get("language", "en") != language:
             continue
-        text = meta.get("corrected") if meta.get("corrected") else (meta.get("raw") if meta.get("confirmed") else None)
+        # The label: what the person typed, else what the microphone heard
+        # (speech recognition, when it was sure enough), else the reading
+        # the person confirmed.
+        how = None
+        if meta.get("corrected"):
+            text, how = meta["corrected"], "corrected"
+        elif meta.get("heard") and (meta.get("heard_confidence") or 0) >= 0.4:
+            text, how = meta["heard"], "heard"
+        elif meta.get("confirmed"):
+            text, how = meta.get("raw"), "confirmed"
+        else:
+            text = None
         if not text:
             continue
         text = normalise(text, language)
@@ -328,7 +340,7 @@ def phone_samples(data_dir: str, language: str) -> List[dict]:
             continue
         write_clip(crops.astype(np.uint8), os.path.join(DIRS["clips"], rel))
         row = {"path": rel, "frames": int(len(crops)), "text": text, "language": language, "source": "phone", "video": sid,
-               "licence": "consented users of thelip.ai", "seconds": round(len(crops) / FPS, 2), "how": "corrected" if meta.get("corrected") else "confirmed"}
+               "licence": "consented users of thelip.ai", "seconds": round(len(crops) / FPS, 2), "how": how}
         jsonl_append(manifest, row)
         rows.append(row)
     say(f"phone: {len(rows)} new samples for {language}")

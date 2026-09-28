@@ -133,12 +133,23 @@ drops them with the answer; nothing is written to disk — unless the reader
 turns on "Keep my sentences for training" in the page's "?" sheet. Then
 each read is sent with `improve=1` and the server keeps, under
 `data/<id>/`, the 96×96 grey mouth crops its model saw (`crops.npy`; not
-the frames, not the face) and `meta.json` with what it read; tapping the
-subtitle on the page and fixing the text posts `/feedback`, which adds the
-correction (`corrected`, and `confirmed` when the reading was right).
-Those samples are the material for `example/thelip-train`: a model adapted
-to real phones and real speakers. Off is the default; the page says all of
-this next to the switch.
+the frames, not the face) and `meta.json` with what it read.
+
+The label — what was actually said — comes from the microphone, not from
+typing: with the switch on, the page also records the sound of each
+utterance (the last seconds stay in the page's memory; the stretch of the
+utterance goes to `/hear` as a 16 kHz WAV, in parallel with the frames,
+under the same `utt` id). The server transcribes it with faster-whisper
+(`--whisper small|medium|large-v3-turbo`, medium by default; ivrit.ai's
+Hebrew-tuned Whisper for Hebrew), writes `heard` and `heard_confidence`
+into the sample, and drops the sound. The page shows what was heard under
+the subtitle, with how many of its words the lips got. Tapping the
+subtitle and fixing the text still posts `/feedback` (`corrected`), for
+the times speech recognition is wrong. `example/thelip-train` takes the
+typed text first, else the heard one when it was confident, else a
+confirmed reading. Off is the default; the page says all of this next to
+the switch. On a CPU, hearing takes a few seconds (Whisper always listens
+to thirty), after the subtitle has appeared.
 
 ## Tests
 
@@ -158,9 +169,10 @@ mediapipe 0.10.35 without the Solutions API (hence the Tasks detector).
 ## Files
 
 - `server.py` — the HTTP server: `GET /health`, `POST /read` (multipart:
-  `fps`, `frames`…, `language`, `improve`), `POST /feedback`, CORS open,
-  optional bearer token, `--fake`; samples under `THELIP_DATA` (default
-  `<work>/data`). `languages.py` — the models per language.
+  `fps`, `frames`…, `language`, `improve`, `utt`), `POST /hear` (the
+  sound), `POST /feedback`, CORS open, optional bearer token, `--fake`;
+  samples under `THELIP_DATA` (default `<work>/data`). `languages.py` —
+  the models per language. `hear.py` — speech recognition for the labels.
 - `trained_worker.py` — the process a trained model runs in. `version.py` —
   the server version `/health` carries: `run.py` attaches to a running
   server of the same version and replaces one of another.

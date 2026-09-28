@@ -41,6 +41,20 @@ def multipart(fields, files):
     return f"multipart/form-data; boundary={boundary}", body.getvalue()
 
 
+def wav(seconds=1.0, rate=16000, channels=1) -> bytes:
+    """A WAV file of a 440 Hz tone."""
+    import math
+    import struct
+    import wave
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(channels); w.setsampwidth(2); w.setframerate(rate)
+        n = int(seconds * rate)
+        w.writeframes(b"".join(struct.pack("<h", int(12000 * math.sin(2 * math.pi * 440 * i / rate))) * channels for i in range(n)))
+    return buf.getvalue()
+
+
 def call(method, path, data=None, ctype=None, headers=None):
     req = urllib.request.Request(f"http://127.0.0.1:{PORT}{path}", data=data, method=method)
     if ctype:
@@ -109,6 +123,7 @@ def main() -> int:
         status, headers, body = call("GET", "/health", headers={"Origin": "https://thelip.ai"})
         check("health answers", status == 200 and body["ok"] is True and body["fake"] is True, body)
         check("health carries the server version run.py compares", body.get("version") == server.SERVER_VERSION, body.get("version"))
+        check("health says the server hears, with ivrit.ai's Whisper for Hebrew", body.get("hears") is True and body.get("whisper", {}).get("he", "").startswith("ivrit-ai/"), body.get("whisper"))
         langs = {l["code"]: l for l in body.get("languages", [])}
         check("health lists the languages, Hebrew first after English", [l["code"] for l in body["languages"]][:2] == ["en", "he"] and langs["ar"]["available"] is False and "status" in langs["ar"], body.get("languages"))
         check("the runnable ones carry their quality and licence", langs["es"]["available"] and "44.5%" in langs["es"]["quality"] and "non-commercial" in langs["es"]["licence"], langs.get("es"))
@@ -167,6 +182,31 @@ def main() -> int:
         ctype, data = multipart([("fps", "25")], [("frames", f"f{i:04d}.jpg", jpeg()) for i in range(5)])
         status, _, body = call("POST", "/read", data, ctype, auth)
         check("without improve nothing is kept", status == 200 and body.get("id") is None and len(os.listdir(DATA)) == 1, body)
+
+        # The sound of an utterance labels the kept sample, whichever request lands first.
+        ctype, data = multipart([("language", "en"), ("utt", "aabbccdd0011"), ("improve", "1")], [("audio", "u.wav", wav(1.0))])
+        data = data.replace(b"Content-Type: image/jpeg", b"Content-Type: audio/wav")
+        status, _, body = call("POST", "/hear", data, ctype, auth)
+        check("the sound is heard (fake) before the frames arrive", status == 200 and body["heard"] == "FAKE HEARD 1.0s" and body["id"] is None and body["seconds"] == 1.0, body)
+        ctype, data = multipart([("fps", "25"), ("improve", "1"), ("utt", "aabbccdd0011")], [("frames", f"f{i:04d}.jpg", jpeg()) for i in range(10)])
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        meta = json.load(open(os.path.join(DATA, body["id"], "meta.json")))
+        check("the read that follows keeps the sample with what was heard", meta.get("heard") == "FAKE HEARD 1.0s" and meta.get("heard_confidence") == 0.9 and meta.get("utt") == "aabbccdd0011", meta)
+        ctype, data = multipart([("fps", "25"), ("improve", "1"), ("utt", "0011aabbccdd")], [("frames", f"f{i:04d}.jpg", jpeg()) for i in range(10)])
+        status, _, body = call("POST", "/read", data, ctype, auth)
+        sid = body["id"]
+        ctype, data = multipart([("language", "en"), ("utt", "0011aabbccdd"), ("improve", "1")], [("audio", "u.wav", wav(0.5, rate=48000, channels=2))])
+        data = data.replace(b"Content-Type: image/jpeg", b"Content-Type: audio/wav")
+        status, _, body = call("POST", "/hear", data, ctype, auth)
+        meta = json.load(open(os.path.join(DATA, sid, "meta.json")))
+        check("the sound that follows a read joins its sample (48 kHz stereo resampled)", status == 200 and body["id"] == sid and body["heard"] == "FAKE HEARD 0.5s" and meta.get("heard") == "FAKE HEARD 0.5s", (body, meta))
+        ctype, data = multipart([("language", "en"), ("utt", "0011aabbccdd")], [("audio", "u.wav", wav(0.5))])
+        data = data.replace(b"Content-Type: image/jpeg", b"Content-Type: audio/wav")
+        status, _, body = call("POST", "/hear", data, ctype, auth)
+        check("without improve the sound is heard and nothing is written", status == 200 and body["id"] is None, body)
+        ctype, data = multipart([("language", "en")], [("audio", "u.wav", b"not a wav at all")])
+        status, _, body = call("POST", "/hear", data, ctype, auth)
+        check("a file that is not a wav is 400", status == 400, body)
 
         ctype, data = multipart([("fps", "25")], [])
         status, _, body = call("POST", "/read", data, ctype, auth)

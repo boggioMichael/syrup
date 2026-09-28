@@ -87,6 +87,21 @@ def main() -> int:
     line = open(os.path.join(common.DIRS["manifests"], "en", "train.csv"), encoding="utf-8").readline().rstrip("\n")
     check("manifest rows are dataset,rel_path,frames,ids as Auto-AVSR reads them", line.count(",") == 3 and line.startswith("a,v") and line.split(",")[2] == "50", line)
     check("root_dir/labels points at the manifests", os.path.islink(os.path.join(common.DIRS["clips"], "labels")))
+    # thelip-server's kept samples: typed, heard or confirmed texts become clips
+    import numpy as np
+
+    data = os.path.join(WORK, "server-data")
+    for sid, meta in (("a" * 32, {"raw": "BIN BLUE", "heard": "bin blue at f two now", "heard_confidence": 0.8, "language": "en"}),
+                      ("b" * 32, {"raw": "SET RED", "corrected": "set red by g nine soon", "heard": "wrong", "heard_confidence": 0.9, "language": "en"}),
+                      ("c" * 32, {"raw": "LAY WHITE", "confirmed": True, "language": "en"}),
+                      ("d" * 32, {"raw": "PLACE GREEN", "heard": "place green", "heard_confidence": 0.1, "language": "en"}),
+                      ("e" * 32, {"raw": "שלום", "heard": "שלום לכולם", "heard_confidence": 0.7, "language": "he"})):
+        os.makedirs(os.path.join(data, sid), exist_ok=True)
+        np.save(os.path.join(data, sid, "crops.npy"), np.zeros((30, 96, 96), np.uint8))
+        json.dump(meta, open(os.path.join(data, sid, "meta.json"), "w"))
+    got = {r["video"][0]: (r["text"], r["how"]) for r in segment.phone_samples(data, "en")}
+    check("phone samples: typed beats heard beats confirmed; an unsure hearing and another language are left out",
+          got == {"a": ("BIN BLUE AT F TWO NOW", "heard"), "b": ("SET RED BY G NINE SOON", "corrected"), "c": ("LAY WHITE", "confirmed")}, got)
     # the Auto-AVSR patch
     auto = os.environ.get("THELIP_AUTO_AVSR") or "/home/claude/auto_avsr"
     if os.path.isdir(os.path.join(auto, "spm")):

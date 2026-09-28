@@ -34,6 +34,9 @@
   .sheet input.text { display: block; flex: 1; min-width: 0; font: 15px ui-monospace, Menlo, Consolas, monospace; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--dim); background: rgba(255,255,255,.08); color: var(--ink); }
   .sheet .status { font-size: 13px; }
   .sub.tappable { cursor: pointer; }
+  .heard { font: 500 clamp(15px, 4vw, 20px)/1.3 system-ui, sans-serif; color: var(--dim); text-shadow: 0 2px 8px rgba(0,0,0,.8); margin-top: 6px; }
+  .heard b { color: var(--fg); font-weight: 600; }
+  .heard .agree { color: var(--ok, #7c6); }
   .fix { display: flex; gap: 8px; width: 100%; max-width: 560px; }
   .fix input { flex: 1; min-width: 0; font: 600 20px system-ui, sans-serif; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--dim); background: rgba(0,0,0,.6); color: var(--ink); }
   .fix button { font: 600 16px system-ui, sans-serif; padding: 10px 14px; border-radius: 10px; border: none; background: var(--lip); color: #fff; }
@@ -58,11 +61,12 @@
   <div class="bottom">
     <div class="say" id="say" hidden>say <b id="sentence">set blue with e five now</b></div>
     <div class="sub" id="sub"></div>
+    <div class="heard" id="heard" hidden></div>
   </div>
   <div class="msg" id="msg"><div>Loading thelip&hellip;</div></div>
   <div class="sheet" id="sheet" hidden>
     <h1>thelip<span>.syrup</span></h1>
-    <div>Lips in the dashed oval, face still, then mouth a sentence. The words appear below as they are read. No audio is used; nothing leaves the phone unless you set a server below.</div>
+    <div>Lips in the dashed oval, face still, then mouth a sentence. The words appear below as they are read. No audio is used and nothing leaves the phone, unless a server is set below (frames go there) and you turn on "keep my sentences" (the microphone too).</div>
     <div><b>It knows 51 words, in one sentence shape:</b></div>
     <div class="mono">command &middot; colour &middot; preposition &middot; letter &middot; digit &middot; adverb<br>bin lay place set &middot; blue green red white &middot; at by in with &middot; a&ndash;z (no w) &middot; zero&ndash;nine &middot; again now please soon</div>
     <div>Drag the oval to your mouth; pinch to resize. Tap the sentence for another one.</div>
@@ -76,7 +80,8 @@
     <div class="status" id="langStatus"></div>
     <div><b>Help thelip improve</b></div>
     <label class="toggle"><input type="checkbox" id="improve"> Keep my sentences for training</label>
-    <div>Off, nothing is kept anywhere. On, the server keeps what its model saw &mdash; 96&times;96 grey crops of the mouth, not the frames and not the face &mdash; with what it read and, if you tap the subtitle and fix it, what you actually said. That is the material for training a model on real phones and real speakers. Tap the subtitle to correct it either way.</div>
+    <div>Off, nothing is kept anywhere and the microphone stays off. On, the microphone is on too: the server hears each sentence, writes down what you said (speech recognition, which is far more reliable than lips) and keeps that text with what its model saw &mdash; 96&times;96 grey crops of the mouth, not the frames, not the face, not the sound, which is dropped once it is written down. Under the subtitle you see what was heard against what was read. That is the material for training a model on real phones and real speakers; if speech recognition got it wrong, tap the subtitle and fix it.</div>
+    <div class="status" id="micStatus"></div>
     <div id="speed"></div>
     <div>The Lip is the lip reader of the <b>syrup</b> library. Its network is LipNet (Assael, Shillingford, Whiteson, de Freitas 2016), weights from rizkiarm/LipNet (MIT), trained on the GRID corpus (CC BY 4.0): 64 of 66 words on GRID's sample clips. A new face and a phone camera are harder than that; expect misses.</div>
     <div class="row"><button id="closeSheet">Back</button></div>
@@ -96,7 +101,7 @@ __WORKER__
   const cropCanvas = $("crop"), cropCtx = cropCanvas.getContext("2d", { willReadFrequently: true });
   let worker = null, ready = false, perFrameMs = 0;
   // ---- a server for any English words (example/thelip-server) ----------------------------------
-  let server = null, serverToken = null, serverInfo = null, serverExplicit = false, improve = false, lastRead = null, language = "en";
+  let server = null, serverToken = null, serverInfo = null, serverExplicit = false, improve = false, lastRead = null, lastHeard = null, language = "en";
   // The languages the page offers, in this order; a server says which of them it can read.
   const LANGS = [["en", "English"], ["he", "עברית"], ["es", "Español"], ["ar", "العربية"], ["zh", "普通话"], ["fr", "Français"], ["de", "Deutsch"], ["pt", "Português"]];
   function renderLanguages() {
@@ -166,6 +171,7 @@ __WORKER__
   }
   setInterval(async () => { if (serverOn()) return; if (serverExplicit) await checkServer(); if (!serverOn()) discoverServer(true); }, 60000);
   function renderServer() {
+    syncMic();
     $("serverUrl").value = server || "";
     $("serverOff").hidden = !server;
     const st = $("serverStatus");
@@ -184,16 +190,105 @@ __WORKER__
     if (serverInfo.ok) newSentence(); else if (serverExplicit) discoverServer(true);
   }
   const serverOn = () => !!(server && serverInfo && serverInfo.ok);
-  async function readOnServer(blobs) {
+  const serverHears = () => !!(serverOn() && serverInfo.hears);
+  const auth = () => (serverToken ? { Authorization: `Bearer ${serverToken}` } : {});
+  async function readOnServer(blobs, utt) {
     const body = new FormData();
     body.append("fps", String(FPS));
     body.append("language", language);
+    body.append("utt", utt);
     if (improve) { body.append("improve", "1"); body.append("source", mode); }
     blobs.forEach((b, i) => body.append("frames", b, `f${String(i).padStart(4, "0")}.jpg`));
-    const r = await fetch(server.replace(/\/$/, "") + "/read", { method: "POST", body, headers: serverToken ? { Authorization: `Bearer ${serverToken}` } : {} });
+    const r = await fetch(server.replace(/\/$/, "") + "/read", { method: "POST", body, headers: auth() });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
     return j;
+  }
+  // The microphone, only while "keep my sentences" is on and a server that
+  // hears is connected: the last seconds of sound stay in memory here, and
+  // the stretch of each utterance goes to the server as a small WAV, to be
+  // written down. The page never plays it, never keeps it.
+  let mic = null;
+  const MIC_SECONDS = 24, MIC_RATE = 16000;
+  function renderMic(text) { const el = $("micStatus"); el.textContent = text; }
+  async function startMic() {
+    if (mic || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) { renderMic("no microphone in this viewer — corrections by tapping the subtitle"); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+      const ctx = new Ctx();
+      const m = { ctx, stream, rate: ctx.sampleRate, blocks: [], total: 0 };
+      const src = ctx.createMediaStreamSource(stream);
+      const node = ctx.createScriptProcessor(4096, 1, 1);
+      node.onaudioprocess = (e) => {
+        const d = new Float32Array(e.inputBuffer.getChannelData(0));
+        m.blocks.push({ t: performance.now(), data: d }); m.total += d.length;
+        while (m.total > m.rate * MIC_SECONDS) m.total -= m.blocks.shift().data.length;
+      };
+      const mute = ctx.createGain(); mute.gain.value = 0;
+      src.connect(node); node.connect(mute); mute.connect(ctx.destination);
+      m.node = node;
+      mic = m;
+      await ctx.resume().catch(() => {});
+      renderMic(ctx.state === "running" ? "microphone on: what you say is written down for you" : "microphone waiting for a tap on the page");
+      if (ctx.state !== "running") document.addEventListener("pointerdown", () => ctx.resume().then(() => renderMic("microphone on: what you say is written down for you")).catch(() => {}), { once: true });
+    } catch (e) { renderMic(`no microphone (${e.name || e.message}) — corrections by tapping the subtitle`); }
+  }
+  function stopMic() {
+    if (!mic) return;
+    try { mic.node.disconnect(); mic.stream.getTracks().forEach((t) => t.stop()); mic.ctx.close(); } catch {}
+    mic = null; renderMic("");
+  }
+  function syncMic() { if (improve && serverHears()) startMic(); else stopMic(); }
+  function micWav(t0, t1) {
+    if (!mic || !mic.blocks.length) return null;
+    const parts = [];
+    for (const b of mic.blocks) { const start = b.t - (b.data.length / mic.rate) * 1000; if (b.t >= t0 && start <= t1) parts.push(b.data); }
+    if (!parts.length) return null;
+    let n = 0; for (const p of parts) n += p.length;
+    const all = new Float32Array(n); let o = 0; for (const p of parts) { all.set(p, o); o += p.length; }
+    const ratio = mic.rate / MIC_RATE, out = new Int16Array(Math.floor(n / ratio));
+    for (let i = 0; i < out.length; i++) {
+      const a = Math.floor(i * ratio), b = Math.max(a + 1, Math.floor((i + 1) * ratio));
+      let sum = 0; for (let k = a; k < b; k++) sum += all[k];
+      const v = sum / (b - a); out[i] = Math.max(-32768, Math.min(32767, Math.round(v * 32767)));
+    }
+    const buf = new ArrayBuffer(44 + out.length * 2), dv = new DataView(buf);
+    const str = (off, t) => { for (let i = 0; i < t.length; i++) dv.setUint8(off + i, t.charCodeAt(i)); };
+    str(0, "RIFF"); dv.setUint32(4, 36 + out.length * 2, true); str(8, "WAVE"); str(12, "fmt "); dv.setUint32(16, 16, true);
+    dv.setUint16(20, 1, true); dv.setUint16(22, 1, true); dv.setUint32(24, MIC_RATE, true); dv.setUint32(28, MIC_RATE * 2, true);
+    dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); str(36, "data"); dv.setUint32(40, out.length * 2, true);
+    new Int16Array(buf, 44).set(out);
+    return new Blob([buf], { type: "audio/wav" });
+  }
+  async function hearOnServer(blob, utt) {
+    const body = new FormData();
+    body.append("language", language);
+    body.append("utt", utt);
+    if (improve) body.append("improve", "1");
+    body.append("audio", blob, "u.wav");
+    const r = await fetch(server.replace(/\/$/, "") + "/hear", { method: "POST", body, headers: auth() });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  }
+  const wordsOf = (t) => (t || "").toLowerCase().replace(/[^\p{L}\p{N}' ]+/gu, " ").split(/\s+/).filter(Boolean);
+  function agreement(lips, heard) {
+    const a = wordsOf(lips), b = wordsOf(heard);
+    if (!b.length) return null;
+    const bag = new Map(); for (const w of b) bag.set(w, (bag.get(w) || 0) + 1);
+    let hit = 0; for (const w of a) { const n = bag.get(w) || 0; if (n) { hit++; bag.set(w, n - 1); } }
+    return { hit, of: b.length };
+  }
+  function showHeard(heard, lips) {
+    const el = $("heard");
+    if (heard === null) { el.hidden = true; el.replaceChildren(); return; }
+    el.hidden = false; el.replaceChildren();
+    const b = document.createElement("b"); b.textContent = heard || "(nothing heard)";
+    el.append("🎤 ", b);
+    const ag = agreement(lips, heard);
+    if (ag) { const span = document.createElement("span"); span.className = "agree"; span.textContent = ` — lips got ${ag.hit} of ${ag.of} words`; el.appendChild(span); }
   }
   function fullFrame() {
     if (!fullCanvas.width) { const k = Math.min(1, 320 / sourceSize.w); fullCanvas.width = Math.round(sourceSize.w * k); fullCanvas.height = Math.round(sourceSize.h * k); }
@@ -316,7 +411,7 @@ __WORKER__
       preRoll.push(data); if (preRoll.length > PRE) preRoll.shift();
       if (full) { preRollFull.push(full); if (preRollFull.length > PRE) preRollFull.shift(); }
       if (moving) {
-        utter = { frames: [...preRoll], full: [...preRollFull], onServer, sent: 0, still: 0, reads: 0, finished: false };
+        utter = { frames: [...preRoll], full: [...preRollFull], onServer, sent: 0, still: 0, reads: 0, finished: false, startedAt: performance.now() - (preRoll.length / FPS) * 1000 };
         anyUtterance = true; preRoll = []; preRollFull = []; debug.started++;
         worker.postMessage({ type: "reset" });
         setState("listening");
@@ -330,7 +425,7 @@ __WORKER__
     const done = utter.still >= STILL || utter.frames.length >= MAX;
     const u = utter;
     if (u.onServer) {
-      if (done) { utter = null; u.finished = true; queue(() => readWithServer(u)); }
+      if (done) { utter = null; u.finished = true; u.endedAt = performance.now() - (Math.max(0, u.still - POST) / FPS) * 1000; queue(() => readWithServer(u)); }
       return;
     }
     queue(async () => {
@@ -353,23 +448,32 @@ __WORKER__
     if (done) utter = null;
   }
 
+  const uttId = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
   async function readWithServer(u) {
     setState("reading");
-    showText("…", true);
+    showText("…", true); showHeard(null);
+    const utt = uttId();
+    lastHeard = null;
+    // The sound of the same stretch goes in parallel, when the microphone is on.
+    const wav = improve && mic && serverHears() && mode === "camera" ? micWav(u.startedAt - 400, (u.endedAt || performance.now()) + 300) : null;
+    const hearing = wav ? hearOnServer(wav, utt).then((h) => { lastHeard = h; debug.server.lastHeard = h; return h; }).catch((e) => { debug.server.lastHearError = e.message; return null; }) : null;
+    let lips = "";
     try {
       const keep = Math.max(0, Math.min(u.full.length, u.full.length - u.still + POST));
       const blobs = await Promise.all(u.full.slice(0, keep));
       debug.server.sent++;
-      const r = await readOnServer(blobs);
+      const r = await readOnServer(blobs, utt);
       debug.server.lastText = r.text;
-      lastRead = { id: r.id || null, raw: r.text || "" };
-      showText(r.text ? r.text.toLowerCase() : "(nothing read)", false);
-      sub.classList.toggle("tappable", !!r.text);
+      lips = r.text || "";
+      lastRead = { id: r.id || null, raw: lips, utt };
+      showText(lips ? lips.toLowerCase() : "(nothing read)", false);
+      sub.classList.toggle("tappable", !!lips);
     } catch (e) {
       debug.server.lastError = e.message;
       showText(`server: ${e.message}`, true);
     }
     setState("idle");
+    if (hearing) { const h = await hearing; if (h && lastRead && lastRead.utt === utt) showHeard(h.heard, lips); }
   }
   // Tap the subtitle of a server reading to fix it; the fix (or "as read") goes
   // back to the server for the sample it kept, when it kept one.
@@ -516,12 +620,13 @@ __WORKER__
     checkServer();
   });
   $("serverOff").addEventListener("click", () => { server = null; serverToken = null; serverInfo = null; serverExplicit = false; try { localStorage.removeItem("thelip.server"); localStorage.removeItem("thelip.token"); } catch {} renderServer(); newSentence(); discoverServer(); });
-  $("improve").addEventListener("change", (e) => { improve = e.target.checked; try { localStorage.setItem("thelip.improve", improve ? "1" : "0"); } catch {} });
+  $("improve").addEventListener("change", (e) => { improve = e.target.checked; try { localStorage.setItem("thelip.improve", improve ? "1" : "0"); } catch {} syncMic(); });
   $("lang").addEventListener("change", (e) => { setLanguage(e.target.value); newSentence(); });
   $("closeSheet").addEventListener("click", () => { $("sheet").hidden = true; });
 
-  const debug = { frames: 0, started: 0, finished: 0, reads: 0, lastMotion: 0, quiet: 0, lastWords: null, trace: [], server: { sent: 0, lastText: null, lastError: null, lastFeedback: null } };
-  window.lipLive = { get ready() { return ready; }, get text() { return sub.textContent; }, get server() { return serverOn() ? server : null; }, get lastRead() { return lastRead; }, get language() { return language; }, startFile, openFix, debug };
+  const debug = { frames: 0, started: 0, finished: 0, reads: 0, lastMotion: 0, quiet: 0, lastWords: null, trace: [], server: { sent: 0, lastText: null, lastError: null, lastFeedback: null, lastHeard: null, lastHearError: null } };
+  window.lipLive = { get ready() { return ready; }, get text() { return sub.textContent; }, get heard() { return $("heard").hidden ? null : $("heard").textContent; }, get server() { return serverOn() ? server : null; },
+    get lastRead() { return lastRead; }, get lastHeard() { return lastHeard; }, get mic() { return mic ? mic.ctx.state : null; }, get language() { return language; }, startFile, openFix, debug };
   loadServer();
   bootWorker();
 })();
