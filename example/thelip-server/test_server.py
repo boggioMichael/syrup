@@ -111,7 +111,7 @@ def main() -> int:
     # Following several faces through a stretch of frames (faces.py).
     sys.path.insert(0, HERE)
     import numpy as np
-    from faces import activity, track_faces
+    from faces import STILL, SPEAKING, mouth_activity, track_faces
 
     kp = lambda x, y: np.array([[x - 10, y - 10], [x + 10, y - 10], [x, y], [x, y + 15]])  # noqa: E731
     dets = []
@@ -126,9 +126,15 @@ def main() -> int:
     check("two faces followed through the frames, the largest first, a fleeting one dropped",
           len(tracks) == 2 and tracks[0]["box"][2] > tracks[1]["box"][2] and abs(tracks[0]["box"][0] - (109.5 / 640)) < 0.01, [t["box"] for t in tracks])
     check("a frame where a face was missed is left for the alignment to fill", tracks[1]["landmarks"][7] is None and tracks[1]["landmarks"][8] is not None)
-    still = np.tile(np.random.default_rng(1).normal(size=(1, 16)), (30, 1))
-    moving = np.random.default_rng(2).normal(size=(30, 16))
-    check("activity: a still mouth near 0, a moving one well above", activity(still) < 1e-6 and activity(moving) > 0.5, (activity(still), activity(moving)))
+    rng = np.random.default_rng(1)
+    face = rng.integers(60, 200, size=(96, 96)).astype(np.float32)
+    still = np.clip(face[None] + rng.normal(0, 2, size=(40, 96, 96)), 0, 255).astype(np.uint8)
+    talking = np.repeat(face[None], 40, axis=0)
+    for t in range(40):   # the lips' band darkens as the mouth opens, about four times a second
+        talking[t, 40:62, 30:66] *= 0.55 + 0.45 * (0.5 + 0.5 * np.cos(2 * np.pi * 4 * t / 25))
+    talking = np.clip(talking + rng.normal(0, 2, size=talking.shape), 0, 255).astype(np.uint8)
+    check("mouth activity: a still mouth under the still limit, an opening and closing one over the speaking limit",
+          mouth_activity(still) < STILL and mouth_activity(talking) > SPEAKING, (mouth_activity(still), mouth_activity(talking)))
 
     # The worker protocol, without torch: the server's client end against trained_worker.py --fake.
     sys.argv.append("--fake")

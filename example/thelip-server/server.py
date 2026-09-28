@@ -20,7 +20,7 @@ Routes
                             improve=1 to keep the mouth crops for training,
                             profile=<the page's id> to read a language without a model
                             from the phrases this reader kept before (phrases.py)
-                            -> {"text": "HELLO THERE", "how": "model"|"learned"|"unmatched"|"none",
+                            -> {"text": "HELLO THERE", "how": "model"|"learned"|"unmatched"|"none"|"still",
                                 "frames": 62, "seconds": 3.1, "id": ...,
                                 "faces": [{"box": [x, y, w, h] as fractions, "text", "speaking",
                                            "activity", "main"}, ...] when there are several faces}
@@ -84,7 +84,7 @@ MODELS = os.environ.get("THELIP_MODELS") or os.path.join(WORK, "models")   # exp
 sys.path.insert(0, HERE)
 from hear import HEBREW, Transcriber  # noqa: E402
 from languages import LANGUAGES, ORDER, describe, runnable, trained_models  # noqa: E402
-from faces import SPEAKING, SPEAKING_MEASURE, measures, track_faces  # noqa: E402
+from faces import SPEAKING, STILL, mouth_activity, track_faces  # noqa: E402
 from phrases import LearnedPhrases, valid_profile  # noqa: E402
 from version import SERVER_VERSION  # noqa: E402
 FACE_MODEL = os.environ.get("THELIP_FACE_MODEL") or os.path.join(WORK, "blaze_face_short_range.tflite")
@@ -301,17 +301,22 @@ class Reader:
                 tracks = [{"landmarks": [max(f, key=lambda d: d[0][2] * d[0][3])[1] if f else None for f in dets], "box": None}]
             if len(tracks) == 1:
                 crops = self._crops(video, tracks[0]["landmarks"])
+                moved = mouth_activity(crops)
+                if moved < STILL:   # nothing moved: no sentence to make up
+                    return {"text": "", "crops": crops, "features": None, "faces": None, "activity": moved, "still": True}
                 text = self._infer(model, crops)
-                return {"text": text, "crops": crops, "features": self.embed(crops) if (phrases and text is None) else None, "faces": None}
-            # Several faces: each one's mouth, its encoder features, and whether it
-            # moved like speech; the speaking ones are read, the largest of them is the main.
+                return {"text": text, "crops": crops, "features": self.embed(crops) if (phrases and text is None) else None,
+                        "faces": None, "activity": moved}
+            # Several faces: each one's mouth, and whether it moved like speech; the
+            # speaking ones are read, the largest of them is the main one.
             faces = []
             for tr in tracks:
                 crops = self._crops(video, tr["landmarks"])
-                feats = self.embed(crops)
-                m = measures(crops, feats, self.embed(crops, resnet=True))
-                faces.append({"crops": crops, "features": feats, "activity": m[SPEAKING_MEASURE], "measures": m, "box": tr["box"]})
-            return self._decide(faces, lambda f: self._infer(model, f["crops"]), phrases)
+                faces.append({"crops": crops, "activity": mouth_activity(crops), "box": tr["box"]})
+            res = self._decide(faces, lambda f: self._infer(model, f["crops"]), phrases)
+            if phrases and res["text"] is None:
+                res["features"] = self.embed(res["crops"])
+            return res
 
     def _decide(self, faces: list, infer, phrases: bool) -> dict:
         """Several faces, largest first, each with "activity": which spoke, their texts, the main one."""
@@ -320,10 +325,10 @@ class Reader:
             f["speaking"] = any(f is g for g in speaking)
             f["text"] = infer(f) if f["speaking"] else None
         main = speaking[0]
-        return {"text": main["text"], "crops": main["crops"],
+        return {"text": main["text"], "crops": main["crops"], "activity": main["activity"],
                 "features": main.get("features") if (phrases and main["text"] is None) else None,
                 "faces": [{"box": f["box"], "text": f["text"], "speaking": f["speaking"], "activity": round(float(f["activity"]), 4),
-                           "main": f is main, "measures": f.get("measures")} for f in faces]}
+                           "main": f is main} for f in faces]}
 
     def _crops(self, video: np.ndarray, landmarks: list) -> np.ndarray:
         return np.asarray(self.loader.video_process(video, landmarks), dtype=np.uint8)
@@ -344,7 +349,8 @@ class Reader:
         crops = np.zeros((n, 96, 96), np.uint8)
         if width < 2 * height:
             text = f"FAKE {language.upper()} READING OF {n} FRAMES" if has_model else None
-            return {"text": text, "crops": crops, "features": self.fake_features(video) if (phrases and text is None) else None, "faces": None}
+            return {"text": text, "crops": crops, "features": self.fake_features(video) if (phrases and text is None) else None, "faces": None,
+                    "activity": None}
         faces = []
         for k, half in enumerate((video[:, :, : width // 2], video[:, :, width // 2:])):
             brightness = half.reshape(n, -1).mean(axis=1) / 255.0
@@ -362,15 +368,14 @@ class Reader:
                                                             None, None, beam_size=1, device=self.device))
         return en
 
-    def embed(self, crops: np.ndarray, resnet: bool = False) -> np.ndarray:
+    def embed(self, crops: np.ndarray) -> np.ndarray:
         """The English model's encoder output for the crops, (T, D) float16 —
-        the movement of the mouth as the model sees it, in any language; with
-        `resnet`, the visual front end's output instead (T, 512), before any
-        mixing over time. Called with the lock held."""
+        the movement of the mouth as the model sees it, in any language.
+        Called with the lock held."""
         en = self._english()
         data = self.loader.video_transform(self.torch.tensor(crops))
         with self.torch.no_grad():
-            enc = en.model.encode(data.to(self.device), extract_resnet_feats=resnet) if resnet else en.model.encode(data.to(self.device))
+            enc = en.model.encode(data.to(self.device))
         return enc.detach().cpu().numpy().astype(np.float16)
 
     @staticmethod
@@ -528,7 +533,7 @@ def create_app(reader: Reader, token: Optional[str] = None, transcriber: Optiona
         # A language with no model: the reader's own phrases, learned from the
         # sentences they kept with the microphone on.
         learned = None
-        how = "model" if text is not None else "none"
+        how = "still" if res.get("still") else "model" if text is not None else "none"
         if profile and text is None:
             learned = LEARNED.match(profile, language, features)
             if learned["matched"]:
@@ -540,13 +545,13 @@ def create_app(reader: Reader, token: Optional[str] = None, transcriber: Optiona
         if improve:
             meta = {"raw": text if how == "model" else None, "language": language, "fps": 25, "frames": int(len(video)),
                     "source": str(form.get("source", ""))[:40], "utt": utt if valid_utt(utt) else None, "profile": profile,
-                    "faces": len(res["faces"]) if res.get("faces") else 1}
+                    "faces": len(res["faces"]) if res.get("faces") else 1, "mouth_activity": res.get("activity")}
             if learned:   # what the lips were matched to, and how near: the numbers the thresholds are set from
                 meta.update(learned=text if how == "learned" else None, learned_nearest=learned["nearest"],
                             learned_distance=learned["distance"], learned_margin=learned["margin"])
             sample_id = keep_sample(crops, meta, features)
         out = {"text": text, "how": how, "language": language, "frames": int(len(video)),
-               "seconds": round(time.time() - started, 2), "id": sample_id}
+               "seconds": round(time.time() - started, 2), "id": sample_id, "activity": res.get("activity")}
         if learned:
             out["learned"] = {k: learned[k] for k in ("examples", "distance", "margin", "nearest")}
         if res.get("faces"):

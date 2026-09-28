@@ -115,12 +115,18 @@ reason, and the page says "no model yet" next to it. Registry:
 Every face in the frames is found (BlazeFace gives them all) and followed
 through the stretch by overlap from frame to frame (`faces.py`); one seen
 in under half the frames is dropped, at most four are kept, largest
-first. With one face nothing changes. With several, each face's mouth is
-cropped and aligned on its own, the English model's encoder describes it
-frame by frame, and a face whose description changes like speech
-(`activity`, the mean cosine distance between consecutive frames, at or
-above `SPEAKING`) is read; a still one is marked not speaking and gets no
-text, so that a listener's mouth is not made to say something. Two people
+first. Each face's mouth is cropped and aligned on its own, and its
+`activity` measured: how much the lips' band of the crop darkens and
+lightens over the stretch (measured on the running server with GRID's
+clips, two to a frame: speaking mouths 0.10 - 0.25, still ones 0.004 -
+0.025; the encoder's own frame-to-frame change was tried first and could
+not tell them apart — numbers in `faces.py`). With several faces, one at
+or above `SPEAKING` (0.06) is read and a still one is marked not speaking
+and gets no text, so that a listener's mouth is not made to say
+something. A lone face below `STILL` (0.03) is not read either: the
+model, given a mouth that did not move, makes up a stock sentence ("I
+don't know I don't know"), and the page says the lips did not move
+instead. Two people
 speaking at once are both read — their voices would mix in a microphone,
 their lips do not. `/read` then answers with `faces`: each face's box (as
 fractions of the frame), text, `speaking`, `activity`, and which is the

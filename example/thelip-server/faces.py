@@ -10,11 +10,18 @@ dropped (a passer-by, a false detection); at most MAX_FACES are kept, the
 largest first. Frames where a kept face was not found stay None, which
 Chaplin's alignment interpolates.
 
-Whether a face was speaking is read from the visual encoder's features of
-its mouth crops: a mouth that forms words changes what the encoder sees
-from frame to frame; a still one barely does. `activity` is the mean
-cosine distance between consecutive frames' features. The threshold is set
-from measurements through the running server; see SPEAKING.
+Whether a face was speaking is read from its aligned 96x96 mouth crops:
+the lips' band of the crop darkens and lightens as the mouth opens and
+closes, so the standard deviation over time of that band's mean
+brightness, relative to its contrast, is high for a speaking mouth and
+near zero for a still one. Measured through the running server
+(2026-09-28, GRID's sample clips composed two to a frame): speaking faces
+0.10 - 0.25 over a whole three-second clip, silences included; still
+mouths (a clip's first quarter second, played back and forth) 0.004 -
+0.025; a frozen frame 0. The encoder's own frame-to-frame change was
+tried first and does not work: it gave 0.136 for a frozen frame and
+0.15 - 0.21 for both speaking and still mouths; the visual front end's
+overlapped too (0.22 - 0.40 against 0.25 - 0.34).
 """
 from __future__ import annotations
 
@@ -26,8 +33,8 @@ MAX_FACES = 4
 MIN_PRESENCE = 0.5       # of the frames
 MIN_IOU = 0.3
 MAX_GAP = 12             # frames a track may go unseen and still continue (0.5 s at 25 fps)
-SPEAKING = 0.05          # activity at or above which a face counts as speaking (first setting; see the measurement notes in README)
-SPEAKING_MEASURE = "enc" # which of measures() is the activity
+SPEAKING = 0.06          # mouth activity at or above which one of several faces counts as speaking (measured above)
+STILL = 0.03             # below this even a lone face is not read: nothing moved, and the model would make up a sentence
 
 Box = Tuple[float, float, float, float]
 
@@ -74,25 +81,13 @@ def track_faces(dets: Sequence[Sequence[Tuple[Box, np.ndarray]]], width: int, he
              "box": tr["box"], "presence": round(len(tr["seen"]) / max(1, n), 3)} for tr in kept[:MAX_FACES]]
 
 
-def activity(features: Optional[np.ndarray]) -> float:
-    """Mean cosine distance between consecutive frames' features (T, D)."""
-    if features is None or len(features) < 2:
-        return 0.0
-    f = np.asarray(features, dtype=np.float32)
-    f = f / (np.linalg.norm(f, axis=1, keepdims=True) + 1e-8)
-    return float(np.mean(1.0 - np.sum(f[1:] * f[:-1], axis=1)))
-
-
-def measures(crops: np.ndarray, features: Optional[np.ndarray], resnet: Optional[np.ndarray]) -> dict:
-    """Ways to tell a speaking mouth from a still one, all kept so that the
-    choice can be made from measurements: the encoder's and the front end's
-    change from frame to frame, and the lips' band of the aligned crop — how
-    much its brightness moves over time (relative to its contrast), and its
-    mean change between frames in grey levels."""
+def mouth_activity(crops: np.ndarray) -> float:
+    """How much the lips' band of aligned 96x96 mouth crops (T, 96, 96) moves:
+    the standard deviation over time of its mean brightness, over its contrast."""
     c = np.asarray(crops, dtype=np.float32)
-    band = c[:, 36:66, 24:72] if c.ndim == 3 and c.shape[1] >= 66 and c.shape[2] >= 72 else c
-    level = band.reshape(len(band), -1).mean(axis=1) if len(band) else np.zeros(1)
-    contrast = float(band.std(axis=(1, 2)).mean()) if len(band) else 1.0
-    return {"enc": round(activity(features), 4), "resnet": round(activity(resnet), 4),
-            "band_std": round(float(np.std(level)) / (contrast + 1.0), 4),
-            "band_diff": round(float(np.mean(np.abs(np.diff(band, axis=0)))) if len(band) > 1 else 0.0, 3)}
+    if c.ndim != 3 or len(c) < 2:
+        return 0.0
+    band = c[:, 36:66, 24:72] if c.shape[1] >= 66 and c.shape[2] >= 72 else c
+    level = band.reshape(len(band), -1).mean(axis=1)
+    contrast = float(band.std(axis=(1, 2)).mean())
+    return round(float(np.std(level)) / (contrast + 1.0), 4)
