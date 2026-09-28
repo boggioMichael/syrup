@@ -40,7 +40,8 @@
 - Measured: 91.3% / 80.8% / 42.0% of beginner / intermediate / expert
   games won by its advice, 0 wrong proofs; three screenshots of
   minesweeper.online read cell for cell. 34 tests, run on Linux and
-  Windows.
+  Windows; on a Windows runner the coach watched a game shown on the
+  screen through, all 18 positions, and said what the game called for.
 
 ### Example projects: lipreader (`example/`)
 - `lipreader` (Python): many faces, IoU/Hungarian tracking with shot-cut

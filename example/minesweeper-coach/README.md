@@ -117,7 +117,7 @@ mines-coach simulate [LEVEL|all] [GAMES]         # its advice played out on many
 | Reading, minesweeper.online | three screenshots of the site in Chromium (40 px cells: a lost game, a game with flags, a board half under an ad) read with every cell right, the covered side reported; 4 to 6 ms each at 800x930. The screenshots are not in the repository, since the site's art is its own. |
 | A board seen in part | on 120 intermediate games cut at random, 904 proofs made from the part seen all held on the whole board; taking the window's edge for the board's edge gave 40 wrong ones |
 | Speed | 0.4 / 5 / 21 ms of analysis per game (beginner / intermediate / expert, 2-core Xeon) |
-| Windows | built on the owner's PC (Rust 1.97, 0 warnings). Running it there was stopped by Smart App Control (see above). The CI runs it live on a Windows runner, watching a game shown on the screen. |
+| Live on Windows | on a GitHub Windows runner (`tests/windows-live.ps1`), a game's 18 positions were shown on the screen while the coach watched. It saw all 18 and said what the simulated game says: *New game…*, *Nothing is sure now. Try the yellow cell, away from the numbers: about 7 percent risk.*, *This 1 already has its mine…*, *Cleared! Well played.* The runner has no voice installed, so SAPI refused each line (`0x8004503A`); the lines were still written. On the owner's PC it built (Rust 1.97, 0 warnings), but Smart App Control stopped it from running (see above). |
 
 ## Limits
 
