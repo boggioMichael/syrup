@@ -1,0 +1,2 @@
+# Windows launchers keep CRLF line endings on checkout; cmd.exe parses those reliably.
+*.cmd text eol=crlf
