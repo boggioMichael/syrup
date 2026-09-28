@@ -65,7 +65,11 @@ def main() -> None:
         return
     transcriber = Transcriber(args.size, args.device, fake=args.fake, threads=args.threads, in_process=True)
     if not transcriber.available:
-        answer({"error": "faster-whisper is not installed"})
+        try:
+            import faster_whisper  # noqa: F401
+            answer({"error": "faster-whisper imports but is not usable"})
+        except Exception as e:  # noqa: BLE001
+            answer({"error": f"faster-whisper cannot be imported: {type(e).__name__}: {e}"})
         return
     answer({"ready": True})
     while True:

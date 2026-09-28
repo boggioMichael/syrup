@@ -420,7 +420,7 @@ def create_app(reader: Reader, token: Optional[str] = None, transcriber: Optiona
         if token and request.headers.get("authorization") != f"Bearer {token}":
             return JSONResponse({"error": "bad token"}, status_code=401)
         if not (transcriber and transcriber.available):
-            return JSONResponse({"error": "this server does not hear (faster-whisper is not installed, or --whisper none)"}, status_code=503)
+            return JSONResponse({"error": "this server does not hear: " + ((transcriber.error if transcriber else None) or "faster-whisper is not installed, or --whisper none")}, status_code=503)
         form = await request.form()
         audio = form.get("audio")
         if audio is None or not hasattr(audio, "read"):
@@ -486,7 +486,7 @@ def main(argv=None) -> None:
     reader = Reader(fake=args.fake, beam=args.beam, lm=not args.no_lm, threads=args.threads)
     transcriber = None if args.whisper == "none" else Transcriber(args.whisper, reader.device, fake=args.fake, threads=args.threads)
     if transcriber and not transcriber.available:
-        print("faster-whisper is not installed: /hear is off (pip install faster-whisper)", flush=True)
+        print(f"/hear is off: {transcriber.error or 'faster-whisper is not installed (pip install faster-whisper)'}", flush=True)
     print(f"thelip-server: {MODEL_NAME if not args.fake else 'fake'} on {reader.device}; http://{args.host}:{args.port}")
     uvicorn.run(create_app(reader, args.token, transcriber), host=args.host, port=args.port, log_level="warning")
 

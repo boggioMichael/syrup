@@ -63,7 +63,16 @@ class Transcriber:
         self.models: Dict[str, object] = {}
         self.lock = threading.Lock()
         self.proc = None
-        self.available = fake or fake_worker or self._importable()
+        self.error: Optional[str] = None
+        if fake or in_process:
+            self.available = fake or self._importable()
+        else:   # the server: what counts is whether the worker starts, and it says why when it does not
+            try:
+                self._start()
+                self.available = True
+            except Exception as e:  # noqa: BLE001
+                self.error = str(e)
+                self.available = False
 
     # ---- the worker ------------------------------------------------------------------
     def _start(self) -> None:
@@ -90,7 +99,7 @@ class Transcriber:
             info = {}
         if not info.get("ready"):
             self.stop()
-            raise RuntimeError(f"the speech worker did not start: {info.get('error') or line[:200]!r}")
+            raise RuntimeError(f"the speech worker did not start: {info.get('error') or line[:300]!r}")
 
     def _ask(self, wav: bytes, language: str) -> dict:
         for attempt in (1, 2):
