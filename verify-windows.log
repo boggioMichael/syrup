@@ -1,0 +1,120 @@
+python 3.11.9 on Windows-10-10.0.26100-SP0
+syrup imported from C:\hostedtoolcache\windows\Python\3.11.9\x64\Lib\site-packages\syrup\__init__.py
+
+===== resolution and refusals =====
+  ok      find_face                                               -> find face, by confidence, highest first
+  ok      find_largest_face_in_top_half                           -> find face in top_half (0, 0, 1, 1/2), by area, largest first, at most 1
+  ok      find_2_largest_faces_in_center                          -> find face in center (1/4, 1/4, 1/2, 1/2), by area, largest first, at most 2
+  ok      find_words_left_to_right                                -> find word, by left to right
+  ok      find_leftmost_word                                      -> find word, by left to right, at most 1
+  ok      detect_qr_codes                                         -> find qr_code, by confidence, highest first
+  ok      find_largest_panel_in_bottom_half                       -> find panel in bottom_half (0, 1/2, 1, 1/2), by area, largest first, at most 1
+  ok      find_red_regions                                        -> find red region, by confidence, highest first
+  ok      measure_fill_of_largest_red_bar_in_bottom_third         -> measure fill of red bar in bottom_third (0, 2/3, 1, 1/3), by area, largest first, at most 1
+  ok      track_moving_regions                                    -> track moving_region, by confidence, highest first
+  ok      measure_sharpness_of_words                              -> measure sharpness of word, by confidence, highest first
+  ok      find_faces_larger_than_5pct_left_to_right               -> find face, area >= 5%, by left to right
+  ok      locate_three_most_confident_human_faces_in_centre       -> find face in center (1/4, 1/4, 1/2, 1/2), by confidence, highest first, at most 3
+RESULT names_accepted 13/13
+  refused find_best_face                                          [ambiguous] best is ambiguous: best by what? Say largest, most_confident, leftmost, ...
+  refused find_main_face                                          [ambiguous] main is ambiguous: main by what? Say largest, most_confident, ...
+  refused find_large_faces                                        [ambiguous] large is ambiguous: large compared to what? Say larger_than_<n>pct
+  refused find_two_faces                                          [ambiguous] 2 of which? A count needs an ordering (hint: find_2_largest_faces or find_2_most_confident_faces)
+  refused find_largest_faces                                      [ambiguous] how many largest results? (hint: find_largest_face for one, find_3_largest_faces for three)
+  refused find_smiling_faces                                      [unsupported] smiling needs a capability Syrup does not have, and it will not be ignored
+  refused find_cars                                               [unsupported] nothing in the catalog finds cars (hint: known targets: faces (where human faces are; never who, or how they look); words (words of printed text, with what they say); regions (areas of one colour, e.g. red_regions); bars (bars of one colour, at least 3 times wider than tall, e.g. red_bars); qr_codes (QR codes, with what they say); text_blocks (the block of text-like pixels in the searched region, at most one per region); panels (the largest panel of the searched region's dominant colour, at most one per region); moving_regions (what changed since the previous frame, in track_ sessions))
+  refused find_people                                             [unsupported] nothing in the catalog finds people (hint: known targets: faces (where human faces are; never who, or how they look); words (words of printed text, with what they say); regions (areas of one colour, e.g. red_regions); bars (bars of one colour, at least 3 times wider than tall, e.g. red_bars); qr_codes (QR codes, with what they say); text_blocks (the block of text-like pixels in the searched region, at most one per region); panels (the largest panel of the searched region's dominant colour, at most one per region); moving_regions (what changed since the previous frame, in track_ sessions))
+  refused find_white_regions                                      [unsupported] white has no hue Syrup can match (hint: colours: red, orange, yellow, green, cyan, blue, purple, magenta)
+  refused find_red_faces                                          [unsupported] red faces cannot be told apart by colour
+  refused measure_fill                                            [ambiguous] fill of what? e.g. measure_fill_of_red_bars
+  refused find_faces_in_top_half_in_left_half                     [conflicting] more than one region
+  refused count_faces                                             [unsupported] count is not supported: use len(find_...) for now
+  refused read_text                                               [unsupported] read is not supported: reading text is not in the catalog yet
+  refused find_eyes                                               [unsupported] nothing in the catalog finds eyes (hint: known targets: faces (where human faces are; never who, or how they look); words (words of printed text, with what they say); regions (areas of one colour, e.g. red_regions); bars (bars of one colour, at least 3 times wider than tall, e.g. red_bars); qr_codes (QR codes, with what they say); text_blocks (the block of text-like pixels in the searched region, at most one per region); panels (the largest panel of the searched region's dominant colour, at most one per region); moving_regions (what changed since the previous frame, in track_ sessions))
+  refused find_text                                               [unsupported] nothing in the catalog finds text (hint: known targets: faces (where human faces are; never who, or how they look); words (words of printed text, with what they say); regions (areas of one colour, e.g. red_regions); bars (bars of one colour, at least 3 times wider than tall, e.g. red_bars); qr_codes (QR codes, with what they say); text_blocks (the block of text-like pixels in the searched region, at most one per region); panels (the largest panel of the searched region's dominant colour, at most one per region); moving_regions (what changed since the previous frame, in track_ sessions))
+  refused find_icons                                              [unsupported] nothing in the catalog finds icons (hint: known targets: faces (where human faces are; never who, or how they look); words (words of printed text, with what they say); regions (areas of one colour, e.g. red_regions); bars (bars of one colour, at least 3 times wider than tall, e.g. red_bars); qr_codes (QR codes, with what they say); text_blocks (the block of text-like pixels in the searched region, at most one per region); panels (the largest panel of the searched region's dominant colour, at most one per region); moving_regions (what changed since the previous frame, in track_ sessions))
+  refused find_faces_top                                          [ambiguous] top is ambiguous: top by what? Say topmost or most_confident, or use in_top_half
+  refused find_face_please                                        [malformed] please is not a clause Syrup understands (hint: <find|detect|locate>_[<count>_<selector>_|<selector>_]<target>[_<clause>...]; targets: faces (where human faces are; never who, or how they look); words (words of printed text, with what they say); regions (areas of one colour, e.g. red_regions); bars (bars of one colour, at least 3 times wider than tall, e.g. red_bars); qr_codes (QR codes, with what they say); text_blocks (the block of text-like pixels in the searched region, at most one per region); panels (the largest panel of the searched region's dominant colour, at most one per region); moving_regions (what changed since the previous frame, in track_ sessions); selectors: largest, smallest, leftmost, rightmost, topmost, bottommost, most_confident; clauses: in_<region>, by_size, by_confidence, left_to_right, right_to_left, top_to_bottom, bottom_to_top, larger_than_<n>pct, smaller_than_<n>pct; regions: top_left_quadrant, top_right_quadrant, bottom_left_quadrant, bottom_right_quadrant, top_half, bottom_half, left_half, right_half, top_third, bottom_third, left_third, right_third, center, region; measure_<sharpness|fill>[_of_<what find takes>|_in_<region>])
+  refused find_faces_in_the_top_half                              [unsupported] in_the is not a region Syrup knows (hint: <find|detect|locate>_[<count>_<selector>_|<selector>_]<target>[_<clause>...]; targets: faces (where human faces are; never who, or how they look); words (words of printed text, with what they say); regions (areas of one colour, e.g. red_regions); bars (bars of one colour, at least 3 times wider than tall, e.g. red_bars); qr_codes (QR codes, with what they say); text_blocks (the block of text-like pixels in the searched region, at most one per region); panels (the largest panel of the searched region's dominant colour, at most one per region); moving_regions (what changed since the previous frame, in track_ sessions); selectors: largest, smallest, leftmost, rightmost, topmost, bottommost, most_confident; clauses: in_<region>, by_size, by_confidence, left_to_right, right_to_left, top_to_bottom, bottom_to_top, larger_than_<n>pct, smaller_than_<n>pct; regions: top_left_quadrant, top_right_quadrant, bottom_left_quadrant, bottom_right_quadrant, top_half, bottom_half, left_half, right_half, top_third, bottom_third, left_third, right_third, center, region; measure_<sharpness|fill>[_of_<what find takes>|_in_<region>])
+RESULT names_refused 20/20
+RESULT synonyms_share_plan True
+RESULT hasattr_refused_name raised IntentError
+
+===== first use: generate + compile + validate, then reuse =====
+  find_face: {'first_s': 0.50341659999998, 'status': 'compiled', 'second_ms': 0.027599999981475776, 'second_status': 'in_memory', 'library_bytes': 124416, 'build_ms': 458, 'cases': 24, 'rustc': 'rustc 1.99.0 (b940084d7 2026-09-28)'}  disk: {'disk_ms': 1.082999999994172, 'status': 'loaded_from_disk'}
+RESULT compile_first_s.find_face 0.503
+RESULT compile_build_ms.find_face 458
+RESULT reuse_memory_ms.find_face 0.028
+RESULT reuse_disk_ms.find_face 1.083
+RESULT library_kib.find_face 121
+RESULT validation_cases.find_face 24
+  find_red_bars_in_bottom_third: {'first_s': 0.6277259999999956, 'status': 'compiled', 'second_ms': 0.026800000000548607, 'second_status': 'in_memory', 'library_bytes': 130048, 'build_ms': 583, 'cases': 24, 'rustc': 'rustc 1.99.0 (b940084d7 2026-09-28)'}  disk: {'disk_ms': 1.0663000000192824, 'status': 'loaded_from_disk'}
+RESULT compile_first_s.find_red_bars_in_bottom_third 0.628
+RESULT compile_build_ms.find_red_bars_in_bottom_third 583
+RESULT reuse_memory_ms.find_red_bars_in_bottom_third 0.027
+RESULT reuse_disk_ms.find_red_bars_in_bottom_third 1.066
+RESULT library_kib.find_red_bars_in_bottom_third 127
+RESULT validation_cases.find_red_bars_in_bottom_third 24
+
+===== faces on the fixtures =====
+  astronaut: 1 face(s) [(179, 65, 91, 109, 0.943)] median 157.7 ms
+RESULT faces.astronaut 1
+  chelsea: 0 face(s) [] median 110.0 ms
+RESULT faces.chelsea 0
+  coffee: 0 face(s) [] median 111.8 ms
+RESULT faces.coffee 0
+RESULT find_face_1280x720_ms 96.2
+  1280x720: 1 face(s), median 96.2 ms
+
+===== small faces: recall when the frame is much larger than the 640 px canvas =====
+  18 heads 120px wide in 1920x1080: found 18; in 640x540 tiles: 18
+RESULT small_faces_found.120px 18/18
+RESULT small_faces_found_tiled.120px 18/18
+  18 heads 80px wide in 1920x1080: found 13; in 640x540 tiles: 18
+RESULT small_faces_found.80px 13/18
+RESULT small_faces_found_tiled.80px 18/18
+  18 heads 60px wide in 1920x1080: found 5; in 640x540 tiles: 18
+RESULT small_faces_found.60px 5/18
+RESULT small_faces_found_tiled.60px 18/18
+  18 heads 40px wide in 1920x1080: found 0; in 640x540 tiles: 18
+RESULT small_faces_found.40px 0/18
+RESULT small_faces_found_tiled.40px 18/18
+
+===== words =====
+Traceback (most recent call last):
+  File "D:\a\syrup\syrup\review\verify.py", line 38, in run
+    fn()
+  File "D:\a\syrup\syrup\review\verify.py", line 230, in words
+    found, ms = timed(syrup.resolve("find_words_left_to_right"), FIX / "words.png", repeat=3)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\a\syrup\syrup\review\verify.py", line 179, in timed
+    op(image, **kwargs)  # warm: compile/load and any per-size model preparation
+    ^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.11.9\x64\Lib\site-packages\syrup\__init__.py", line 162, in __call__
+    return from_json(_call(self._native.run, *_arguments(self.name, image, min_confidence, max_results, region)))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.11.9\x64\Lib\site-packages\syrup\__init__.py", line 65, in _call
+    raise from_native(e.args[0]) from None
+syrup.errors.DependencyError: [execute/missing_dependency] find_words_left_to_right: Tesseract is not installed (set TESSERACT_BIN or add it to PATH) (hint: install Tesseract (e.g. apt install tesseract-ocr) or set TESSERACT_BIN)
+SECTION FAILED: words
+RESULT section_failed.words 1
+
+===== colour, bars, fill =====
+RESULT fill_40pct_bar 0.312
+RESULT red_regions_on_coffee 208
+RESULT find_red_regions_1280x720_ms 6.0
+
+===== tracking: moving regions on OpenCV's vtest.avi =====
+  skipped in quick mode
+
+===== bundles and frozen mode =====
+  bundle: {"target": "x86_64-pc-windows-msvc", "abi_version": 3, "codegen": 3, "operations": {"find_face": "69b61b0596655277a22e7e8d7ff85b85a552c9112af075fbd50fa32730756eea"}} 
+  frozen find_face 1 loaded_from_disk
+  frozen find_largest_face: load not_prepared 
+RESULT frozen_mode ok
+RESULT no_rustc DependencyError compile missing_dependency
+
+===== damaged artifact =====
+RESULT damaged_artifact_dev_mode after damage: compiled
+
+verify.py done
