@@ -101,14 +101,26 @@ impl ObjectTracker {
     ///
     /// Detections with a non-finite coordinate are ignored.
     pub fn update(&mut self, detections: &[(f32, f32, f32, f32)]) -> &[Track] {
+        self.assign(detections);
+        &self.tracks
+    }
+
+    /// Like [`ObjectTracker::update`], but returns, for each detection in
+    /// order, the id of the track it was matched to or opened: `None` for a
+    /// detection with a non-finite coordinate, which is ignored.
+    pub fn assign(&mut self, detections: &[(f32, f32, f32, f32)]) -> Vec<Option<u64>> {
         self.frame_index += 1;
-        let detections: Vec<(f32, f32, f32, f32)> = detections
+        let finite: Vec<usize> = detections
             .iter()
-            .copied()
-            .filter(|&(x, y, w, h)| {
+            .enumerate()
+            .filter(|(_, (x, y, w, h))| {
                 x.is_finite() && y.is_finite() && w.is_finite() && h.is_finite()
             })
+            .map(|(index, _)| index)
             .collect();
+        let mut ids = vec![None; detections.len()];
+        let detections: Vec<(f32, f32, f32, f32)> =
+            finite.iter().map(|&index| detections[index]).collect();
 
         let predicted: Vec<Point> = self.tracks.iter().map(Track::predicted).collect();
         let observed: Vec<Point> = detections
@@ -118,9 +130,12 @@ impl ObjectTracker {
         let track_for_detection = assign(&predicted, &observed, self.max_match_distance);
 
         let frame_index = self.frame_index;
-        for (&(x, y, w, h), matched) in detections.iter().zip(track_for_detection) {
+        for ((&(x, y, w, h), matched), &index) in
+            detections.iter().zip(track_for_detection).zip(&finite)
+        {
             if let Some(track_idx) = matched {
                 let track = &mut self.tracks[track_idx];
+                ids[index] = Some(track.id);
                 let new_position = Point { x, y };
                 track.velocity = Point {
                     x: new_position.x - track.position.x,
@@ -135,6 +150,7 @@ impl ObjectTracker {
                 // Stable, repeatedly redetected tracks become more trustworthy.
                 track.confidence = track.confidence.combine(Confidence::new(0.35)).decay(0.995);
             } else {
+                ids[index] = Some(self.next_id);
                 self.tracks.push(Track {
                     id: self.next_id,
                     position: Point { x, y },
@@ -166,7 +182,7 @@ impl ObjectTracker {
             true
         });
 
-        &self.tracks
+        ids
     }
 
     pub fn tracks(&self) -> &[Track] {
@@ -376,6 +392,21 @@ mod tests {
         tracker.update(&[(12.0, 11.0, 4.0, 4.0)]);
         let ids_after_second: Vec<u64> = tracker.tracks().iter().map(|t| t.id).collect();
         assert_eq!(ids_after_first, ids_after_second);
+    }
+
+    #[test]
+    fn assign_names_each_detection_s_track_in_order() {
+        let mut tracker = ObjectTracker::new(20.0, 2);
+        let first = tracker.assign(&[(10.0, 10.0, 4.0, 4.0), (80.0, 10.0, 4.0, 4.0)]);
+        assert_eq!(first, vec![Some(1), Some(2)]);
+        // Listed the other way round, with an unusable detection between.
+        let second = tracker.assign(&[
+            (82.0, 11.0, 4.0, 4.0),
+            (f32::NAN, 0.0, 1.0, 1.0),
+            (12.0, 10.0, 4.0, 4.0),
+        ]);
+        assert_eq!(second, vec![Some(2), None, Some(1)]);
+        assert_eq!(tracker.tracks().len(), 2);
     }
 
     #[test]
