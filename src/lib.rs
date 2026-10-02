@@ -18,6 +18,15 @@
 //! `syrup::intent!(fn find_face(image: &RgbaImage) -> Detection<Vec<Match>>)`
 //! — in-process, or compiled to a shared library through the [`abi`].
 //!
+//! The `syrup-runtime` crate (`crates/syrup-runtime`) takes the same idea
+//! further: a name such as `find_2_largest_faces_in_top_half` is parsed
+//! against a composable grammar, planned with its coordinate spaces
+//! checked, generated as a dependency-free Rust module, compiled with
+//! `rustc`, validated against a reference interpreter, cached and loaded.
+//! Its detectors (YuNet faces, QR codes, Tesseract words, colour regions,
+//! motion) are served from this crate's primitives, and it is what the
+//! Python package's `syrup.ops` runs.
+//!
 //! What each module owns:
 //!
 //! - [`intent`]: functions by name — parse the name, plan a composition of
