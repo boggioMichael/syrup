@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### Compiled operations by name: `syrup-runtime` (by Eitan, from 0xGh0stAn0n/syrup)
+- `crates/syrup-runtime`: a name such as `find_2_largest_faces_in_top_half`
+  is parsed against a composable grammar (counts, selectors, regions,
+  orders, area filters; ambiguous or unknown words refused with a reason)
+  into a typed plan whose coordinate spaces are checked, generated as a
+  dependency-free Rust module, compiled with `rustc` (no cargo, no network),
+  checked by a source policy, validated against a reference interpreter on
+  24 synthetic cases, published atomically into a content-addressed cache
+  (SHA-256 checked before every load) and loaded. Frozen mode and bundles
+  for machines without a compiler; `syrup explain | source | run | watch |
+  windows | bundle | cache`.
+- Targets: YuNet faces (2023mar, pinned by SHA-256, run by tract),
+  Tesseract words with boxes, QR codes (rqrr), colour regions and bars
+  (the per-pixel test generated per colour), text blocks, panels;
+  `measure_sharpness`, `measure_fill`; `track_*` sessions with ids,
+  including moving regions.
+- `syrup-cv` for Python (PyO3, abi3 wheels): `from syrup.ops import
+  find_largest_face`, `syrup.define`, `syrup.add_target` for detectors
+  written in Python, YOLO and MediaPipe recipes, an optional planner
+  constrained to Syrup's vocabulary, `syrup.capture.window(title)`.
+  `syrup.find_face` and the other names on the package are the in-process
+  intents, now `syrup.legacy`.
+- Core: `ocr::recognize` says why recognition failed (`OcrError`) and gives
+  word boxes in image coordinates (`ocr_region` unchanged);
+  `ObjectTracker::assign` gives each detection's track id;
+  `motion::extract_blobs` over a motion mask; window capture on macOS 14+,
+  X11 and Wayland (screen-cast portal and PipeWire) besides Windows, as a
+  `capture::Window` kept between frames, with
+  `capture_window_by_title_info`, `list_windows` and `capture_screen`
+  unchanged.
+- CI: the Python package on three platforms, Wayland capture against
+  PipeWire, the recipes on real photographs; wheels built and tested on
+  install, published on a `v*` tag.
+
 ### Functions you name instead of write
 - `syrup::intent!`: declare `fn find_face(image: &RgbaImage) -> Detection<Vec<Match>>`
   and the library implements it — in-process, or compiled to a `.so`/`.dll`
