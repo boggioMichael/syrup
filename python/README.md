@@ -1,35 +1,52 @@
-# syrup for Python
+# syrup-cv
+
+Computer-vision operations you name instead of write.
 
 ```python
-import syrup
-from PIL import Image
+from syrup.ops import find_largest_face, find_red_bars_in_bottom_third
 
-image = Image.open("photo.jpg")
-for face in syrup.find_face(image).value:
-    print(face.bounds, face.score)
-print(syrup.find_eyes(image).value)
-print(syrup.measure_red_bar(image).value)      # a percentage, or None with .failure_reason
+faces = find_largest_face("photo.jpg")
+for face in faces:
+    print(face.box, face.confidence)
 ```
 
-Any attribute named like an intent — `find_*`, `track_*`, `count_*`,
-`measure_*`, `read_*` — is resolved through the native library the first
-time it is used. Outside the vocabulary you get an `IntentError` whose
-message lists it. `syrup.find_face.source` is the Rust the library wrote for
-the name; `syrup.find_face.compile()` builds it into its own shared library.
+The name is parsed into a plan, compiled to a small native module the
+first time it runs, checked against a reference implementation, and reused
+afterwards. Names Syrup cannot honour raise `syrup.IntentError` at import.
 
-Images are PIL images or numpy `HxWx3`/`HxWx4` `uint8` arrays. Results are
-`Detection(value, confidence, reliability, failure_reason)`: `value` is a
-list of `Match(bounds, score, centre, id)`, a float, or a string — or `None`
-when the search could not run, with the reason.
+Compiling needs `rustc` 1.82 or newer. Machines without it can run
+operations prepared elsewhere:
 
-## Setup
+```python
+syrup.bundle("ops-bundle", "find_largest_face", "find_words")
+# then, on the target machine: SYRUP_MODE=frozen SYRUP_CACHE_DIR=ops-bundle
+```
 
-The package is a thin `ctypes` layer over the library's C API (`src/capi.rs`),
-so it needs the native library: `cargo build --release` in the repository
-produces `target/release/libsyrup.so` (`.dylib`, `syrup.dll`), which the
-package finds on its own from the checkout, or through `SYRUP_LIBRARY`.
+Detectors from other libraries plug in with `syrup.add_target`. The grammar,
+result contract and failure classes are in
+[crates/syrup-runtime/docs/contract.md](https://github.com/boggioMichael/syrup/blob/main/crates/syrup-runtime/docs/contract.md).
+
+## Install
+
+```sh
+pip install ./python            # builds the extension with maturin
+pip install "./python[test]"    # and what the tests need
+pytest python/tests
+```
+
+## The in-process intents (`syrup.find_face`, `syrup.legacy`)
+
+Names on the package itself — `syrup.find_face`, `syrup.find_eyes`,
+`syrup.measure_red_bar`, `syrup.find_<name>_icon` — are the core library's
+in-process intents (`syrup::intent`: cascade faces, eyes and profile faces,
+icons by template, bars, blobs, text, motion), reached through its C API
+(`src/capi.rs`). They are a separate vocabulary with their own results,
+`Detection(value, confidence, reliability, failure_reason)`, and need only
+the core library: `cargo build --release` produces
+`target/release/libsyrup.so` (`.dylib`, `syrup.dll`), which `syrup.legacy`
+finds from the checkout or through `SYRUP_LIBRARY`.
 
 ```sh
 cargo build --release
-cd python && python3 -m pytest        # or: python3 test_syrup.py
+python3 python/test_legacy.py
 ```

@@ -10,12 +10,12 @@ categories = ["computer-vision", "multimedia::images"]
 
 [lib]
 # The rlib for Rust callers; the cdylib carries the C API (src/capi.rs)
-# that the Python package and other hosts load.
+# that the Python package's in-process intents and other hosts load.
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 image = "0.24"
-libloading = "0.8"
+libloading = "0.9"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
@@ -29,9 +29,55 @@ windows = { version = "0.61", features = [
     "Foundation",
 ] }
 
+# Window capture on Linux and the BSDs: X11 directly, Wayland through the
+# desktop's screen-cast portal (D-Bus) and PipeWire (loaded when used).
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+x11rb = { version = "0.14", features = ["composite"] }
+zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
+
+# Window capture on macOS 14 and later: ScreenCaptureKit.
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-core-foundation = "0.3"
+objc2-core-graphics = "0.3"
+objc2-foundation = "0.3"
+objc2-screen-capture-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "objc2-core-foundation",
+    "objc2-core-graphics",
+    "SCShareableContent",
+    "SCScreenshotManager",
+    "SCStream",
+] }
+
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dev-dependencies]
+x11rb = "0.14"
 
 [[bench]]
 name = "primitives"
 harness = false
+
+# The core stays a standalone package at the root, so path consumers keep
+# working. Operations by name — parsed, generated, compiled with rustc,
+# validated and loaded — live in crates/syrup-runtime. The Python extension
+# is built by maturin with its own lockfile (it links against Python, which
+# a plain `cargo test --workspace` should not need), and the Minesweeper
+# coach is a separate example with its own lockfile.
+[workspace]
+members = ["crates/syrup-runtime"]
+exclude = ["crates/syrup-python", "example/minesweeper-coach"]
+
+# Face detection runs in tests; unoptimised tract makes them crawl.
+[profile.dev]
+# Full debug info made the target directory tens of gigabytes; line tables
+# keep backtraces readable.
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 2
+debug = false

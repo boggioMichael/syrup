@@ -9,11 +9,17 @@
 //! For text drawn in one fixed pixel font — counters, HUD values — the
 //! template reader in [`crate::glyphs`] is faster and more reliable than
 //! either engine, because it knows the exact font.
+//!
+//! [`recognize`] says why recognition did not run ([`OcrError`]) and gives
+//! word boxes in the coordinates of the image it was handed; [`ocr_region`]
+//! and [`ocr_region_with`] answer `None` for every failure and for no text,
+//! with word boxes relative to the crop.
 
 pub mod windows;
 
 use std::env;
 use std::ffi::OsString;
+use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::{BufWriter, ErrorKind};
 use std::path::{Path, PathBuf};
@@ -23,6 +29,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use image::{DynamicImage, GrayImage, ImageOutputFormat, Luma, RgbaImage, imageops};
 
 use crate::detection::Confidence;
+use crate::geometry::Rect;
 
 /// OCR configuration for a single crop.
 #[derive(Debug, Clone)]
@@ -159,7 +166,7 @@ pub fn ocr_region(image: &RgbaImage, x: u32, y: u32, w: u32, h: u32) -> Option<O
 ///
 /// The crop is clipped to the image. Returns `None` when Tesseract is not
 /// installed, the crop is empty, or nothing was recognised. Word boxes are
-/// relative to the crop's top-left corner.
+/// relative to the crop's top-left corner. [`recognize`] says why instead.
 pub fn ocr_region_with(
     image: &RgbaImage,
     x: u32,
@@ -169,35 +176,8 @@ pub fn ocr_region_with(
     config: &OcrConfig,
 ) -> Option<OcrResult> {
     let binary = find_tesseract_binary()?;
-    let crop = crop_region(image, x, y, w, h)?;
-    let (width, height) = crop.dimensions();
-
-    // Every call starts a process, so the crop is prepared once, the way
-    // that measured best, rather than trying several variants.
-    let (input_image, placement) = preprocess_image(&crop);
-    // `input` deletes the PNG when it drops, including on the `?` below.
-    let input = write_temp_image(&input_image)?;
-    let mut command = Command::new(&binary);
-    command.args(tesseract_args(input.path(), config));
-    // Tesseract's OpenMP threads cost more to start than they save on a
-    // crop this small; one thread is measurably faster. An explicit
-    // setting in the environment still wins.
-    if env::var_os("OMP_THREAD_LIMIT").is_none() {
-        command.env("OMP_THREAD_LIMIT", "1");
-    }
-
-    let output = command.output().ok()?;
-    let words: Vec<OcrWord> = parse_tsv_words(&String::from_utf8_lossy(&output.stdout))
-        .into_iter()
-        .map(|word| unscale_word(word, placement, width, height))
-        .collect();
-    let text = normalize_text(
-        &words
-            .iter()
-            .map(|word| word.text.as_str())
-            .collect::<Vec<_>>()
-            .join(" "),
-    );
+    let words = run_tesseract(&binary, image, Rect { x, y, w, h }, config).ok()?;
+    let text = joined_text(words.iter().map(|word| word.text.as_str()));
     if text.is_empty() {
         return None;
     }
@@ -207,6 +187,142 @@ pub fn ocr_region_with(
         available: true,
         words,
     })
+}
+
+/// A recognised word, in the coordinates of the image given to [`recognize`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Word {
+    pub text: String,
+    pub bounds: Rect,
+    /// Tesseract's confidence, scaled to `[0, 1]`.
+    pub confidence: f32,
+}
+
+/// What [`recognize`] read: the words, and their text joined by spaces.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Recognition {
+    /// The words joined by spaces and normalised.
+    pub text: String,
+    pub words: Vec<Word>,
+}
+
+/// Why recognition did not run. Recognising no text is not an error: it is
+/// an empty [`Recognition`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OcrError {
+    /// No Tesseract on `TESSERACT_BIN`, `PATH` or the standard install paths.
+    EngineMissing,
+    /// The region does not overlap the image.
+    EmptyRegion,
+    /// The temporary input image could not be written.
+    Io(String),
+    /// Tesseract ran and failed, or could not be started.
+    EngineFailed { status: Option<i32>, stderr: String },
+}
+
+impl fmt::Display for OcrError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OcrError::EngineMissing => {
+                f.write_str("Tesseract is not installed (set TESSERACT_BIN or add it to PATH)")
+            }
+            OcrError::EmptyRegion => f.write_str("the region does not overlap the image"),
+            OcrError::Io(e) => write!(f, "cannot write the OCR input image: {e}"),
+            OcrError::EngineFailed { status, stderr } => match status {
+                Some(code) => write!(f, "Tesseract exited with status {code}: {stderr}"),
+                None => write!(f, "Tesseract could not run: {stderr}"),
+            },
+        }
+    }
+}
+
+impl std::error::Error for OcrError {}
+
+/// Recognise the text in `region` of `image`. Word boxes come back in
+/// `image`'s coordinates, whatever preprocessing happened in between; no
+/// text is an empty [`Recognition`], and anything that stops Tesseract from
+/// reading is an [`OcrError`].
+pub fn recognize(
+    image: &RgbaImage,
+    region: Rect,
+    config: &OcrConfig,
+) -> Result<Recognition, OcrError> {
+    let binary = find_tesseract_binary().ok_or(OcrError::EngineMissing)?;
+    recognize_with(&binary, image, region, config)
+}
+
+fn recognize_with(
+    binary: &Path,
+    image: &RgbaImage,
+    region: Rect,
+    config: &OcrConfig,
+) -> Result<Recognition, OcrError> {
+    let words: Vec<Word> = run_tesseract(binary, image, region, config)?
+        .into_iter()
+        .map(|word| Word {
+            bounds: Rect {
+                x: region.x + word.x,
+                y: region.y + word.y,
+                w: word.w,
+                h: word.h,
+            },
+            text: word.text,
+            confidence: word.confidence,
+        })
+        .collect();
+    let text = joined_text(words.iter().map(|word| word.text.as_str()));
+    Ok(Recognition { text, words })
+}
+
+fn joined_text<'a>(words: impl Iterator<Item = &'a str>) -> String {
+    normalize_text(&words.collect::<Vec<_>>().join(" "))
+}
+
+/// One Tesseract run over `region` of `image`: the words it read, with
+/// boxes relative to the crop (the region clipped to the image).
+fn run_tesseract(
+    binary: &Path,
+    image: &RgbaImage,
+    region: Rect,
+    config: &OcrConfig,
+) -> Result<Vec<OcrWord>, OcrError> {
+    let crop =
+        crop_region(image, region.x, region.y, region.w, region.h).ok_or(OcrError::EmptyRegion)?;
+    let (width, height) = crop.dimensions();
+
+    // Every call starts a process, so the crop is prepared once, the way
+    // that measured best, rather than trying several variants.
+    let (input_image, placement) = preprocess_image(&crop);
+    // `input` deletes the PNG when it drops, on every path out of here.
+    let input = write_temp_image(&input_image).ok_or_else(|| {
+        OcrError::Io(format!(
+            "no file could be created in {}",
+            env::temp_dir().display()
+        ))
+    })?;
+    let mut command = Command::new(binary);
+    command.args(tesseract_args(input.path(), config));
+    // Tesseract's OpenMP threads cost more to start than they save on a
+    // crop this small; one thread is measurably faster. An explicit
+    // setting in the environment still wins.
+    if env::var_os("OMP_THREAD_LIMIT").is_none() {
+        command.env("OMP_THREAD_LIMIT", "1");
+    }
+
+    let output = command.output().map_err(|e| OcrError::EngineFailed {
+        status: None,
+        stderr: e.to_string(),
+    })?;
+    if !output.status.success() {
+        return Err(OcrError::EngineFailed {
+            status: output.status.code(),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        });
+    }
+    Ok(parse_tsv_words(&String::from_utf8_lossy(&output.stdout))
+        .into_iter()
+        .map(|word| unscale_word(word, placement, width, height))
+        .collect())
 }
 
 /// Words from Tesseract's TSV output, in reading order, with boxes in the
@@ -791,5 +907,105 @@ mod tests {
                 score.h
             );
         }
+    }
+
+    /// A stand-in for Tesseract: a script that prints `stdout`, writes
+    /// `stderr` and exits with `status`.
+    #[cfg(unix)]
+    fn fake_tesseract(name: &str, stdout: &str, stderr: &str, status: i32) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = env::temp_dir().join(format!("syrup-fake-tesseract-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let tsv = dir.join(format!("{name}.tsv"));
+        fs::write(&tsv, stdout).unwrap();
+        let script = dir.join(name);
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\ncat '{}'\nprintf '%s' '{stderr}' >&2\nexit {status}\n",
+                tsv.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        script
+    }
+
+    #[cfg(unix)]
+    const TSV_HEADER: &str = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n";
+
+    /// One test: the stand-ins are written and run in turn, never while
+    /// another thread of this test binary might be starting one.
+    #[cfg(unix)]
+    #[test]
+    fn recognize_maps_words_to_the_image_and_says_why_it_failed() {
+        // A 60x12 crop is enlarged 4x and framed by a 24-pixel margin, so a
+        // word Tesseract reports at (64, 32) 80x32 covers crop (10, 2) 20x8.
+        let tsv = format!("{TSV_HEADER}5\t1\t1\t1\t1\t1\t64\t32\t80\t32\t88\tHP\n");
+        let binary = fake_tesseract("reads", &tsv, "", 0);
+        let image = RgbaImage::new(200, 100);
+        let region = Rect {
+            x: 10,
+            y: 20,
+            w: 60,
+            h: 12,
+        };
+        let read = recognize_with(&binary, &image, region, &OcrConfig::default()).unwrap();
+        assert_eq!(read.text, "HP");
+        assert_eq!(
+            read.words,
+            vec![Word {
+                text: "HP".into(),
+                bounds: Rect {
+                    x: 20,
+                    y: 22,
+                    w: 20,
+                    h: 8
+                },
+                confidence: 0.88,
+            }]
+        );
+
+        // No text is an empty recognition, not an error; a failure says why.
+        let image = RgbaImage::new(40, 20);
+        let all = Rect {
+            x: 0,
+            y: 0,
+            w: 40,
+            h: 20,
+        };
+        let silent = fake_tesseract("silent", TSV_HEADER, "", 0);
+        assert_eq!(
+            recognize_with(&silent, &image, all, &OcrConfig::default()),
+            Ok(Recognition::default())
+        );
+        let broken = fake_tesseract("broken", "", "oops", 3);
+        assert_eq!(
+            recognize_with(&broken, &image, all, &OcrConfig::default()),
+            Err(OcrError::EngineFailed {
+                status: Some(3),
+                stderr: "oops".into()
+            })
+        );
+        let off_image = Rect {
+            x: 50,
+            y: 0,
+            w: 10,
+            h: 10,
+        };
+        assert_eq!(
+            recognize_with(&silent, &image, off_image, &OcrConfig::default()),
+            Err(OcrError::EmptyRegion)
+        );
+        assert_eq!(
+            recognize_with(
+                Path::new("/nonexistent/tesseract"),
+                &image,
+                all,
+                &OcrConfig::default()
+            )
+            .map_err(|e| matches!(e, OcrError::EngineFailed { status: None, .. })),
+            Err(true)
+        );
     }
 }

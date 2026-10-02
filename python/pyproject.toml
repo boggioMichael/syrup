@@ -1,0 +1,28 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "syrup-cv"
+version = "0.1.0"
+description = "Computer-vision operations you name instead of write, compiled to native code"
+requires-python = ">=3.9"
+license = "MIT"
+readme = "README.md"
+dependencies = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "numpy", "pillow"]
+planner = ["anthropic"]
+yolo = ["numpy", "ultralytics"]
+mediapipe = ["numpy", "mediapipe"]
+
+[tool.maturin]
+manifest-path = "../crates/syrup-python/Cargo.toml"
+module-name = "syrup._native"
+python-source = "."

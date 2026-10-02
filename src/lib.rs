@@ -3,7 +3,7 @@
 //!
 //! The library operates on plain [`image::RgbaImage`] buffers, so frames can
 //! come from anywhere — a screenshot on disk, frames extracted from a video,
-//! a synthetic test fixture, or a live window capture (Windows only) — and
+//! a synthetic test fixture, or a live window capture — and
 //! every primitive behaves identically regardless of the source.
 //!
 //! ```text
@@ -17,6 +17,15 @@
 //! the function you need and the [`intent`] module builds it from them —
 //! `syrup::intent!(fn find_face(image: &RgbaImage) -> Detection<Vec<Match>>)`
 //! — in-process, or compiled to a shared library through the [`abi`].
+//!
+//! The `syrup-runtime` crate (`crates/syrup-runtime`) takes the same idea
+//! further: a name such as `find_2_largest_faces_in_top_half` is parsed
+//! against a composable grammar, planned with its coordinate spaces
+//! checked, generated as a dependency-free Rust module, compiled with
+//! `rustc`, validated against a reference interpreter, cached and loaded.
+//! Its detectors (YuNet faces, QR codes, Tesseract words, colour regions,
+//! motion) are served from this crate's primitives, and it is what the
+//! Python package's `syrup.ops` runs.
 //!
 //! What each module owns:
 //!
@@ -48,7 +57,8 @@
 //! - [`ocr`]: text recognition via a Tesseract subprocess, or the OCR engine
 //!   built into Windows.
 //! - [`quality`]: is a region sharp enough for OCR to stand a chance?
-//! - [`capture`]: window capture by title, or the whole screen (Windows; stubs elsewhere).
+//! - [`capture`]: live window capture by title on Windows, macOS and Linux
+//!   (X11 and Wayland), and the whole screen on Windows.
 //! - [`draw`]: debug-overlay primitives — rectangles and a small bitmap font.
 //! - [`timing`]: FPS and moving-average measurement.
 //!

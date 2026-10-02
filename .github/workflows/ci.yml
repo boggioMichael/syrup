@@ -25,9 +25,17 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Install Tesseract
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
+      - name: Open a window to capture
+        shell: bash
+        run: .github/open-window.sh
       - name: Test
         # Includes tests/intent_native.rs, which builds an intent into a
-        # shared library with cargo and loads it back.
+        # shared library with cargo and loads it back, and syrup-runtime's
+        # tests, which generate, compile (rustc), validate and load modules
+        # and detect faces in the fixtures.
         run: cargo test --workspace
       - name: Build
         run: cargo build --workspace --all-targets --release
@@ -36,11 +44,84 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Python package
+      - name: Python in-process intents (syrup.legacy)
         run: |
           python -m pip install --quiet numpy pillow opencv-python-headless
-          python python/test_syrup.py
+          python python/test_legacy.py
           python python/thelip/test_thelip.py
+
+  python:
+    # The compiled operations from Python: the package built with maturin
+    # and installed, then its tests (python/tests).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/syrup-python -> target
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Lint the extension
+        if: runner.os == 'Linux'
+        run: |
+          cargo fmt --manifest-path crates/syrup-python/Cargo.toml -- --check
+          cargo clippy --manifest-path crates/syrup-python/Cargo.toml -- -D warnings
+      - name: Install Tesseract
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
+      - name: Install
+        run: pip install "./python[test]" opencv-python-headless
+      - name: Open a window to capture
+        shell: bash
+        run: .github/open-window.sh
+      - name: Test
+        run: pytest python/tests
+
+  wayland:
+    # Wayland capture, against a real PipeWire server with a stand-in for
+    # the desktop's screen-cast portal (tests/portal).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dbus-x11 pipewire pipewire-bin wireplumber \
+            gstreamer1.0-pipewire gstreamer1.0-tools gstreamer1.0-plugins-base \
+            python3-dbus python3-gi
+      - name: Test
+        run: tests/portal/run.sh
+
+  recipes:
+    # The model recipes (syrup.recipes), on real photographs. Heavy
+    # dependencies, so a job of their own; elsewhere these tests skip.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/syrup-python -> target
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          sudo apt-get update && sudo apt-get install -y libegl1 libgles2
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install "./python[test,yolo,mediapipe]"
+      - name: Test
+        run: pytest python/tests/test_recipes.py -v
 
   minesweeper-coach:
     # example/minesweeper-coach: its tests on Linux and on Windows, and on

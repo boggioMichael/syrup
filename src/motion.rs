@@ -302,6 +302,27 @@ fn average_confidence(tracks: &[Track]) -> Confidence {
     Confidence::new(total / tracks.len() as f32)
 }
 
+/// Changed regions of a motion mask (from [`motion_mask`]): runs of at
+/// least `min_run_width` moved pixels, grouped into blobs at least
+/// `min_blob_height` rows tall and `min_blob_area` pixels large — the
+/// regions [`MotionDetector`] tracks, for callers that keep the frames
+/// themselves.
+pub fn extract_blobs(mask: &GrayImage, config: &MotionConfig) -> Vec<Rect> {
+    let width = mask.width() as usize;
+    let min_run = (config.min_run_width as usize).max(1);
+    let mut runs = Vec::new();
+    if width > 0 {
+        for (y, row) in mask.as_raw().chunks_exact(width).enumerate() {
+            for_each_run(row, |start, end| {
+                if end - start >= min_run {
+                    runs.push((y as u32, start as u32, end as u32 - 1));
+                }
+            });
+        }
+    }
+    blobs_from_runs(runs, config)
+}
+
 fn blobs_from_runs(runs: Vec<(u32, u32, u32)>, config: &MotionConfig) -> Vec<Rect> {
     group_segments(runs, config.min_blob_height, 1)
         .into_iter()
@@ -322,6 +343,19 @@ mod tests {
             }
         }
         image
+    }
+
+    #[test]
+    fn blobs_from_a_mask_match_the_fused_scan() {
+        let config = MotionConfig::default();
+        let a = frame_with_square(64, 48, (4, 4), 12);
+        let b = frame_with_square(64, 48, (30, 20), 12);
+        let mask = motion_mask(&a, &b, config.diff_threshold).unwrap();
+        let (runs, _) = motion_runs(&a, &b, config.diff_threshold, config.min_run_width);
+        let from_mask = extract_blobs(&mask, &config);
+        assert_eq!(from_mask, blobs_from_runs(runs, &config));
+        // The square it left and the square it entered.
+        assert_eq!(from_mask.len(), 2, "{from_mask:?}");
     }
 
     #[test]

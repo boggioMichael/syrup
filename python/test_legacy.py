@@ -1,4 +1,7 @@
-"""Checks the Python package against the native library on the fixtures."""
+"""Checks syrup.legacy — the core library's in-process intents, reached as
+syrup.<name> — against the native library on the fixtures. Needs only
+`cargo build --release`; the compiled operations (syrup.ops) are tested in
+python/tests."""
 
 import sys
 from pathlib import Path
