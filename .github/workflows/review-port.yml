@@ -1,0 +1,107 @@
+name: Review of the runtime port
+
+# Independent verification of the runtime port, run on a review branch only.
+on:
+  push:
+    branches: ["review/**"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: never
+
+# The logs are committed to review-logs/<job> so they can be read with git.
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y tesseract-ocr
+          rustc --version; cargo --version; tesseract --version | head -1; nproc
+      - name: Format
+        run: |
+          set -o pipefail
+          cargo fmt --all -- --check 2>&1 | tee fmt.log
+      - name: Clippy
+        run: |
+          set -o pipefail
+          cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tee clippy.log
+      - name: Test
+        run: |
+          set -o pipefail
+          cargo test --workspace 2>&1 | tee test.log
+          echo "== summary =="; grep -E "^test result|Running|warning: unused" test.log || true
+          echo "TESTS PASSED: $(grep -oE '[0-9]+ passed' test.log | awk '{s+=$1} END {print s}')"
+          echo "TESTS IGNORED: $(grep -oE '[0-9]+ ignored' test.log | awk '{s+=$1} END {print s}')"
+      - name: Benchmarks (runtime)
+        run: |
+          set -o pipefail
+          cargo bench -p syrup-runtime --bench runtime -- --warm-up-time 1 --measurement-time 4 --noplot 2>&1 | tee bench.log
+          echo "== bench summary =="; grep -E "^[a-z].*time:|^ +time:|^compile|^frame|^session" bench.log || true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install the Python package
+        run: pip install "./python[test]" opencv-python-headless
+      - name: Python tests
+        run: pytest python/tests -q -rs 2>&1 | tee pytest.log
+      - name: Independent checks
+        run: python review/verify.py 2>&1 | tee verify.log
+      - name: CLI
+        run: |
+          {
+            cargo run -q -p syrup-runtime --bin syrup -- explain find_2_largest_faces_in_center
+            cargo run -q -p syrup-runtime --bin syrup -- source find_largest_red_bar_in_bottom_third
+            cargo run -q -p syrup-runtime --bin syrup -- explain find_best_face || echo "exit $?"
+          } 2>&1 | tee cli.log
+      - name: Publish logs
+        if: always()
+        shell: bash
+        run: |
+          out="$RUNNER_TEMP/logs-$GITHUB_JOB"
+          mkdir -p "$out" && cp *.log "$out"/ 2>/dev/null || true
+          git rev-parse HEAD > "$out/commit.txt"
+          cd "$out"
+          git init -q && git checkout -q -b logs
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "logs of $GITHUB_JOB [skip ci]"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" "logs:refs/heads/review-logs/$GITHUB_REF_NAME/$GITHUB_JOB"
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/syrup-python -> target
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install the Python package
+        run: pip install "./python[test]" opencv-python-headless
+      - name: Independent checks
+        shell: bash
+        run: python review/verify.py --quick 2>&1 | tee verify-windows.log
+      - name: Publish logs
+        if: always()
+        shell: bash
+        run: |
+          out="$RUNNER_TEMP/logs-$GITHUB_JOB"
+          mkdir -p "$out" && cp *.log "$out"/ 2>/dev/null || true
+          git rev-parse HEAD > "$out/commit.txt"
+          cd "$out"
+          git init -q && git checkout -q -b logs
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "logs of $GITHUB_JOB [skip ci]"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" "logs:refs/heads/review-logs/$GITHUB_REF_NAME/$GITHUB_JOB"
