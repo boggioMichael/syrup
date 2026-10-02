@@ -1,291 +1,314 @@
-"""syrup for Python: name the function you need and the library builds it.
+"""Computer-vision operations you name instead of write.
 
-    import syrup
-    faces = syrup.find_face(image)          # image: numpy HxWx3/HxWx4 uint8, or PIL.Image
-    for face in faces.value:
-        print(face.bounds, face.score)
-    print(syrup.measure_red_bar(image).value)
+    from syrup.ops import find_face
 
-Every attribute of the module that looks like an intent (``verb_qualifiers_noun``)
-is resolved through the native library's C API (``src/capi.rs``) the first time
-it is used and cached. Names outside the vocabulary raise ``IntentError`` with the
-vocabulary in the message; results carry ``confidence``, ``reliability`` and a
-``failure_reason`` when the search could not run.
+    faces = find_face("photo.jpg")
+    for face in faces:
+        print(face.box, face.confidence)
 
-The native library is found through ``SYRUP_LIBRARY``, next to this package, or
-in a ``target/release`` / ``target/debug`` directory above it (``cargo build
---release`` in the repository produces it).
+The name is parsed into an intent, compiled to a native module the first
+time it runs, and reused afterwards. See crates/syrup-runtime/docs/contract.md
+for the grammar, the result contract and every way an operation can fail.
+
+`syrup.find_face` and other names on the package itself are the core
+library's in-process intents (`syrup.legacy`), kept for existing code; they
+need only the core library (`cargo build --release`), not this package's
+compiled extension.
 """
 
-from __future__ import annotations
-
-import ctypes
+import json
+import operator
 import os
-import sys
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Optional, Union
 
-__all__ = ["Detection", "Match", "IntentError", "Intent", "register_template", "library_path", "version"]
-
-_c_char_p = ctypes.POINTER(ctypes.c_char)
-
-
-class _FrameView(ctypes.Structure):
-    _fields_ = [
-        ("data", ctypes.POINTER(ctypes.c_uint8)),
-        ("width", ctypes.c_uint32),
-        ("height", ctypes.c_uint32),
-        ("stride", ctypes.c_uint32),
-    ]
+from .errors import (
+    BuildError,
+    DependencyError,
+    ExecutionError,
+    InputError,
+    IntentError,
+    LoadError,
+    PlanError,
+    SyrupError,
+    ValidationError,
+    from_native,
+)
+from .results import Box, FindResult, Found, Provenance, Track, from_json
 
 
-class _RegionView(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_uint32), ("y", ctypes.c_uint32), ("w", ctypes.c_uint32), ("h", ctypes.c_uint32)]
+class _NativeMissing:
+    """Stands in for the compiled extension in a checkout where it was not
+    built: the in-process intents still work, and every use of the compiled
+    operations says how to get them."""
+
+    class NativeError(Exception):
+        pass
+
+    def __init__(self, error):
+        self._error = error
+
+    def __getattr__(self, name):
+        def missing(*args, **kwargs):
+            raise DependencyError(
+                "load",
+                "missing_dependency",
+                "syrup's compiled extension (syrup._native) is not installed",
+                hint="pip install ./python, or `maturin develop` in python/",
+                details={"import_error": str(self._error)},
+            )
+
+        return missing
 
 
-class _MatchView(ctypes.Structure):
-    _fields_ = [
-        ("x", ctypes.c_uint32),
-        ("y", ctypes.c_uint32),
-        ("w", ctypes.c_uint32),
-        ("h", ctypes.c_uint32),
-        ("score", ctypes.c_float),
-        ("cx", ctypes.c_float),
-        ("cy", ctypes.c_float),
-        ("id", ctypes.c_uint64),
-    ]
+try:
+    from . import _native
+except ImportError as _error:  # a checkout where only the core library was built
+    _native = _NativeMissing(_error)
+
+from .legacy import Detection, Match, library_path, register_template, version  # noqa: E402
+
+__all__ = [
+    "Box",
+    "BuildError",
+    "DependencyError",
+    "Detection",
+    "ExecutionError",
+    "FindResult",
+    "Found",
+    "Image",
+    "InputError",
+    "IntentError",
+    "LoadError",
+    "Match",
+    "Operation",
+    "PlanError",
+    "Provenance",
+    "Session",
+    "SyrupError",
+    "Track",
+    "ValidationError",
+    "add_target",
+    "bundle",
+    "cache_dir",
+    "capture",
+    "define",
+    "legacy",
+    "library_path",
+    "ops",
+    "register_template",
+    "resolve",
+    "version",
+]
 
 
-class _ResultView(ctypes.Structure):
-    _fields_ = [
-        ("status", ctypes.c_uint32),
-        ("kind", ctypes.c_uint32),
-        ("confidence", ctypes.c_float),
-        ("reliability", ctypes.c_uint32),
-        ("matches", ctypes.POINTER(_MatchView)),
-        ("match_count", ctypes.c_size_t),
-        ("scalar", ctypes.c_float),
-        ("text", _c_char_p),
-        ("reason", _c_char_p),
-    ]
-
-
-_STATUS_FOUND = 0
-_KIND_MATCHES, _KIND_SCALAR, _KIND_TEXT = 0, 1, 2
-_RELIABILITY = {0: "corroborated", 1: "heuristic", 2: "predicted", 3: "unreliable"}
-
-
-class IntentError(Exception):
-    """The name could not be turned into a running function; the message says why."""
-
-
-@dataclass(frozen=True)
-class Match:
-    bounds: tuple  # (x, y, w, h)
-    score: float
-    centre: tuple  # (cx, cy)
-    id: Optional[int] = None
-
-
-@dataclass(frozen=True)
-class Detection:
-    value: Any  # list[Match], float, str, or None
-    confidence: float
-    reliability: str
-    failure_reason: Optional[str]
-
-    def __bool__(self) -> bool:
-        return self.value is not None
-
-
-def _candidate_paths():
-    names = {"linux": "libsyrup.so", "darwin": "libsyrup.dylib", "win32": "syrup.dll"}
-    name = names.get(sys.platform, "libsyrup.so")
-    if os.environ.get("SYRUP_LIBRARY"):
-        yield Path(os.environ["SYRUP_LIBRARY"])
-    here = Path(__file__).resolve().parent
-    yield here / name
-    for ancestor in [here, *here.parents][:4]:
-        yield ancestor / "target" / "release" / name
-        yield ancestor / "target" / "debug" / name
-
-
-_lib = None
-_path = None
-
-
-def _library() -> ctypes.CDLL:
-    global _lib, _path
-    if _lib is not None:
-        return _lib
-    for path in _candidate_paths():
-        if path.is_file():
-            lib = ctypes.CDLL(str(path))
-            lib.syrup_version.restype = ctypes.c_char_p
-            lib.syrup_resolve.argtypes = [ctypes.c_char_p, ctypes.POINTER(_c_char_p)]
-            lib.syrup_resolve.restype = ctypes.c_void_p
-            lib.syrup_run.argtypes = [
-                ctypes.c_void_p,
-                ctypes.POINTER(_FrameView),
-                ctypes.POINTER(_RegionView),
-                ctypes.POINTER(_ResultView),
-            ]
-            lib.syrup_run.restype = ctypes.c_int32
-            lib.syrup_source.argtypes = [ctypes.c_void_p]
-            lib.syrup_source.restype = _c_char_p
-            lib.syrup_compile.argtypes = [ctypes.c_void_p, ctypes.POINTER(_c_char_p)]
-            lib.syrup_compile.restype = _c_char_p
-            lib.syrup_register_template.argtypes = [ctypes.c_char_p, ctypes.POINTER(_FrameView)]
-            lib.syrup_register_template.restype = ctypes.c_int32
-            lib.syrup_result_free.argtypes = [ctypes.POINTER(_ResultView)]
-            lib.syrup_release.argtypes = [ctypes.c_void_p]
-            lib.syrup_string_free.argtypes = [_c_char_p]
-            _lib, _path = lib, path
-            return lib
-    raise OSError(
-        "the syrup native library was not found; build it with `cargo build --release` "
-        "or point SYRUP_LIBRARY at it"
-    )
-
-
-def library_path() -> Optional[Path]:
-    """Where the native library was loaded from."""
-    _library()
-    return _path
-
-
-def version() -> str:
-    return _library().syrup_version().decode()
-
-
-def _take_string(pointer) -> Optional[str]:
-    """Copy a library-owned string and free it."""
-    if not pointer:
-        return None
-    text = ctypes.cast(pointer, ctypes.c_char_p).value.decode("utf-8", "replace")
-    _library().syrup_string_free(pointer)
-    return text
-
-
-def _as_rgba(image) -> tuple:
-    """(bytes buffer, width, height) of an image as tightly packed RGBA8."""
+def _call(fn, *args):
     try:
-        import numpy as np  # noqa: F401
-    except ImportError:  # pragma: no cover
-        np = None
-    if hasattr(image, "convert") and hasattr(image, "tobytes"):  # PIL
-        rgba = image.convert("RGBA")
-        return rgba.tobytes(), rgba.width, rgba.height
-    if np is not None and isinstance(image, np.ndarray):
-        array = np.ascontiguousarray(image)
-        if array.dtype != np.uint8 or array.ndim != 3 or array.shape[2] not in (3, 4):
-            raise TypeError("expected an HxWx3 or HxWx4 uint8 array")
-        if array.shape[2] == 3:
-            alpha = np.full(array.shape[:2] + (1,), 255, dtype=np.uint8)
-            array = np.ascontiguousarray(np.concatenate([array, alpha], axis=2))
-        height, width = array.shape[:2]
-        return array.tobytes(), width, height
-    raise TypeError("expected a PIL image or a numpy HxWx3/HxWx4 uint8 array")
+        return fn(*args)
+    except _native.NativeError as e:
+        raise from_native(e.args[0]) from None
 
 
-def _frame(image):
-    data, width, height = _as_rgba(image)
-    buffer = ctypes.create_string_buffer(data, len(data))
-    view = _FrameView(
-        ctypes.cast(buffer, ctypes.POINTER(ctypes.c_uint8)),
-        width,
-        height,
-        width * 4,
+class Image:
+    """8-bit pixels decoded by Syrup, row-major, `channels` bytes per pixel."""
+
+    def __init__(self, data, width, height, channels):
+        self.data, self.width, self.height, self.channels = data, width, height, channels
+
+    @classmethod
+    def open(cls, path):
+        return cls(*_call(_native.decode_image, os.fspath(path)))
+
+    def __repr__(self):
+        return f"<syrup.Image {self.width}x{self.height}x{self.channels}>"
+
+
+def _bad_image(reason, hint=None):
+    return InputError("input", "bad_image", reason, hint=hint)
+
+
+def _pixels(image):
+    if isinstance(image, Image):
+        return image.data, image.width, image.height, image.channels
+    if isinstance(image, (str, os.PathLike)):
+        return _call(_native.decode_image, os.fspath(image))
+    if hasattr(image, "mode") and hasattr(image, "tobytes"):
+        if image.mode == "P":
+            image = image.convert("RGB")
+        channels = {"L": 1, "RGB": 3, "RGBA": 4}.get(image.mode)
+        if channels is None:
+            raise _bad_image(f"PIL mode {image.mode!r} is not 8-bit L, RGB or RGBA", "convert it, e.g. image.convert('RGB')")
+        return image.tobytes(), image.size[0], image.size[1], channels
+    if hasattr(image, "__array_interface__"):
+        import numpy as np
+
+        array = np.asarray(image)
+        if array.dtype != np.uint8:
+            raise _bad_image(f"arrays must be uint8, got {array.dtype}", "scale to 0-255 and use .astype(np.uint8)")
+        if array.ndim == 2:
+            array = array[:, :, None]
+        if array.ndim != 3 or array.shape[2] not in (1, 3, 4):
+            raise _bad_image(f"arrays must be (H, W), (H, W, 1), (H, W, 3) or (H, W, 4), got {array.shape}")
+        height, width, channels = array.shape
+        return array.tobytes(), width, height, channels
+    raise _bad_image(
+        f"cannot read an image from {type(image).__name__}",
+        "pass a path, a NumPy uint8 array, a PIL image or a syrup.Image",
     )
-    return view, buffer  # keep the buffer alive alongside the view
 
 
-class Intent:
-    """A resolved intent; call it with an image (and optionally a region)."""
+def _ints(values, count, message, operation):
+    try:
+        values = tuple(operator.index(v) for v in values)
+    except TypeError:
+        values = ()
+    if len(values) != count or min(values) < 0:
+        raise InputError("input", "bad_parameter", message, operation)
+    return values
 
-    def __init__(self, name: str):
-        lib = _library()
-        error = _c_char_p()
-        handle = lib.syrup_resolve(name.encode(), ctypes.byref(error))
-        if not handle:
-            raise IntentError(_take_string(error) or f"`{name}` could not be resolved")
-        self.name = name
-        self._handle = handle
 
-    def __repr__(self) -> str:
-        return f"<syrup intent {self.name}>"
+class Operation:
+    """A resolved operation. Call it with an image to run it."""
 
-    def __del__(self):
-        handle = getattr(self, "_handle", None)
-        if handle and _lib is not None:
-            _lib.syrup_release(handle)
-            self._handle = None
-
-    def __call__(self, image, region: Optional[tuple] = None) -> Detection:
-        lib = _library()
-        view, _keep = _frame(image)
-        region_view = _RegionView(*region) if region else None
-        out = _ResultView()
-        code = lib.syrup_run(
-            self._handle,
-            ctypes.byref(view),
-            ctypes.byref(region_view) if region_view else None,
-            ctypes.byref(out),
-        )
-        if code != 0:
-            raise ValueError(f"`{self.name}` rejected the frame (code {code})")
-        try:
-            reason = ctypes.cast(out.reason, ctypes.c_char_p).value.decode("utf-8", "replace") if out.reason else None
-            value: Any = None
-            if out.status == _STATUS_FOUND:
-                if out.kind == _KIND_MATCHES:
-                    value = [
-                        Match(
-                            (m.x, m.y, m.w, m.h),
-                            m.score,
-                            (m.cx, m.cy),
-                            m.id or None,
-                        )
-                        for m in (out.matches[i] for i in range(out.match_count))
-                    ]
-                elif out.kind == _KIND_SCALAR:
-                    value = out.scalar
-                else:
-                    value = ctypes.cast(out.text, ctypes.c_char_p).value.decode("utf-8", "replace") if out.text else ""
-            return Detection(value, out.confidence, _RELIABILITY.get(out.reliability, "unreliable"), reason)
-        finally:
-            lib.syrup_result_free(ctypes.byref(out))
+    def __init__(self, native):
+        self._native = native
 
     @property
-    def source(self) -> str:
-        """The Rust source the library generated for this intent."""
-        return _take_string(_library().syrup_source(self._handle)) or ""
+    def name(self):
+        return self._native.name
 
-    def compile(self) -> str:
-        """Build the intent as its own shared library (needs cargo) and use it; returns the path."""
-        error = _c_char_p()
-        path = _library().syrup_compile(self._handle, ctypes.byref(error))
-        if not path:
-            raise IntentError(_take_string(error) or "compilation failed")
-        return _take_string(path) or ""
+    @property
+    def intent(self):
+        return self._native.intent
+
+    @property
+    def plan_hash(self):
+        return self._native.plan_hash
+
+    @property
+    def source(self):
+        """The Rust source Syrup generates for this operation."""
+        return self._native.source()
+
+    def explain(self):
+        return self._native.explain()
+
+    def prepare(self):
+        """Compile (or load) the native module now instead of on first call."""
+        return json.loads(_call(self._native.prepare))
+
+    def session(self, *, max_distance=None, grace_frames=None):
+        """Follow a track_* operation's items across frames: call the session
+        with each frame in order, and each result carries `track.id`."""
+        return Session(self, _call(self._native.session, max_distance, grace_frames))
+
+    def __call__(self, image, *, min_confidence=None, max_results=None, region=None):
+        return from_json(_call(self._native.run, *_arguments(self.name, image, min_confidence, max_results, region)))
+
+    def __repr__(self):
+        return f"<syrup.Operation {self.name}: {self.intent}>"
 
 
-def register_template(name: str, image) -> None:
-    """Make `image` the picture behind ``find_<name>_icon``."""
-    view, _keep = _frame(image)
-    if _library().syrup_register_template(name.encode(), ctypes.byref(view)) != 0:
-        raise ValueError("could not register the template")
+class Session:
+    """Frames in, tracked results out. See Operation.session."""
+
+    def __init__(self, operation, native):
+        self.operation, self._native = operation, native
+
+    def __call__(self, frame, *, min_confidence=None, max_results=None, region=None):
+        arguments = _arguments(self.operation.name, frame, min_confidence, max_results, region)
+        return from_json(_call(self._native.update, *arguments))
+
+    def __repr__(self):
+        return f"<syrup.Session {self.operation.name}>"
 
 
-_VERBS = ("find_", "track_", "count_", "measure_", "read_")
-_intents: dict = {}
+def _arguments(name, image, min_confidence, max_results, region):
+    pixels, width, height, channels = _pixels(image)
+    if region is not None:
+        region = _ints(region, 4, "region must be four non-negative ints (x, y, w, h)", name)
+    if max_results is not None:
+        (max_results,) = _ints([max_results], 1, "max_results must be a non-negative int", name)
+    return pixels, width, height, channels, min_confidence, max_results, region
 
 
-def __getattr__(name: str):
-    if name.startswith(_VERBS):
-        intent = _intents.get(name)
-        if intent is None:
-            intent = _intents[name] = Intent(name)
-        return intent
+def resolve(name):
+    """The operation a name means, or IntentError saying why there is none."""
+    return Operation(_call(_native.resolve, name))
+
+
+def define(
+    name, *, find, color=None, region=None, order=None, limit=None, min_area_pct=None, max_area_pct=None, measure=None
+):
+    """Give a name outside the grammar an explicit meaning.
+
+    `color` is required for regions and bars ("red", "blue", ...). `region`
+    is a region name such as "top_half", "region" for a per-call region, or
+    fractions (x, y, w, h) of the image. `order` is one of "confidence",
+    "size", "area_asc", "left_to_right", "right_to_left", "top_to_bottom" or
+    "bottom_to_top". `measure` ("sharpness" or "fill") makes it a
+    measurement: each result carries the quantity as `value`.
+    """
+    spec = {
+        "find": find,
+        "color": color,
+        "region": list(region) if isinstance(region, (tuple, list)) else region,
+        "order": order,
+        "limit": limit,
+        "min_area_pct": min_area_pct,
+        "max_area_pct": max_area_pct,
+        "measure": measure,
+    }
+    spec = {k: v for k, v in spec.items() if v is not None}
+    return Operation(_call(_native.define, name, json.dumps(spec)))
+
+
+def add_target(noun, detect, *, plural=None, min_confidence=0.5, provider="python", model_sha256=None):
+    """Find `noun` with your own detector, e.g. a model from any Python library.
+
+    `detect(image)` gets the searched pixels as a uint8 NumPy array (H, W, C)
+    and returns boxes in those pixels as (x, y, w, h, score) or
+    (x, y, w, h, score, text), with score in [0, 1]. Names can then use the
+    noun like any other: syrup.ops.find_largest_<noun>_in_center. Regions,
+    ordering and limits run in the compiled module around the detector.
+    `provider` and `model_sha256` are what provenance reports for it.
+    """
+    import numpy as np
+
+    def call(pixels, width, height, channels):
+        image = np.frombuffer(pixels, np.uint8).reshape(height, width, channels)
+        return [_detection(box) for box in detect(image)]
+
+    _call(_native.add_target, noun, plural or noun + "s", float(min_confidence), call, provider, model_sha256)
+
+
+def _detection(box):
+    if len(box) not in (5, 6):
+        raise ValueError(f"a detection is (x, y, w, h, score) or (x, y, w, h, score, text), got {box!r}")
+    x, y, w, h, score = (float(v) for v in box[:5])
+    return x, y, w, h, score, str(box[5]) if len(box) == 6 else None
+
+
+def bundle(path, *names):
+    """Compile `names` and copy them into the bundle directory `path`.
+
+    A machine without a Rust compiler runs them with SYRUP_MODE=frozen and
+    SYRUP_CACHE_DIR=path. Bundles are per platform; adding to an existing
+    bundle keeps what it holds.
+    """
+    return json.loads(_call(_native.bundle, os.fspath(path), list(names)))
+
+
+def cache_dir():
+    return _call(_native.cache_dir)
+
+
+from . import capture, legacy, ops  # noqa: E402  (they need the names above)
+
+_LEGACY_VERBS = ("find_", "track_", "count_", "measure_", "read_")
+
+
+def __getattr__(name):
+    """`syrup.find_face` and the like: the core library's in-process intents
+    (syrup.legacy). The compiled operations are `syrup.ops.<name>`."""
+    if name.startswith(_LEGACY_VERBS):
+        return getattr(legacy, name)
     raise AttributeError(f"module 'syrup' has no attribute {name!r}")
