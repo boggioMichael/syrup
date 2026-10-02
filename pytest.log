@@ -1,0 +1,6 @@
+...........ss....................s                                       [100%]
+=========================== short test summary info ============================
+SKIPPED [1] python/tests/test_recipes.py:29: could not import 'ultralytics': No module named 'ultralytics'
+SKIPPED [1] python/tests/test_recipes.py:51: could not import 'mediapipe': No module named 'mediapipe'
+SKIPPED [1] python/tests/test_syrup.py:249: CI opens a window to capture
+31 passed, 3 skipped in 7.47s
