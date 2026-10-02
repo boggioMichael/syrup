@@ -10,7 +10,7 @@ categories = ["computer-vision", "multimedia::images"]
 
 [lib]
 # The rlib for Rust callers; the cdylib carries the C API (src/capi.rs)
-# that the Python package and other hosts load.
+# that the Python package's in-process intents and other hosts load.
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
@@ -61,3 +61,23 @@ x11rb = "0.14"
 [[bench]]
 name = "primitives"
 harness = false
+
+# The core stays a standalone package at the root, so path consumers keep
+# working. Operations by name — parsed, generated, compiled with rustc,
+# validated and loaded — live in crates/syrup-runtime. The Python extension
+# is built by maturin with its own lockfile (it links against Python, which
+# a plain `cargo test --workspace` should not need), and the Minesweeper
+# coach is a separate example with its own lockfile.
+[workspace]
+members = ["crates/syrup-runtime"]
+exclude = ["crates/syrup-python", "example/minesweeper-coach"]
+
+# Face detection runs in tests; unoptimised tract makes them crawl.
+[profile.dev]
+# Full debug info made the target directory tens of gigabytes; line tables
+# keep backtraces readable.
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 2
+debug = false

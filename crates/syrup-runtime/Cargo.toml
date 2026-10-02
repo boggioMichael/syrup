@@ -1,0 +1,39 @@
+[package]
+name = "syrup-runtime"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+license = "MIT"
+description = "Turns named computer-vision intents into validated, compiled, dynamically loaded native operations"
+repository = "https://github.com/boggioMichael/syrup"
+keywords = ["computer-vision", "detection", "codegen", "jit", "face-detection"]
+categories = ["computer-vision", "multimedia::images"]
+
+[features]
+default = ["face-yunet"]
+# The YuNet face detector, run through tract (pure Rust, no OpenCV). Without
+# it, face intents still resolve and plan, but fail at execution with a
+# missing-dependency error instead of silently returning nothing.
+face-yunet = ["dep:tract-onnx"]
+
+[dependencies]
+image = "0.24"
+libloading = "0.9"
+rqrr = { version = "0.11", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+syrup = { path = "../.." }
+tract-onnx = { version = "0.23", optional = true }
+
+[dev-dependencies]
+criterion = "0.5"
+qrcode = { version = "0.14", default-features = false }
+
+[[bench]]
+name = "runtime"
+harness = false
+
+[[bin]]
+name = "syrup"
+path = "src/bin/syrup.rs"
