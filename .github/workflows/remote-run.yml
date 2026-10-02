@@ -1,0 +1,55 @@
+name: remote run
+on:
+  push:
+    branches: ["remote-run/**"]
+permissions:
+  contents: write
+env:
+  CARGO_TERM_COLOR: never
+jobs:
+  run:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            crates/syrup-python -> target
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/commands.sh" <<'SYRUP_COMMANDS'
+          cargo metadata --format-version 1 > /dev/null
+          (cd crates/syrup-python && cargo metadata --format-version 1 > /dev/null)
+          (cd example/minesweeper-coach && cargo metadata --format-version 1 > /dev/null)
+          git status --short
+          git diff --stat
+          SYRUP_COMMANDS
+          set +e
+          bash -e -o pipefail "$RUNNER_TEMP/commands.sh" > run.log 2>&1
+          echo $? > exit-code.txt
+          tail -c 3000 run.log
+      - name: Publish
+        if: always()
+        shell: bash
+        run: |
+          out="$RUNNER_TEMP/out"; mkdir -p "$out"
+          cp run.log exit-code.txt "$out"/ 2>/dev/null || echo 'no output' > "$out/run.log"
+          for f in $(git ls-files --others --exclude-standard -- '*.lock' 2>/dev/null) $(git diff --name-only -- '*.lock' 2>/dev/null); do mkdir -p "$out/files/$(dirname $f)"; cp "$f" "$out/files/$f"; done
+          cd "$out" && git init -q && git checkout -q -b out
+          git -c user.name=ci -c user.email=ci@localhost add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -qm "output [skip ci]"
+          os=$(echo '${{ matrix.os }}' | cut -d- -f1)
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" "out:refs/heads/remote-run-logs/${GITHUB_REF_NAME#remote-run/}/$os"
