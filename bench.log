@@ -1,0 +1,346 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.24
+   Compiling autocfg v1.5.1
+   Compiling cfg-if v1.0.4
+   Compiling libm v0.2.16
+   Compiling libc v0.2.189
+   Compiling num-traits v0.2.19
+   Compiling serde_core v1.0.229
+   Compiling syn v2.0.119
+   Compiling syn v3.0.3
+   Compiling serde v1.0.229
+   Compiling zerocopy v0.8.56
+   Compiling crossbeam-utils v0.8.22
+   Compiling bitflags v2.13.1
+   Compiling either v1.17.0
+   Compiling zerocopy-derive v0.8.56
+   Compiling bytemuck v1.25.2
+   Compiling rustix v1.1.5
+   Compiling serde_derive v1.0.229
+   Compiling linux-raw-sys v0.12.1
+   Compiling num-complex v0.4.6
+   Compiling num-integer v0.1.47
+   Compiling anyhow v1.0.104
+   Compiling pin-project-lite v0.2.17
+   Compiling foldhash v0.2.0
+   Compiling memchr v2.8.3
+   Compiling simd-adler32 v0.3.10
+   Compiling smallvec v1.15.2
+   Compiling crossbeam-epoch v0.9.20
+   Compiling version_check v0.9.5
+   Compiling parking v2.2.1
+   Compiling matrixmultiply v0.3.11
+   Compiling parking_lot_core v0.9.12
+   Compiling crossbeam-deque v0.8.7
+   Compiling winnow v1.0.4
+   Compiling half v2.7.1
+   Compiling rayon-core v1.13.0
+   Compiling scopeguard v1.2.0
+   Compiling equivalent v1.0.2
+   Compiling memo-map v0.3.4
+   Compiling rawpointer v0.2.1
+   Compiling hashbrown v0.17.1
+   Compiling find-msvc-tools v0.1.14
+   Compiling same-file v1.0.6
+   Compiling futures-core v0.3.34
+   Compiling shlex v2.0.1
+   Compiling cc v1.5.1
+   Compiling indexmap v2.14.2
+   Compiling walkdir v2.5.0
+   Compiling minijinja v2.24.0
+   Compiling lock_api v0.4.14
+   Compiling toml_parser v1.1.3+spec-1.1.0
+   Compiling nom v8.0.0
+   Compiling hashbrown v0.16.1
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling zmij v1.0.23
+   Compiling byteorder v1.5.0
+   Compiling typeid v1.0.3
+   Compiling toml_edit v0.25.15+spec-1.1.0
+   Compiling string-interner v0.20.0
+   Compiling parking_lot v0.12.5
+   Compiling ndarray v0.17.2
+   Compiling nom-language v0.1.0
+   Compiling tract-linalg v0.23.8
+   Compiling itertools v0.15.0
+   Compiling enumflags2_derive v0.7.12
+   Compiling dyn-hash v1.0.0
+   Compiling downcast-rs v2.0.2
+   Compiling serde_json v1.0.151
+   Compiling lazy_static v1.5.1
+   Compiling erased-serde v0.4.10
+   Compiling maplit v1.0.2
+   Compiling futures-io v0.3.34
+   Compiling dyn-clone v1.0.20
+   Compiling strength_reduce v0.2.4
+   Compiling inventory v0.3.24
+   Compiling fastrand v2.5.0
+   Compiling transpose v0.2.3
+   Compiling proc-macro-crate v3.5.0
+   Compiling zvariant_utils v4.2.0
+   Compiling event-listener v5.4.2
+   Compiling primal-check v0.3.4
+   Compiling derive-new v0.7.0
+   Compiling concurrent-queue v2.5.0
+   Compiling log v0.4.34
+   Compiling itoa v1.0.18
+   Compiling bit-vec v0.10.1
+   Compiling pastey v0.2.3
+   Compiling bit-set v0.11.1
+   Compiling zvariant_derive v5.15.0
+   Compiling tract-data v0.23.8
+   Compiling rustfft v6.4.1
+   Compiling event-listener-strategy v0.5.4
+   Compiling futures-lite v2.6.1
+   Compiling rayon v1.12.0
+   Compiling adler2 v2.0.1
+   Compiling anymap3 v1.1.0
+   Compiling crc32fast v1.5.0
+   Compiling miniz_oxide v0.8.9
+   Compiling xattr v1.6.1
+   Compiling generic-array v0.14.7
+   Compiling filetime v0.2.29
+   Compiling async-io v2.6.0
+   Compiling getrandom v0.4.3
+   Compiling rand_core v0.10.1
+   Compiling slab v0.4.12
+   Compiling paste v1.0.15
+   Compiling tar v0.4.46
+   Compiling tract-core v0.23.8
+   Compiling enumflags2 v0.7.12
+   Compiling polling v3.11.0
+   Compiling pulp v0.22.3
+   Compiling zcheapstr v1.1.0
+   Compiling errno v0.3.14
+   Compiling typenum v1.20.1
+   Compiling once_cell v1.21.4
+   Compiling endi v1.1.1
+   Compiling cpufeatures v0.3.1
+   Compiling async-task v4.7.1
+   Compiling chacha20 v0.10.2
+   Compiling zvariant v5.15.0
+   Compiling signal-hook-registry v1.4.8
+   Compiling flate2 v1.1.9
+   Compiling tract-nnef v0.23.8
+   Compiling async-channel v2.5.0
+   Compiling raw-cpuid v11.6.0
+   Compiling atomic-waker v1.1.2
+   Compiling weezl v0.1.12
+   Compiling reborrow v0.5.5
+   Compiling pulp-wasm-simd-flag v0.1.1
+   Compiling itertools v0.10.5
+   Compiling piper v0.2.5
+   Compiling rand v0.10.3
+   Compiling async-signal v0.2.14
+   Compiling zbus_names v4.3.4
+   Compiling tracing-core v0.1.36
+   Compiling jpeg-decoder v0.3.2
+   Compiling async-lock v3.4.2
+   Compiling zune-inflate v0.2.54
+   Compiling fdeflate v0.3.7
+   Compiling tracing-attributes v0.1.31
+   Compiling lebe v0.5.3
+   Compiling color_quant v1.1.0
+   Compiling g2poly v1.2.2
+   Compiling bit_field v0.10.3
+   Compiling bitflags v1.3.2
+   Compiling png v0.17.16
+   Compiling exr v1.74.2
+   Compiling g2gen v1.2.2
+   Compiling tracing v0.1.44
+   Compiling gif v0.13.3
+   Compiling async-process v2.5.0
+   Compiling tiff v0.9.1
+   Compiling zbus_macros v5.19.0
+   Compiling rand_distr v0.6.0
+   Compiling prost-derive v0.14.4
+   Compiling blocking v1.7.0
+   Compiling tract-extra v0.23.8
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling async-executor v1.14.0
+   Compiling async-broadcast v0.7.2
+   Compiling ordered-stream v0.2.0
+   Compiling gethostname v1.1.0
+   Compiling num-bigint v0.4.8
+   Compiling serde_repr v0.1.21
+   Compiling async-trait v0.1.92
+   Compiling qoi v0.4.1
+   Compiling async-recursion v1.1.1
+   Compiling uuid v1.26.1
+   Compiling x11rb-protocol v0.14.0
+   Compiling float-ord v0.3.2
+   Compiling hex v0.4.3
+   Compiling bytes v1.12.1
+   Compiling prost v0.14.4
+   Compiling zbus v5.19.0
+   Compiling tract-transformers v0.23.8
+   Compiling x11rb v0.14.0
+   Compiling g2p v1.2.2
+   Compiling image v0.24.9
+   Compiling num-rational v0.4.2
+   Compiling lru v0.18.5
+   Compiling digest v0.10.7
+   Compiling tract-onnx-opl v0.23.8
+   Compiling tract-hir v0.23.8
+   Compiling memmap2 v0.9.11
+   Compiling libloading v0.9.0
+   Compiling regex-syntax v0.8.11
+   Compiling ciborium-io v0.2.2
+   Compiling clap_lex v1.1.0
+   Compiling plotters-backend v0.3.7
+   Compiling syrup-runtime v0.1.0 (/home/runner/work/syrup/syrup/crates/syrup-runtime)
+   Compiling cpufeatures v0.2.17
+   Compiling anstyle v1.0.14
+   Compiling clap_builder v4.6.6
+   Compiling syrup v0.1.0 (/home/runner/work/syrup/syrup)
+   Compiling sha2 v0.10.9
+   Compiling plotters-svg v0.3.7
+   Compiling ciborium-ll v0.2.2
+   Compiling regex-automata v0.4.18
+   Compiling tract-onnx v0.23.8
+   Compiling rqrr v0.11.0
+   Compiling cast v0.3.0
+   Compiling criterion-plot v0.5.0
+   Compiling regex v1.13.1
+   Compiling ciborium v0.2.2
+   Compiling plotters v0.3.7
+   Compiling clap v4.6.6
+   Compiling tinytemplate v1.2.1
+   Compiling is-terminal v0.4.17
+   Compiling anes v0.1.6
+   Compiling oorandom v11.1.5
+   Compiling criterion v0.5.1
+   Compiling qrcode v0.14.1
+    Finished `bench` profile [optimized] target(s) in 3m 06s
+     Running benches/runtime.rs (target/release/deps/runtime-7445e554c58daa77)
+Gnuplot not found, using plotters backend
+Benchmarking compile/find_face cold
+Benchmarking compile/find_face cold: Warming up for 1.0000 s
+Benchmarking compile/find_face cold: Collecting 10 samples in estimated 4.8749 s (30 iterations)
+Benchmarking compile/find_face cold: Analyzing
+compile/find_face cold  time:   [162.30 ms 162.35 ms 162.40 ms]
+Benchmarking compile/find_red_bars_in_bottom_third cold
+Benchmarking compile/find_red_bars_in_bottom_third cold: Warming up for 1.0000 s
+Benchmarking compile/find_red_bars_in_bottom_third cold: Collecting 10 samples in estimated 5.0127 s (20 iterations)
+Benchmarking compile/find_red_bars_in_bottom_third cold: Analyzing
+compile/find_red_bars_in_bottom_third cold
+                        time:   [245.73 ms 248.40 ms 251.07 ms]
+Benchmarking compile/measure_fill_of_largest_red_bar cold
+Benchmarking compile/measure_fill_of_largest_red_bar cold: Warming up for 1.0000 s
+Benchmarking compile/measure_fill_of_largest_red_bar cold: Collecting 10 samples in estimated 5.6230 s (20 iterations)
+Benchmarking compile/measure_fill_of_largest_red_bar cold: Analyzing
+compile/measure_fill_of_largest_red_bar cold
+                        time:   [275.86 ms 277.99 ms 280.55 ms]
+Benchmarking compile/generate source
+Benchmarking compile/generate source: Warming up for 1.0000 s
+Benchmarking compile/generate source: Collecting 10 samples in estimated 4.0002 s (1.1M iterations)
+Benchmarking compile/generate source: Analyzing
+compile/generate source time:   [3.5862 µs 3.5961 µs 3.6051 µs]
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high mild
+
+Benchmarking frame 1280x720/find_face
+Benchmarking frame 1280x720/find_face: Warming up for 1.0000 s
+
+Warning: Unable to complete 100 samples in 4.0s. You may wish to increase target time to 7.7s, or reduce sample count to 50.
+Benchmarking frame 1280x720/find_face: Collecting 100 samples in estimated 7.6897 s (100 iterations)
+Benchmarking frame 1280x720/find_face: Analyzing
+frame 1280x720/find_face
+                        time:   [76.632 ms 76.685 ms 76.742 ms]
+Found 5 outliers among 100 measurements (5.00%)
+  5 (5.00%) high mild
+Benchmarking frame 1280x720/find_red_bars
+Benchmarking frame 1280x720/find_red_bars: Warming up for 1.0000 s
+Benchmarking frame 1280x720/find_red_bars: Collecting 100 samples in estimated 5.0730 s (300 iterations)
+Benchmarking frame 1280x720/find_red_bars: Analyzing
+frame 1280x720/find_red_bars
+                        time:   [16.894 ms 16.896 ms 16.899 ms]
+Found 5 outliers among 100 measurements (5.00%)
+  3 (3.00%) high mild
+  2 (2.00%) high severe
+Benchmarking frame 1280x720/find_red_regions
+Benchmarking frame 1280x720/find_red_regions: Warming up for 1.0000 s
+Benchmarking frame 1280x720/find_red_regions: Collecting 100 samples in estimated 5.0844 s (300 iterations)
+Benchmarking frame 1280x720/find_red_regions: Analyzing
+frame 1280x720/find_red_regions
+                        time:   [16.943 ms 16.945 ms 16.946 ms]
+Found 2 outliers among 100 measurements (2.00%)
+  2 (2.00%) high mild
+Benchmarking frame 1280x720/find_qr_codes
+Benchmarking frame 1280x720/find_qr_codes: Warming up for 1.0000 s
+Benchmarking frame 1280x720/find_qr_codes: Collecting 100 samples in estimated 4.5394 s (300 iterations)
+Benchmarking frame 1280x720/find_qr_codes: Analyzing
+frame 1280x720/find_qr_codes
+                        time:   [15.077 ms 15.137 ms 15.215 ms]
+Found 13 outliers among 100 measurements (13.00%)
+  6 (6.00%) high mild
+  7 (7.00%) high severe
+Benchmarking frame 1280x720/find_text_blocks
+Benchmarking frame 1280x720/find_text_blocks: Warming up for 1.0000 s
+Benchmarking frame 1280x720/find_text_blocks: Collecting 100 samples in estimated 4.8889 s (200 iterations)
+Benchmarking frame 1280x720/find_text_blocks: Analyzing
+frame 1280x720/find_text_blocks
+                        time:   [24.434 ms 24.438 ms 24.442 ms]
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high mild
+Benchmarking frame 1280x720/find_panels_in_bottom_third
+Benchmarking frame 1280x720/find_panels_in_bottom_third: Warming up for 1.0000 s
+Benchmarking frame 1280x720/find_panels_in_bottom_third: Collecting 100 samples in estimated 4.2088 s (1900 iterations)
+Benchmarking frame 1280x720/find_panels_in_bottom_third: Analyzing
+frame 1280x720/find_panels_in_bottom_third
+                        time:   [2.2140 ms 2.2147 ms 2.2156 ms]
+Found 6 outliers among 100 measurements (6.00%)
+  3 (3.00%) high mild
+  3 (3.00%) high severe
+Benchmarking frame 1280x720/measure_sharpness
+Benchmarking frame 1280x720/measure_sharpness: Warming up for 1.0000 s
+Benchmarking frame 1280x720/measure_sharpness: Collecting 100 samples in estimated 4.2726 s (1300 iterations)
+Benchmarking frame 1280x720/measure_sharpness: Analyzing
+frame 1280x720/measure_sharpness
+                        time:   [3.2896 ms 3.2975 ms 3.3112 ms]
+Found 8 outliers among 100 measurements (8.00%)
+  3 (3.00%) high mild
+  5 (5.00%) high severe
+Benchmarking frame 1280x720/measure_fill_of_red_bars
+Benchmarking frame 1280x720/measure_fill_of_red_bars: Warming up for 1.0000 s
+Benchmarking frame 1280x720/measure_fill_of_red_bars: Collecting 100 samples in estimated 5.1643 s (300 iterations)
+Benchmarking frame 1280x720/measure_fill_of_red_bars: Analyzing
+frame 1280x720/measure_fill_of_red_bars
+                        time:   [17.216 ms 17.263 ms 17.341 ms]
+Found 12 outliers among 100 measurements (12.00%)
+  4 (4.00%) high mild
+  8 (8.00%) high severe
+
+Benchmarking session 1200x720 per frame/track_moving_regions
+Benchmarking session 1200x720 per frame/track_moving_regions: Warming up for 1.0000 s
+Benchmarking session 1200x720 per frame/track_moving_regions: Collecting 100 samples in estimated 4.2943 s (700 iterations)
+Benchmarking session 1200x720 per frame/track_moving_regions: Analyzing
+session 1200x720 per frame/track_moving_regions
+                        time:   [2.9887 ms 2.9908 ms 2.9933 ms]
+Found 7 outliers among 100 measurements (7.00%)
+  4 (4.00%) high mild
+  3 (3.00%) high severe
+Benchmarking session 1200x720 per frame/track_faces
+Benchmarking session 1200x720 per frame/track_faces: Warming up for 1.0000 s
+
+Warning: Unable to complete 100 samples in 4.0s. You may wish to increase target time to 9.1s, or reduce sample count to 40.
+Benchmarking session 1200x720 per frame/track_faces: Collecting 100 samples in estimated 9.0946 s (100 iterations)
+Benchmarking session 1200x720 per frame/track_faces: Analyzing
+session 1200x720 per frame/track_faces
+                        time:   [78.553 ms 78.664 ms 78.853 ms]
+Found 10 outliers among 100 measurements (10.00%)
+  1 (1.00%) low mild
+  5 (5.00%) high mild
+  4 (4.00%) high severe
+Benchmarking session 1200x720 per frame/track_red_bars
+Benchmarking session 1200x720 per frame/track_red_bars: Warming up for 1.0000 s
+Benchmarking session 1200x720 per frame/track_red_bars: Collecting 100 samples in estimated 5.9722 s (300 iterations)
+Benchmarking session 1200x720 per frame/track_red_bars: Analyzing
+session 1200x720 per frame/track_red_bars
+                        time:   [16.134 ms 16.164 ms 16.208 ms]
+Found 10 outliers among 100 measurements (10.00%)
+  6 (6.00%) high mild
+  4 (4.00%) high severe
+
