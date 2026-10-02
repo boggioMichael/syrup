@@ -9,6 +9,10 @@ on:
 env:
   CARGO_TERM_COLOR: never
 
+# The logs are committed to review-logs/<job> so they can be read with git.
+permissions:
+  contents: write
+
 jobs:
   linux:
     runs-on: ubuntu-latest
@@ -24,9 +28,13 @@ jobs:
           sudo apt-get update && sudo apt-get install -y tesseract-ocr
           rustc --version; cargo --version; tesseract --version | head -1; nproc
       - name: Format
-        run: cargo fmt --all -- --check
+        run: |
+          set -o pipefail
+          cargo fmt --all -- --check 2>&1 | tee fmt.log
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: |
+          set -o pipefail
+          cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tee clippy.log
       - name: Test
         run: |
           set -o pipefail
@@ -50,14 +58,23 @@ jobs:
         run: python review/verify.py 2>&1 | tee verify.log
       - name: CLI
         run: |
-          cargo run -q -p syrup-runtime --bin syrup -- explain find_2_largest_faces_in_center
-          cargo run -q -p syrup-runtime --bin syrup -- source find_largest_red_bar_in_bottom_third | head -80
-          cargo run -q -p syrup-runtime --bin syrup -- explain find_best_face || echo "exit $?"
-      - uses: actions/upload-artifact@v4
+          {
+            cargo run -q -p syrup-runtime --bin syrup -- explain find_2_largest_faces_in_center
+            cargo run -q -p syrup-runtime --bin syrup -- source find_largest_red_bar_in_bottom_third
+            cargo run -q -p syrup-runtime --bin syrup -- explain find_best_face || echo "exit $?"
+          } 2>&1 | tee cli.log
+      - name: Publish logs
         if: always()
-        with:
-          name: linux-logs
-          path: "*.log"
+        shell: bash
+        run: |
+          out="$RUNNER_TEMP/logs-$GITHUB_JOB"
+          mkdir -p "$out" && cp *.log "$out"/ 2>/dev/null || true
+          git rev-parse HEAD > "$out/commit.txt"
+          cd "$out"
+          git init -q && git checkout -q -b logs
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "logs of $GITHUB_JOB [skip ci]"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" "logs:refs/heads/review-logs/$GITHUB_JOB"
 
   windows:
     runs-on: windows-latest
@@ -76,8 +93,15 @@ jobs:
       - name: Independent checks
         shell: bash
         run: python review/verify.py --quick 2>&1 | tee verify-windows.log
-      - uses: actions/upload-artifact@v4
+      - name: Publish logs
         if: always()
-        with:
-          name: windows-logs
-          path: "*.log"
+        shell: bash
+        run: |
+          out="$RUNNER_TEMP/logs-$GITHUB_JOB"
+          mkdir -p "$out" && cp *.log "$out"/ 2>/dev/null || true
+          git rev-parse HEAD > "$out/commit.txt"
+          cd "$out"
+          git init -q && git checkout -q -b logs
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "logs of $GITHUB_JOB [skip ci]"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" "logs:refs/heads/review-logs/$GITHUB_JOB"
