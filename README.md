@@ -41,6 +41,39 @@ faces = syrup.find_face(image)      # PIL image or numpy uint8 array
 print([f.bounds for f in faces.value], faces.confidence)
 ```
 
+### Compiled operations: `syrup-runtime`
+
+The runtime in `crates/syrup-runtime` (written by Eitan) takes the idea all
+the way. A name is parsed against a composable grammar — counts, selectors,
+regions, orders, area filters — into a typed plan whose coordinate spaces
+are checked, and the plan becomes a small dependency-free Rust module that
+is compiled with `rustc` (no cargo, no network), validated against a
+reference interpreter on synthetic images, cached by plan and loaded:
+
+```python
+from syrup.ops import find_largest_face_in_top_half
+
+faces = find_largest_face_in_top_half("photo.jpg")      # YuNet, a CNN, through tract
+for face in faces:
+    print(face.box, face.confidence, face.keypoints["left_eye"])
+
+session = syrup.ops.track_moving_regions.session()      # ids across frames
+for frame in syrup.capture.window("Notepad"):           # Windows, macOS, X11, Wayland
+    for region in session(frame):
+        print(region.track.id, region.track.velocity)
+```
+
+Names that do not say enough are refused with a reason (`find_best_face`:
+best by what?), names that mean the same share one artifact, other detectors
+become nouns (`syrup.add_target("licence_plate", detect)`, or the YOLO and
+MediaPipe recipes), and `syrup bundle` prepares operations for machines
+without a compiler. The same engine is `syrup_runtime::Runtime` from Rust and
+`syrup explain | source | run | watch | bundle` from the command line. The
+grammar, the result contract and every failure are in
+[crates/syrup-runtime/docs/contract.md](crates/syrup-runtime/docs/contract.md);
+how it relates to `syrup::intent` is in
+[crates/syrup-runtime/docs/architecture.md](crates/syrup-runtime/docs/architecture.md).
+
 Syrup reads a screen the way a person does — "there is a bar here and it is
 about 60% full", "that region moved left", "this text says 1291/1351" —
 without pretending to more certainty than the pixels support. Every result
@@ -52,7 +85,8 @@ was found.
 | path | what | status |
 |---|---|---|
 | `src/` | the library: intents (`intent!`, parse → plan → run/compile), Viola–Jones cascades (bundled face, profile, eye), template matching, connected components, motion and tracking, glyph reading and OCR, `face` and `sequence`, drawing, the C ABI and the C API | 162 unit + 4 native + 3 integration + 3 doc tests; clippy clean |
-| `python/syrup/` | the Python package over the C API: `syrup.find_face(image)` | 5 tests |
+| `crates/syrup-runtime/` | operations by name, compiled: grammar, typed plans, code generation, `rustc`, differential validation, artifact store, frozen bundles, sessions; YuNet faces, QR codes, Tesseract words, colour regions and bars, text blocks, panels, motion; the `syrup` CLI | Rust tests with real compiled modules, YuNet checked against OpenCV's; benchmarks |
+| `python/syrup/` | `syrup-cv`: the compiled operations from Python (`syrup.ops`, PyO3 extension in `crates/syrup-python`, abi3 wheels), Python detectors as targets, YOLO and MediaPipe recipes, an optional planner; and `syrup.find_face(image)`, the core's in-process intents over the C API (`syrup.legacy`) | `python/tests` for the operations; 5 for the in-process intents |
 | `python/thelip/` | **The Lip**: lip reading from muted video with live subtitles (syrup finds the mouth, LipNet reads it, decoded again after every frame); demo and proof videos built by `make_demo.sh` and `proof.py` | 64/66 words on the GRID sample clips; 10 tests |
 | `example/lipreader/` | the multi-person pipeline: faces → tracks → mouths → speaking → reading → subtitles per person, three modes, honest language registry, exports, evaluation framework | 25 tests; 0% WER on the composited fixtures |
 | `example/inference-api/` | the local HTTP service (jobs, streamed sessions, exports, deletion, token, rate limit) | 9 tests |
@@ -337,7 +371,11 @@ cargo test -- --ignored   # also run OCR against a real Tesseract install
 cargo clippy --all-targets -- -D warnings
 cargo bench         # criterion benchmarks for the per-frame primitives
 cargo run --release --example intents   # declare, run, and compile an intent
-cd python && python3 test_syrup.py      # the Python package against the built library
+python3 python/test_legacy.py           # the in-process intents from Python, against the built library
+cargo test -p syrup-runtime             # compiled operations: needs rustc on PATH; Tesseract for words
+cargo bench -p syrup-runtime --bench runtime   # what compiling, reusing and running an operation costs
+pip install "./python[test]" && pytest python/tests   # the compiled operations from Python
+tests/portal/run.sh                     # Wayland capture against PipeWire and a stand-in portal
 
 # The Lip and the example projects (Python 3.11+, ffmpeg, Node 18+ with typescript and playwright)
 example/ml/models/get_lipnet.sh                      # LipNet weights and GRID sample clips (MIT / CC BY 4.0)
@@ -351,8 +389,11 @@ cd ../thelip && node test/engine.test.mjs && python3 build.py && NODE_PATH=$(npm
 ```
 
 CI (`.github/workflows/ci.yml`) runs the Rust checks on Linux, Windows and
-macOS and all of the above on Linux; `pages.yml` publishes `docs/` to the
-`gh-pages` branch, which GitHub Pages serves.
+macOS (with a window open, so the capture tests capture it), the Python
+package built and installed on all three, Wayland capture and the model
+recipes on Linux, and all of the above on Linux; `wheels.yml` builds and
+tests the wheels and publishes them on a `v*` tag; `pages.yml` publishes
+`docs/` to the `gh-pages` branch, which GitHub Pages serves.
 
 Tests run against synthetic, in-code fixtures plus one public-domain
 photograph (`tests/fixtures`); no network access is required. The native
@@ -408,13 +449,23 @@ the cost there, and it is the library's next performance item.
   Learn from whole lines as they appear on screen: glyphs are measured
   against their line's height, so a slash or a dot learned on its own will
   not match.
-- The face detector is OpenCV's frontal cascade: roughly upright, roughly
-  front-on faces of 20 px or more. Profiles, heavy tilt and tiny faces are
-  not found. A learned detector behind the same plan is the natural next
-  step.
+- The in-process intents' face detector is OpenCV's frontal cascade:
+  roughly upright, roughly front-on faces of 20 px or more. The compiled
+  operations use YuNet, a learned detector, which scales the frame so its
+  longer side is 640 px: faces much smaller than a thirtieth of the frame's
+  width are missed (search a region, or tile the frame, for crowds).
 - Compiling an intent to a shared library needs `cargo` on the machine at
-  run time; running it in-process (the default) does not.
-- Live capture is Windows-only. Other platforms consume file-based frames.
+  run time; running it in-process (the default) does not. A compiled
+  operation needs `rustc` where it is first used, or a bundle prepared
+  elsewhere (`SYRUP_MODE=frozen`).
+- Window capture needs macOS 14 or later on macOS. On Wayland, other
+  applications' window titles are hidden, so the user picks the window the
+  first time a title is used (X11 applications under XWayland are found by
+  title); desktops whose portal can only share whole screens cannot share a
+  window. Whole-screen capture is Windows-only.
+- The YOLO recipe runs Ultralytics' library and weights, which are AGPL-3.0
+  (or a commercial licence from Ultralytics); Syrup only calls them when you
+  install them. The MediaPipe recipes are Apache-2.0.
 
 ## Syrup and MapleSyrup
 
