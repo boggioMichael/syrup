@@ -1,0 +1,83 @@
+name: Review of 0xGh0stAn0n/syrup
+
+# Independent verification of Eitan's branch, run on a review branch only.
+on:
+  push:
+    branches: ["review/**"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y tesseract-ocr
+          rustc --version; cargo --version; tesseract --version | head -1; nproc
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test
+        run: |
+          set -o pipefail
+          cargo test --workspace 2>&1 | tee test.log
+          echo "== summary =="; grep -E "^test result|Running|warning: unused" test.log || true
+          echo "TESTS PASSED: $(grep -oE '[0-9]+ passed' test.log | awk '{s+=$1} END {print s}')"
+          echo "TESTS IGNORED: $(grep -oE '[0-9]+ ignored' test.log | awk '{s+=$1} END {print s}')"
+      - name: Benchmarks (runtime)
+        run: |
+          set -o pipefail
+          cargo bench -p syrup-runtime --bench runtime -- --warm-up-time 1 --measurement-time 4 --noplot 2>&1 | tee bench.log
+          echo "== bench summary =="; grep -E "^[a-z].*time:|^ +time:|^compile|^frame|^session" bench.log || true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install the Python package
+        run: pip install "./python[test]" opencv-python-headless
+      - name: Python tests
+        run: pytest python/tests -q -rs 2>&1 | tee pytest.log
+      - name: Independent checks
+        run: python review/verify.py 2>&1 | tee verify.log
+      - name: CLI
+        run: |
+          cargo run -q -p syrup-runtime --bin syrup -- explain find_2_largest_faces_in_center
+          cargo run -q -p syrup-runtime --bin syrup -- source find_largest_red_bar_in_bottom_third | head -80
+          cargo run -q -p syrup-runtime --bin syrup -- explain find_best_face || echo "exit $?"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-logs
+          path: "*.log"
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/syrup-python -> target
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install the Python package
+        run: pip install "./python[test]" opencv-python-headless
+      - name: Independent checks
+        shell: bash
+        run: python review/verify.py --quick 2>&1 | tee verify-windows.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-logs
+          path: "*.log"
