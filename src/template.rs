@@ -32,6 +32,14 @@
 //! full resolution, which costs the search area times the template area:
 //! give those a search region near where they are expected.
 //! [`Template::coarse_levels`] tells which case a template is in.
+//!
+//! A thing that is seen in several poses, or facing either way, is a
+//! [`TemplateSet`]: its pictures (and their mirror images, when asked) are
+//! searched for together in one pass over the frame's pyramid
+//! ([`find_set`]), the matches of all of them ranked as one, and an
+//! optional colour check drops a match whose colours are nothing like the
+//! picture's — correlation on one channel cannot tell a red thing from a
+//! green one of the same shape.
 
 use image::{GrayImage, RgbaImage};
 
@@ -94,6 +102,9 @@ pub struct Template {
     channel: Channel,
     /// Full size first, then successively halved copies.
     levels: Vec<TemplateLevel>,
+    /// The mean colour of the picture's opaque pixels, for a colour check
+    /// after matching.
+    mean_rgb: [f32; 3],
 }
 
 impl Template {
@@ -105,6 +116,7 @@ impl Template {
         if plane.width == 0 || plane.height == 0 {
             return None;
         }
+        let mean_rgb = mean_rgb(image, region);
         let mut levels = vec![TemplateLevel::new(plane, 0)?];
         while levels.len() <= MAX_LEVELS {
             let last = &levels[levels.len() - 1].plane;
@@ -123,7 +135,22 @@ impl Template {
                 None => break,
             }
         }
-        Some(Self { channel, levels })
+        Some(Self {
+            channel,
+            levels,
+            mean_rgb,
+        })
+    }
+
+    /// The same picture seen in a mirror, left to right.
+    pub fn mirrored(image: &RgbaImage, region: Rect, channel: Channel) -> Option<Self> {
+        let region = clip(region, image.width(), image.height());
+        if region.w == 0 || region.h == 0 {
+            return None;
+        }
+        let crop = image::imageops::crop_imm(image, region.x, region.y, region.w, region.h);
+        let flipped = image::imageops::flip_horizontal(&*crop);
+        Self::from_image(&flipped, channel)
     }
 
     /// The whole of `image` as a template.
@@ -155,6 +182,332 @@ impl Template {
     pub fn coarse_levels(&self) -> usize {
         self.levels.len() - 1
     }
+
+    /// The mean colour (red, green, blue, 0–255) of the picture's opaque
+    /// pixels.
+    pub fn mean_rgb(&self) -> [f32; 3] {
+        self.mean_rgb
+    }
+}
+
+/// `region` clipped to a `width`×`height` image.
+fn clip(region: Rect, width: u32, height: u32) -> Rect {
+    let x = region.x.min(width);
+    let y = region.y.min(height);
+    Rect {
+        x,
+        y,
+        w: region.w.min(width - x),
+        h: region.h.min(height - y),
+    }
+}
+
+/// The mean colour of the opaque pixels of `region` (clipped), 0 when there
+/// are none.
+fn mean_rgb(image: &RgbaImage, region: Rect) -> [f32; 3] {
+    let region = clip(region, image.width(), image.height());
+    let mut sum = [0f64; 3];
+    let mut count = 0f64;
+    for y in region.y..region.y + region.h {
+        for x in region.x..region.x + region.w {
+            let p = image.get_pixel(x, y).0;
+            if p[3] < 128 {
+                continue;
+            }
+            for (s, &v) in sum.iter_mut().zip(&p[..3]) {
+                *s += f64::from(v);
+            }
+            count += 1.0;
+        }
+    }
+    if count == 0.0 {
+        return [0.0; 3];
+    }
+    sum.map(|v| (v / count) as f32)
+}
+
+/// Several pictures of one thing — its poses, and when asked their mirror
+/// images too — looked for together.
+#[derive(Debug, Clone)]
+pub struct TemplateSet {
+    channel: Channel,
+    mirrored: bool,
+    pictures: Vec<Picture>,
+}
+
+#[derive(Debug, Clone)]
+struct Picture {
+    template: Template,
+    mirror: Option<Template>,
+    width: u32,
+    height: u32,
+}
+
+impl TemplateSet {
+    /// An empty set; with `mirrored`, every picture added is also looked
+    /// for facing the other way.
+    pub fn new(channel: Channel, mirrored: bool) -> Self {
+        Self {
+            channel,
+            mirrored,
+            pictures: Vec::new(),
+        }
+    }
+
+    /// Adds a picture. `false` (and nothing added) when it is empty or
+    /// uniform, like [`Template::new`].
+    pub fn add(&mut self, image: &RgbaImage) -> bool {
+        let Some(template) = Template::from_image(image, self.channel) else {
+            return false;
+        };
+        let region = Rect {
+            x: 0,
+            y: 0,
+            w: image.width(),
+            h: image.height(),
+        };
+        let mirror = self
+            .mirrored
+            .then(|| Template::mirrored(image, region, self.channel))
+            .flatten();
+        self.pictures.push(Picture {
+            template,
+            mirror,
+            width: image.width(),
+            height: image.height(),
+        });
+        true
+    }
+
+    pub fn len(&self) -> usize {
+        self.pictures.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pictures.is_empty()
+    }
+
+    pub fn channel(&self) -> Channel {
+        self.channel
+    }
+
+    pub fn mirrored(&self) -> bool {
+        self.mirrored
+    }
+
+    /// The pictures, in the order added.
+    pub fn templates(&self) -> impl Iterator<Item = &Template> + '_ {
+        self.pictures.iter().map(|p| &p.template)
+    }
+
+    /// How deep a pyramid any picture in the set can use.
+    fn depth(&self) -> usize {
+        self.pictures
+            .iter()
+            .flat_map(|p| std::iter::once(&p.template).chain(p.mirror.as_ref()))
+            .map(|t| t.coarse_levels())
+            .max()
+            .unwrap_or(0)
+    }
+}
+
+/// The part of `picture` that stands out from its edges — the thing, not
+/// the ground and sky around it — when that is a fair part of the picture
+/// and big enough to match; `None` means the whole picture is the thing.
+///
+/// The background is the most common colours along the border (a few, as a
+/// creature standing on the ground has sky behind its head); a pixel near
+/// none of them is foreground, and the result is the box around the
+/// foreground with a pixel or two of margin.
+pub fn foreground(picture: &RgbaImage) -> Option<Rect> {
+    let (w, h) = picture.dimensions();
+    if w < 8 || h < 8 {
+        return None;
+    }
+    // The border's colours, in 5-bit buckets, each with its mean.
+    let mut buckets: std::collections::HashMap<u16, (u32, [u32; 3])> = Default::default();
+    let mut border = 0u32;
+    let mut add = |x: u32, y: u32| {
+        let p = picture.get_pixel(x, y).0;
+        let key = ((p[0] as u16 >> 3) << 10) | ((p[1] as u16 >> 3) << 5) | (p[2] as u16 >> 3);
+        let e = buckets.entry(key).or_insert((0, [0; 3]));
+        e.0 += 1;
+        for (sum, &v) in e.1.iter_mut().zip(&p[..3]) {
+            *sum += v as u32;
+        }
+        border += 1;
+    };
+    for x in 0..w {
+        add(x, 0);
+        add(x, h - 1);
+    }
+    for y in 1..h - 1 {
+        add(0, y);
+        add(w - 1, y);
+    }
+    let mut common: Vec<(u32, [u32; 3])> = buckets.into_values().collect();
+    common.sort_by_key(|c| std::cmp::Reverse(c.0));
+    let background: Vec<[i32; 3]> = common
+        .iter()
+        .take(4)
+        .filter(|(n, _)| n * 10 >= border)
+        .map(|(n, sum)| sum.map(|v| (v / n) as i32))
+        .collect();
+    if background.is_empty() {
+        return None;
+    }
+    let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
+    let mut count = 0u32;
+    for y in 0..h {
+        for x in 0..w {
+            let p = picture.get_pixel(x, y).0;
+            let near = background.iter().any(|bg| {
+                (0..3)
+                    .map(|c| (p[c] as i32 - bg[c]).abs())
+                    .max()
+                    .unwrap_or(0)
+                    <= 40
+            });
+            if !near {
+                count += 1;
+                x0 = x0.min(x);
+                y0 = y0.min(y);
+                x1 = x1.max(x + 1);
+                y1 = y1.max(y + 1);
+            }
+        }
+    }
+    if count < 16 || x1 <= x0 || y1 <= y0 {
+        return None;
+    }
+    let (bw, bh) = (x1 - x0, y1 - y0);
+    // Only when it is a fair part of the picture and big enough to match.
+    if bw * bh * 10 < w * h || bw < 8 || bh < 8 {
+        return None;
+    }
+    let (x0, y0) = (x0.saturating_sub(2), y0.saturating_sub(2));
+    let (x1, y1) = ((x1 + 2).min(w), (y1 + 2).min(h));
+    Some(Rect {
+        x: x0,
+        y: y0,
+        w: x1 - x0,
+        h: y1 - y0,
+    })
+}
+
+/// How a [`TemplateSet`] is searched for.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SetSearch {
+    /// Normalised correlation a match needs.
+    pub min_score: f32,
+    /// At most this many matches, strongest first.
+    pub limit: usize,
+    /// When set, a match whose window's mean colour differs from the
+    /// picture's by more than this on any channel (0–255) is dropped.
+    pub max_colour_shift: Option<f32>,
+}
+
+impl Default for SetSearch {
+    fn default() -> Self {
+        Self {
+            min_score: 0.7,
+            limit: 16,
+            max_colour_shift: None,
+        }
+    }
+}
+
+/// Where a picture of a set matched.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SetMatch {
+    /// The matched window, in image coordinates.
+    pub bounds: Rect,
+    /// Normalised correlation with the picture, in `[-1, 1]`.
+    pub score: f32,
+    /// Centre of the match to a fraction of a pixel.
+    pub centre: (f32, f32),
+    /// Which picture of the set matched (its index in the order added).
+    pub picture: usize,
+    /// Whether it was the picture's mirror image that matched.
+    pub mirrored: bool,
+}
+
+/// Every place in `search` (clipped to the image) where a picture of `set`
+/// scores at least `options.min_score`, strongest first; where matches of
+/// different pictures overlap by more than a quarter, only the strongest
+/// is kept. The frame's pyramid is built once for all the pictures.
+pub fn find_set(
+    image: &RgbaImage,
+    search: Rect,
+    set: &TemplateSet,
+    options: SetSearch,
+) -> Vec<SetMatch> {
+    if set.is_empty() || options.limit == 0 {
+        return Vec::new();
+    }
+    let pyramid = Pyramid::new(image, search, set.channel, set.depth());
+    let mut found: Vec<(usize, bool, usize, usize, f32)> = Vec::new();
+    for (index, picture) in set.pictures.iter().enumerate() {
+        let variants = std::iter::once((&picture.template, false))
+            .chain(picture.mirror.as_ref().map(|m| (m, true)));
+        for (template, mirrored) in variants {
+            for (x, y, score) in candidates(&pyramid, template, Some(options.min_score), true) {
+                found.push((index, mirrored, x, y, score));
+            }
+        }
+    }
+    found.sort_by(|a, b| b.4.total_cmp(&a.4));
+    let search = pyramid.search;
+    let mut kept: Vec<SetMatch> = Vec::new();
+    for (index, mirrored, x, y, score) in found {
+        let picture = &set.pictures[index];
+        let (w, h) = (picture.width as usize, picture.height as usize);
+        let bounds = Rect {
+            x: search.x + x as u32,
+            y: search.y + y as u32,
+            w: picture.width,
+            h: picture.height,
+        };
+        if let Some(max_shift) = options.max_colour_shift {
+            let template = if mirrored {
+                picture.mirror.as_ref().unwrap_or(&picture.template)
+            } else {
+                &picture.template
+            };
+            let window = mean_rgb(image, bounds);
+            let shift = (0..3)
+                .map(|c| (window[c] - template.mean_rgb[c]).abs())
+                .fold(0f32, f32::max);
+            if shift > max_shift {
+                continue;
+            }
+        }
+        let overlaps = kept.iter().any(|k| {
+            let (kw, kh) = (k.bounds.w as usize, k.bounds.h as usize);
+            2 * (k.bounds.x as usize).abs_diff(bounds.x as usize) < w.min(kw)
+                && 2 * (k.bounds.y as usize).abs_diff(bounds.y as usize) < h.min(kh)
+        });
+        if overlaps {
+            continue;
+        }
+        let template = if mirrored {
+            picture.mirror.as_ref().unwrap_or(&picture.template)
+        } else {
+            &picture.template
+        };
+        let described = describe(&pyramid.planes[0], &template.levels[0], search, x, y, score);
+        kept.push(SetMatch {
+            bounds: described.bounds,
+            score,
+            centre: described.centre,
+            picture: index,
+            mirrored,
+        });
+        if kept.len() >= options.limit {
+            break;
+        }
+    }
+    kept
 }
 
 /// Where a template matched.
@@ -720,7 +1073,50 @@ fn run_with(
     min_score: Option<f32>,
     pyramid: bool,
 ) -> Vec<TemplateMatch> {
-    let full = Plane::from_gray(channel_image(image, search, template.channel));
+    let planes = Pyramid::new(image, search, template.channel, template.coarse_levels());
+    let base = &template.levels[0];
+    candidates(&planes, template, min_score, pyramid)
+        .into_iter()
+        .map(|(x, y, score)| describe(&planes.planes[0], base, planes.search, x, y, score))
+        .collect()
+}
+
+/// The search region of a frame on one channel, at full size and halved
+/// `depth` times: built once, shared by every template of a search.
+struct Pyramid {
+    /// The search region as clipped to the image.
+    search: Rect,
+    planes: Vec<Plane>,
+}
+
+impl Pyramid {
+    fn new(image: &RgbaImage, search: Rect, channel: Channel, depth: usize) -> Pyramid {
+        let search = clip(search, image.width(), image.height());
+        let full = Plane::from_gray(channel_image(image, search, channel));
+        let mut planes = vec![full];
+        while planes.len() <= depth {
+            let last = &planes[planes.len() - 1];
+            if last.width < 2 || last.height < 2 {
+                break;
+            }
+            let next = last.half();
+            planes.push(next);
+        }
+        Pyramid { search, planes }
+    }
+}
+
+/// Where `template` matches in `pyramid`, as positions of its top-left
+/// corner at full resolution with their scores: every position scoring at
+/// least `min_score`, or just the best when `None`; overlapping matches
+/// reduced to the strongest.
+fn candidates(
+    pyramid: &Pyramid,
+    template: &Template,
+    min_score: Option<f32>,
+    use_pyramid: bool,
+) -> Vec<(usize, usize, f32)> {
+    let full = &pyramid.planes[0];
     let base = &template.levels[0];
     if full.width < base.inner.width || full.height < base.inner.height {
         return Vec::new();
@@ -731,23 +1127,24 @@ fn run_with(
     // region allow.
     let positions =
         ((full.width - base.inner.width + 1) * (full.height - base.inner.height + 1)) as u64;
-    let mut planes = vec![full];
-    if pyramid && positions * base.area() as u64 > EXHAUSTIVE_BUDGET {
-        while planes.len() < template.levels.len() {
-            let next = planes[planes.len() - 1].half();
-            let level = &template.levels[planes.len()];
+    let mut depth = 0;
+    if use_pyramid && positions * base.area() as u64 > EXHAUSTIVE_BUDGET {
+        while depth + 1 < template.levels.len() && depth + 1 < pyramid.planes.len() {
+            let next = &pyramid.planes[depth + 1];
+            let level = &template.levels[depth + 1];
             if next.width < level.inner.width || next.height < level.inner.height {
                 break;
             }
-            planes.push(next);
+            depth += 1;
         }
     }
+    let planes = &pyramid.planes[..=depth];
 
     // Positions below are of each level's matched part (its interior).
     // Score everywhere at the coarsest level, then carry the strongest
     // candidates down, refining each at every level and keeping fewer as
     // the rankings get more reliable.
-    let coarsest = planes.len() - 1;
+    let coarsest = depth;
     let (plane, level) = (&planes[coarsest], &template.levels[coarsest]);
     let scores = score_everywhere(plane, level);
     let (columns, rows) = (
@@ -793,13 +1190,12 @@ fn run_with(
         candidates.dedup_by(|a, b| (a.0, a.1) == (b.0, b.1));
         candidates.truncate(keep_at(finer));
     }
-    let found = candidates;
 
     // Keep the strongest of any matches overlapping by more than a quarter.
     // Full resolution has no margin, so these are the template's corners.
     let (w, h) = (base.inner.width, base.inner.height);
     let mut kept: Vec<(usize, usize, f32)> = Vec::new();
-    for candidate in found {
+    for candidate in candidates {
         let overlaps = kept
             .iter()
             .any(|&(x, y, _)| 2 * x.abs_diff(candidate.0) < w && 2 * y.abs_diff(candidate.1) < h);
@@ -810,10 +1206,7 @@ fn run_with(
             break;
         }
     }
-
-    kept.into_iter()
-        .map(|(x, y, score)| describe(&planes[0], base, search, x, y, score))
-        .collect()
+    kept
 }
 
 /// A match at full resolution, with its sub-pixel centre.
@@ -963,6 +1356,223 @@ mod tests {
             w: image.width(),
             h: image.height(),
         }
+    }
+
+    /// A creature with a face, facing left: eyes on the left, a dark mouth.
+    fn creature(flip: bool) -> RgbaImage {
+        let mut m = RgbaImage::from_pixel(40, 36, Rgba([240, 140, 40, 255]));
+        for y in 0..36 {
+            for x in 0..40 {
+                let (fx, fy) = (x as f32 - 20.0, y as f32 - 18.0);
+                if fx * fx / 300.0 + fy * fy / 250.0 > 1.0 {
+                    m.put_pixel(x, y, Rgba([90, 160, 90, 255]));
+                }
+            }
+        }
+        let eye = if flip { [26, 30] } else { [10, 14] };
+        for y in 10..16 {
+            for x in eye[0]..eye[1] {
+                m.put_pixel(x, y, Rgba([20, 20, 20, 255]));
+            }
+        }
+        for y in 24..27 {
+            for x in 8..32 {
+                m.put_pixel(x, y, Rgba([120, 40, 20, 255]));
+            }
+        }
+        m
+    }
+
+    /// A striped field with the creature twice: as taught, and facing the
+    /// other way.
+    fn field() -> RgbaImage {
+        let mut s = RgbaImage::from_fn(640, 360, |x, y| {
+            let v = ((x / 23 + y / 31) % 3) as u8 * 12;
+            Rgba([80 + v, 150 + v, 80 + v, 255])
+        });
+        paste(&mut s, &creature(false), (100, 200));
+        paste(
+            &mut s,
+            &image::imageops::flip_horizontal(&creature(false)),
+            (420, 90),
+        );
+        s
+    }
+
+    #[test]
+    fn a_set_finds_a_picture_facing_either_way_in_one_search() {
+        let mut set = TemplateSet::new(Channel::Luma, true);
+        assert!(set.add(&creature(false)));
+        assert_eq!(set.len(), 1);
+        let frame = field();
+        let options = SetSearch {
+            min_score: 0.75,
+            limit: 5,
+            max_colour_shift: Some(60.0),
+        };
+        let found = find_set(&frame, whole(&frame), &set, options);
+        assert_eq!(found.len(), 2, "{found:?}");
+        let mut places: Vec<(u32, u32, bool)> = found
+            .iter()
+            .map(|f| (f.bounds.x, f.bounds.y, f.mirrored))
+            .collect();
+        places.sort();
+        assert_eq!(places, vec![(100, 200, false), (420, 90, true)]);
+        assert!(found.iter().all(|f| f.score > 0.9 && f.picture == 0));
+        assert!(found.iter().all(|f| f.bounds.w == 40 && f.bounds.h == 36));
+        // Not mirrored: only the one as taught.
+        let mut plain = TemplateSet::new(Channel::Luma, false);
+        plain.add(&creature(false));
+        let found = find_set(&frame, whole(&frame), &plain, options);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!((found[0].bounds.x, found[0].bounds.y), (100, 200));
+        // Within a region that holds neither.
+        let region = Rect {
+            x: 200,
+            y: 0,
+            w: 200,
+            h: 360,
+        };
+        assert!(find_set(&frame, region, &set, options).is_empty());
+        // A limit of one keeps the strongest.
+        let one = find_set(
+            &frame,
+            whole(&frame),
+            &set,
+            SetSearch {
+                limit: 1,
+                ..options
+            },
+        );
+        assert_eq!(one.len(), 1);
+    }
+
+    #[test]
+    fn a_set_of_poses_ranks_every_picture_together() {
+        // Two poses: the creature, and the creature with its mouth closed.
+        let mut closed = creature(false);
+        for y in 24..27 {
+            for x in 8..32 {
+                closed.put_pixel(x, y, Rgba([240, 140, 40, 255]));
+            }
+        }
+        let mut frame = field();
+        paste(&mut frame, &closed, (300, 250));
+        let mut set = TemplateSet::new(Channel::Luma, false);
+        set.add(&creature(false));
+        set.add(&closed);
+        let found = find_set(
+            &frame,
+            whole(&frame),
+            &set,
+            SetSearch {
+                min_score: 0.9,
+                limit: 8,
+                max_colour_shift: None,
+            },
+        );
+        let mut places: Vec<(u32, u32, usize)> = found
+            .iter()
+            .map(|f| (f.bounds.x, f.bounds.y, f.picture))
+            .collect();
+        places.sort();
+        // Each copy is reported once, by the pose that fits it best.
+        assert_eq!(places, vec![(100, 200, 0), (300, 250, 1)], "{found:?}");
+    }
+
+    #[test]
+    fn the_colour_check_drops_a_lookalike_of_another_colour() {
+        // The same shape, as light, in green instead of orange: the same
+        // picture on the luma channel, another colour.
+        let original = creature(false);
+        let green = RgbaImage::from_fn(40, 36, |x, y| {
+            let p = original.get_pixel(x, y).0;
+            if p == [240, 140, 40, 255] {
+                Rgba([120, 190, 60, 255])
+            } else {
+                Rgba(p)
+            }
+        });
+        let mut frame = field();
+        paste(&mut frame, &green, (500, 250));
+        let mut set = TemplateSet::new(Channel::Luma, false);
+        set.add(&creature(false));
+        let find = |shift| {
+            find_set(
+                &frame,
+                whole(&frame),
+                &set,
+                SetSearch {
+                    min_score: 0.6,
+                    limit: 8,
+                    max_colour_shift: shift,
+                },
+            )
+        };
+        let without = find(None);
+        assert!(
+            without
+                .iter()
+                .any(|f| (f.bounds.x, f.bounds.y) == (500, 250)),
+            "{without:?}"
+        );
+        let with = find(Some(60.0));
+        assert_eq!(with.len(), 1, "{with:?}");
+        assert_eq!((with[0].bounds.x, with[0].bounds.y), (100, 200));
+    }
+
+    #[test]
+    fn a_set_with_one_picture_agrees_with_find_all() {
+        let mut frame = scene(420, 300, 9);
+        for at in [(20, 30), (200, 100), (330, 220)] {
+            paste(&mut frame, &icon(32), at);
+        }
+        let template = Template::from_image(&icon(32), Channel::Luma).unwrap();
+        let all = find_all(&frame, whole(&frame), &template, 0.9);
+        let mut set = TemplateSet::new(Channel::Luma, false);
+        set.add(&icon(32));
+        let found = find_set(
+            &frame,
+            whole(&frame),
+            &set,
+            SetSearch {
+                min_score: 0.9,
+                limit: 16,
+                max_colour_shift: None,
+            },
+        );
+        let a: Vec<(u32, u32)> = all.iter().map(|m| (m.bounds.x, m.bounds.y)).collect();
+        let b: Vec<(u32, u32)> = found.iter().map(|m| (m.bounds.x, m.bounds.y)).collect();
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 3);
+        assert_eq!(
+            template.mean_rgb(),
+            set.templates().next().unwrap().mean_rgb()
+        );
+    }
+
+    #[test]
+    fn the_foreground_is_what_stands_out_from_the_edges() {
+        // Sky over grass, with a dark creature in the middle.
+        let mut crop = RgbaImage::from_fn(60, 50, |_, y| {
+            if y < 25 {
+                Rgba([120, 180, 240, 255])
+            } else {
+                Rgba([70, 150, 60, 255])
+            }
+        });
+        for y in 15..40 {
+            for x in 20..44 {
+                crop.put_pixel(x, y, Rgba([30, 20, 20, 255]));
+            }
+        }
+        let fg = foreground(&crop).unwrap();
+        assert_eq!((fg.x, fg.y, fg.w, fg.h), (18, 13, 28, 29));
+        // Nothing stands out of a flat picture, and a tiny crop is kept whole.
+        assert!(foreground(&RgbaImage::from_pixel(60, 50, Rgba([9, 9, 9, 255]))).is_none());
+        assert!(foreground(&image::imageops::crop_imm(&crop, 0, 0, 6, 6).to_image()).is_none());
+        // A picture that is all thing has no background to take away.
+        assert!(foreground(&scene(40, 40, 1)).is_none());
     }
 
     #[test]

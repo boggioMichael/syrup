@@ -69,6 +69,105 @@ impl Rect {
     }
 }
 
+/// A rectangle as fractions of the frame's width and height (0 to 1, from
+/// the top left), so it means the same place after the window is resized.
+///
+/// Constructed through [`NormRect::new`], which orders and clamps the
+/// corners, so `x0 <= x1` and `y0 <= y1` always hold.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct NormRect {
+    pub x0: f32,
+    pub y0: f32,
+    pub x1: f32,
+    pub y1: f32,
+}
+
+impl NormRect {
+    pub fn new(x0: f32, y0: f32, x1: f32, y1: f32) -> NormRect {
+        NormRect {
+            x0: x0.min(x1).clamp(0.0, 1.0),
+            y0: y0.min(y1).clamp(0.0, 1.0),
+            x1: x0.max(x1).clamp(0.0, 1.0),
+            y1: y0.max(y1).clamp(0.0, 1.0),
+        }
+    }
+
+    pub fn width(&self) -> f32 {
+        self.x1 - self.x0
+    }
+
+    pub fn height(&self) -> f32 {
+        self.y1 - self.y0
+    }
+
+    pub fn center(&self) -> (f32, f32) {
+        ((self.x0 + self.x1) / 2.0, (self.y0 + self.y1) / 2.0)
+    }
+
+    /// Grown by `fx` of its width and `fy` of its height on each side.
+    pub fn grown(&self, fx: f32, fy: f32) -> NormRect {
+        let (dx, dy) = (self.width() * fx, self.height() * fy);
+        NormRect::new(self.x0 - dx, self.y0 - dy, self.x1 + dx, self.y1 + dy)
+    }
+
+    /// The smallest box holding both.
+    pub fn union(&self, other: &NormRect) -> NormRect {
+        NormRect::new(
+            self.x0.min(other.x0),
+            self.y0.min(other.y0),
+            self.x1.max(other.x1),
+            self.y1.max(other.y1),
+        )
+    }
+
+    /// In pixels of a `width`×`height` frame: x, y, w, h (at least 1×1).
+    pub fn pixels(&self, width: u32, height: u32) -> (u32, u32, u32, u32) {
+        // A hair of slack, so a box made from whole pixels comes back exact.
+        let lo = |v: f32, n: u32| {
+            ((v * n as f32 + 0.01).floor().max(0.0) as u32).min(n.saturating_sub(1))
+        };
+        let hi = |v: f32, n: u32| (v * n as f32 - 0.01).ceil().max(0.0) as u32;
+        let (x0, y0) = (lo(self.x0, width), lo(self.y0, height));
+        let x1 = hi(self.x1, width).clamp(x0 + 1, width.max(1));
+        let y1 = hi(self.y1, height).clamp(y0 + 1, height.max(1));
+        (x0, y0, x1 - x0, y1 - y0)
+    }
+
+    /// The same, as a [`Rect`].
+    pub fn rect(&self, width: u32, height: u32) -> Rect {
+        let (x, y, w, h) = self.pixels(width, height);
+        Rect { x, y, w, h }
+    }
+
+    /// A box in pixels of a `width`×`height` frame, as fractions.
+    pub fn from_pixels(x: u32, y: u32, w: u32, h: u32, width: u32, height: u32) -> NormRect {
+        let (fw, fh) = (width.max(1) as f32, height.max(1) as f32);
+        NormRect::new(
+            x as f32 / fw,
+            y as f32 / fh,
+            (x + w) as f32 / fw,
+            (y + h) as f32 / fh,
+        )
+    }
+
+    /// A [`Rect`] of a `width`×`height` frame, as fractions.
+    pub fn from_rect(rect: Rect, width: u32, height: u32) -> NormRect {
+        NormRect::from_pixels(rect.x, rect.y, rect.w, rect.h, width, height)
+    }
+
+    /// This box (given in fractions of `inner`, which sits at `inner` within
+    /// a larger frame) in fractions of the larger frame.
+    pub fn within(&self, inner: &NormRect) -> NormRect {
+        NormRect::new(
+            inner.x0 + self.x0 * inner.width(),
+            inner.y0 + self.y0 * inner.height(),
+            inner.x0 + self.x1 * inner.width(),
+            inner.y0 + self.y1 * inner.height(),
+        )
+    }
+}
+
 /// Find runs of `min_width`-or-longer consecutive pixels along row `y` in
 /// `[x0, x1]` matching `predicate`. Returns inclusive `(start_x, end_x)` pairs.
 pub fn segment_row<F>(
@@ -1013,5 +1112,33 @@ mod tests {
         };
         let bar = find_color_bar(&image, region, (340.0, 30.0), 0.35, 0.30).expect("bar found");
         assert!(bar.w >= 100);
+    }
+
+    #[test]
+    fn a_normalised_rect_round_trips_through_pixels() {
+        let rect = Rect {
+            x: 520,
+            y: 652,
+            w: 340,
+            h: 10,
+        };
+        let norm = NormRect::from_rect(rect, 1280, 720);
+        assert_eq!(norm.rect(1280, 720), rect);
+        // Corners given backwards are put in order and clamped.
+        let b = NormRect::new(1.2, 0.5, 0.25, -0.1);
+        assert_eq!((b.x0, b.y0, b.x1, b.y1), (0.25, 0.0, 1.0, 0.5));
+        // Grown, united, placed within another.
+        let g = NormRect::new(0.4, 0.4, 0.6, 0.6).grown(0.5, 0.0);
+        assert!((g.x0 - 0.3).abs() < 1e-6 && (g.x1 - 0.7).abs() < 1e-6 && g.y0 == 0.4);
+        let u = NormRect::new(0.0, 0.0, 0.2, 0.2).union(&NormRect::new(0.5, 0.5, 0.6, 0.9));
+        assert_eq!((u.x0, u.y0, u.x1, u.y1), (0.0, 0.0, 0.6, 0.9));
+        let inner = NormRect::new(0.5, 0.5, 1.0, 1.0);
+        let w = NormRect::new(0.0, 0.0, 0.5, 0.5).within(&inner);
+        assert_eq!((w.x0, w.y0, w.x1, w.y1), (0.5, 0.5, 0.75, 0.75));
+        // Never smaller than a pixel.
+        assert_eq!(
+            NormRect::new(0.5, 0.5, 0.5, 0.5).pixels(100, 100),
+            (50, 50, 1, 1)
+        );
     }
 }
