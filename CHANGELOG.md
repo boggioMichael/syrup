@@ -35,8 +35,8 @@
   within `EXPECTED_WITHIN` (25°) of it, rather than take the scenery for
   the bar; `find_bar` finds a bar as a band of rows whose runs of the
   colour start together and are about as long (not the biggest blob of
-  the colour, nor a line of it). `geometry::measure_bar_fill`: something
-  vivid past the fill is the world, not groove — the bar is full.
+  the colour, nor a line of it). `geometry::measure_bar_fill` says
+  nothing (None) when there is nothing past the fill to sample.
 - CI publishes each check job's logs to `build-output/<branch>/<os>`, and
   `[vendor]` in a commit message publishes the vendored crates to
   `build-cache/vendor`.

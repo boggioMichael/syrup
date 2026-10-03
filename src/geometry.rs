@@ -705,23 +705,8 @@ where
     {
         return Groove::Background;
     }
-    // A groove is dull: the empty track of a bar is grey or dark. Something
-    // vivid past the fill (lava behind a translucent panel, right of a bar
-    // that is full) is the world, not groove.
-    let (max, min) = (
-        *candidate.iter().max().unwrap_or(&0) as f32,
-        *candidate.iter().min().unwrap_or(&0) as f32,
-    );
-    if max > 0.0 && (max - min) / max > GROOVE_SATURATION {
-        return Groove::Background;
-    }
-
     Groove::Colour(candidate)
 }
-
-/// The most saturation a groove colour may have (a track is grey or dark;
-/// scenery past a full bar is not).
-const GROOVE_SATURATION: f32 = 0.45;
 
 /// Sample the colour just above the bar, which is outside its track.
 fn sample_outside_color(image: &RgbaImage, fill: Rect) -> Option<[u8; 3]> {
