@@ -83,6 +83,7 @@ pub mod face;
 pub mod geometry;
 pub mod glyphs;
 pub mod intent;
+pub mod kernels;
 pub mod motion;
 pub mod ocr;
 pub mod quality;
