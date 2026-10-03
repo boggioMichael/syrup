@@ -516,6 +516,41 @@ const SPACE_GAP_FRACTION: f32 = 0.5;
 /// unsplit run before the split is believed.
 const SPLIT_ADVANTAGE: f32 = 0.05;
 
+/// A filled square of ink this fraction of the line height on a side (and
+/// at least [`MIN_BLOCK_SIDE`] pixels) is a block, not a glyph: the empty
+/// track of a bar beside its fill, a panel's edge. No readable font has a
+/// stroke that thick.
+const BLOCK_SIDE: f32 = 0.5;
+const MIN_BLOCK_SIDE: u32 = 3;
+
+/// How many times, at most, the band is narrowed to the rows of its own
+/// glyphs. Each pass can only shrink it, and two usually settle it.
+const BAND_PASSES: usize = 4;
+
+/// The tallest run of `true` in `inked`, allowing a single-row gap (the dot
+/// of an i, the gap in a colon), as half-open `(start, end)`.
+fn tallest_run(inked: &[bool]) -> Option<(u32, u32)> {
+    let height = inked.len();
+    let mut best: Option<(usize, usize)> = None;
+    let mut y = 0;
+    while y < height {
+        if !inked[y] {
+            y += 1;
+            continue;
+        }
+        let start = y;
+        let mut end = y + 1;
+        while end < height && (inked[end] || (end + 1 < height && inked[end + 1])) {
+            end += 1;
+        }
+        if best.is_none_or(|(s, e)| end - start > e - s) {
+            best = Some((start, end));
+        }
+        y = end;
+    }
+    best.map(|(s, e)| (s as u32, e as u32))
+}
+
 /// The text band of a region: evidence rows the line occupies, and which
 /// columns hold ink.
 struct Line {
@@ -548,34 +583,32 @@ impl Line {
         let inked: Vec<bool> = (0..height)
             .map(|y| (0..width).any(|x| evidence.get_pixel(x, y).0[0] >= threshold))
             .collect();
-        let mut best: Option<(u32, u32)> = None;
-        let mut y = 0;
-        while y < height {
-            if !inked[y as usize] {
-                y += 1;
-                continue;
-            }
-            let start = y;
-            let mut end = y + 1;
-            while end < height
-                && (inked[end as usize] || (end + 1 < height && inked[end as usize + 1]))
-            {
-                end += 1;
-            }
-            if best.is_none_or(|(s, e)| end - start > e - s) {
-                best = Some((start, end));
-            }
-            y = end;
-        }
-        let (top, bottom) = best?;
-        Some(Self {
+        let (top, bottom) = tallest_run(&inked)?;
+        let mut line = Self {
             origin: (region.x, region.y),
             evidence,
             top,
             height: bottom - top,
             ink_threshold: threshold,
             min_gap: options.min_gap.max(1),
-        })
+        };
+        // That band took every inked row, and a bar's end or the empty track
+        // beside its fill stands taller than the writing on it. Narrow the
+        // band to the rows of the writing itself — the spans that survive,
+        // blocks and debris dropped — until it holds still, so a line is
+        // measured the same with and without such company.
+        for _ in 0..BAND_PASSES {
+            let spans = line.spans();
+            let Some((top, bottom)) = line.band_of(&spans) else {
+                break;
+            };
+            if (top, bottom) == (line.top, line.top + line.height) {
+                break;
+            }
+            line.top = top;
+            line.height = bottom - top;
+        }
+        Some(line)
     }
 
     fn is_ink(&self, x: u32, y: u32) -> bool {
@@ -619,7 +652,56 @@ impl Line {
                 _ => merged.push(span),
             }
         }
+        // A block of ink is not writing: the empty track of a bar beside its
+        // fill, lighter than the fill the text sits on, or a panel's edge.
+        merged.retain(|&(a, b)| !self.holds_block(a, b));
         self.main_cluster(merged, &ink)
+    }
+
+    /// Whether columns `a..b` of the band hold a filled square of ink
+    /// [`BLOCK_SIDE`] of the line height on a side. No readable font has a
+    /// stroke that thick, so a span holding one is a block of lighter
+    /// background, not a glyph.
+    fn holds_block(&self, a: u32, b: u32) -> bool {
+        let side = ((self.height as f32 * BLOCK_SIDE).ceil() as u32).max(MIN_BLOCK_SIDE);
+        let (w, h) = (b - a, self.height);
+        if w < side || h < side {
+            return false;
+        }
+        // Prefix sums of the ink over the span, so any square is summed in
+        // four lookups.
+        let (w, h, side) = (w as usize, h as usize, side as usize);
+        let stride = w + 1;
+        let mut sums = vec![0u32; stride * (h + 1)];
+        for y in 0..h {
+            let mut row = 0;
+            for x in 0..w {
+                row += u32::from(self.is_ink(a + x as u32, self.top + y as u32));
+                sums[(y + 1) * stride + x + 1] = sums[y * stride + x + 1] + row;
+            }
+        }
+        let at = |x: usize, y: usize| sums[y * stride + x];
+        let full = (side * side) as u32;
+        (0..=h - side).any(|y| {
+            (0..=w - side).any(|x| {
+                // Inclusion-exclusion, added before subtracted so it never
+                // dips below zero on the way.
+                at(x + side, y + side) + at(x, y) - at(x, y + side) - at(x + side, y) == full
+            })
+        })
+    }
+
+    /// The rows of the band that `spans` ink, as the tallest run of them
+    /// (allowing a one-row gap), in image rows.
+    fn band_of(&self, spans: &[(u32, u32)]) -> Option<(u32, u32)> {
+        let inked: Vec<bool> = (self.top..self.top + self.height)
+            .map(|y| {
+                spans
+                    .iter()
+                    .any(|&(a, b)| (a..b).any(|x| self.is_ink(x, y)))
+            })
+            .collect();
+        tallest_run(&inked).map(|(start, end)| (self.top + start, self.top + end))
     }
 
     /// Keep only the line itself: the group of runs with the most ink,
@@ -1193,5 +1275,81 @@ mod tests {
             set.read(&image, region).value.map(|r| r.text),
             Some("2026".to_string())
         );
+    }
+
+    /// `text` printed over a status bar 300 wide, filled up to `fill` (the
+    /// whole bar when `None`): the empty track beyond the fill is lighter
+    /// than the fill and taller than the writing, the fill ends in a bright
+    /// edge the full height of the bar, and both ends of the bar are
+    /// capped the same way. The region is the whole bar with a margin.
+    fn bar_with_track(text: &str, fill: Option<u32>) -> (RgbaImage, Rect) {
+        let track = Rgba([150, 140, 145, 255]);
+        let edge = Rgba([255, 205, 220, 255]);
+        let (width, height) = (300, draw::text_height(2) + 16);
+        let mut image = RgbaImage::from_pixel(width, height, BAR);
+        let fill = fill.unwrap_or(width);
+        for y in 0..height {
+            for x in 0..width {
+                let cap = (x < 2 || x + 2 >= width) && y > 0 && y + 1 < height;
+                let fill_end = fill < width && x + 2 >= fill && x < fill;
+                if cap || fill_end {
+                    image.put_pixel(x, y, edge);
+                } else if x >= fill && y >= 2 && y + 2 < height {
+                    image.put_pixel(x, y, track);
+                }
+            }
+        }
+        let left = (width - draw::text_width(text, 2)) / 2;
+        draw::draw_text(text, left as i64, 8, 2, |x, y| {
+            image.put_pixel(x as u32, y as u32, INK)
+        });
+        (
+            image,
+            Rect {
+                x: 0,
+                y: 0,
+                w: width,
+                h: height,
+            },
+        )
+    }
+
+    #[test]
+    fn the_empty_track_beside_a_bars_fill_is_not_a_glyph() {
+        // The fill ends 20 columns past the writing: the lighter track beside
+        // it, taller than the digits, is nearer to them than a space.
+        let text = "4972/6370";
+        let fill = (300 + draw::text_width(text, 2)) / 2 + 20;
+        let (partial, region) = bar_with_track(text, Some(fill));
+        let (full, _) = bar_with_track(text, None);
+        // Lower still: the fill ends four columns past the last digit.
+        let (lower, _) = bar_with_track(text, Some(fill - 16));
+
+        let mut from_partial = GlyphSet::new(GlyphOptions::default());
+        assert_eq!(from_partial.learn(&partial, region, text), Ok(9));
+        let mut from_full = GlyphSet::new(GlyphOptions::default());
+        assert_eq!(from_full.learn(&full, region, text), Ok(9));
+        for (font, learned_on) in [(&from_partial, "a partial bar"), (&from_full, "a full bar")] {
+            for (picture, shown) in [(&full, "full"), (&partial, "partial"), (&lower, "lower")] {
+                let reading = font.read(picture, region);
+                let read = reading.value.as_ref().map(|r| r.text.as_str());
+                assert_eq!(
+                    read,
+                    Some(text),
+                    "learned on {learned_on}, reading the {shown} bar: {:?}",
+                    reading.failure_reason
+                );
+                // The line is measured by the writing, not by the track or
+                // the bar's edges standing taller beside it.
+                let glyphs = &reading.value.as_ref().unwrap().glyphs;
+                assert!(
+                    glyphs
+                        .iter()
+                        .all(|g| g.bounds.h == draw::text_height(2) && g.bounds.y == 8),
+                    "the {shown} bar's glyphs: {:?}",
+                    glyphs.iter().map(|g| g.bounds).collect::<Vec<_>>()
+                );
+            }
+        }
     }
 }

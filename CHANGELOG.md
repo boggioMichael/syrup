@@ -37,6 +37,13 @@
   colour start together and are about as long (not the biggest blob of
   the colour, nor a line of it). `geometry::measure_bar_fill` says
   nothing (None) when there is nothing past the fill to sample.
+- `glyphs`, a number printed over a partly filled bar: the empty track
+  beside the fill, lighter than the fill the digits sit on, is a block of
+  ink in the evidence, not a glyph — a span holding a filled square half
+  the line height on a side is dropped; and the band of the line is
+  narrowed to the rows of the glyphs that survive, so a bar's end or the
+  track standing taller than the writing no longer stretches it. A font
+  learned on a full bar reads the partial ones, and the other way round.
 - CI publishes each check job's logs to `build-output/<branch>/<os>`, and
   `[vendor]` in a commit message publishes the vendored crates to
   `build-cache/vendor`.
