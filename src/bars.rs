@@ -241,7 +241,13 @@ impl BarModel {
         // A little past the track's end, in case it was set short.
         let to = (x0 + w + w / 50 + 2).min(fw);
         let slack = (w / 50).max(3);
-        let gap = (w / 8).max(3);
+        // Gaps in a row's fill come from text drawn over the bar, so they
+        // are at most a few glyphs wide: a few times the bar's height.
+        // Measured against the width alone, a bar that runs the whole
+        // width of a large screen (an EXP bar at 4K: 3,840 px) would
+        // bridge hundreds of pixels of nothing to the next thing of its
+        // colour, and read 60% when it was at 19%.
+        let gap = (w / 8).min(3 * h).max(3);
         let mut ends: Vec<u32> = (y0..(y0 + h).min(fh))
             .filter_map(|y| self.row_end(frame, y, x0, to, slack, gap))
             .collect();
@@ -404,6 +410,32 @@ pub(crate) mod tests {
         assert!(BarModel::learn(&covered, &rough, None).is_none());
         // A frame too small for the band: nothing, not a panic.
         assert_eq!(red.measure(&RgbaImage::new(64, 32)), None);
+    }
+
+    #[test]
+    fn a_thing_of_the_bars_colour_far_along_the_track_is_not_its_fill() {
+        // The bottom bar runs the whole width: 19% full, with a patch of
+        // its own colour (an icon, a button) 400 px past the fill's end.
+        let mut frame = status_bar(60.0, 100.0, 19.0);
+        let end = (1280.0 * 0.19) as u32;
+        for y in 708..714 {
+            for x in end + 400..end + 440 {
+                frame.put_pixel(x, y, Rgba([200, 220, 40, 255]));
+            }
+        }
+        let rough = NormRect::new(0.0, 708.0 / 720.0, 1.0, 714.0 / 720.0);
+        let bar = BarModel::learn(&status_bar(60.0, 100.0, 19.0), &rough, Some(55.0)).unwrap();
+        let got = bar.measure(&frame).unwrap();
+        assert!((got - 19.0).abs() < 1.5, "{got}");
+        // Text over the fill — gaps of a glyph or two — is still bridged.
+        let mut written = status_bar(60.0, 100.0, 50.0);
+        for y in 708..714 {
+            for x in (100..180).step_by(4) {
+                written.put_pixel(x, y, Rgba([250, 250, 250, 255]));
+            }
+        }
+        let got = bar.measure(&written).unwrap();
+        assert!((got - 50.0).abs() < 1.5, "{got}");
     }
 
     #[test]

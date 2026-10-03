@@ -98,13 +98,20 @@ pub struct TextReading {
 }
 
 /// Why a labelled example could not be learned from.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LearnError {
     /// No text-like pixels were found in the region.
     NoText,
     /// The crop splits into a different number of glyphs than the label
     /// has characters.
     GlyphCountMismatch { expected: usize, found: usize },
+    /// A character the label uses twice looks different each time: the
+    /// region is not that text (noise, or the wrong line, or the wrong
+    /// label), however many glyphs it split into.
+    Inconsistent { ch: char, correlation: f32 },
+    /// Learned on trial, the font did not read the region back as the
+    /// label: `read` is what it gave. Nothing was kept.
+    DoesNotReadBack { read: String },
 }
 
 impl std::fmt::Display for LearnError {
@@ -115,6 +122,16 @@ impl std::fmt::Display for LearnError {
                 f,
                 "the label has {expected} characters but the region splits into {found} glyphs"
             ),
+            LearnError::Inconsistent { ch, correlation } => write!(
+                f,
+                "the two {ch:?} in the label look nothing alike in the region (correlation {correlation:.2})"
+            ),
+            LearnError::DoesNotReadBack { read } => {
+                write!(
+                    f,
+                    "learned on trial, the font reads the region as {read:?}, not the label"
+                )
+            }
         }
     }
 }
@@ -199,6 +216,14 @@ impl GlyphSet {
     /// appear on screen: a character that does not reach the full height
     /// (a slash, a dot, a dash) learned from a crop of its own is measured
     /// against its own height instead, and will not match in a real line.
+    ///
+    /// An example is checked before it is kept: a character the label uses
+    /// twice must look alike both times, and the font with the example
+    /// learned (on trial) must read the region back as the label, every
+    /// glyph as surely as [`GlyphSet::read`] demands. A region of noise, the
+    /// wrong line, or a label that is not what the pixels say can all be
+    /// cut into as many pieces as the label has characters; none of them
+    /// reads back, and none of them is learned.
     pub fn learn(
         &mut self,
         image: &RgbaImage,
@@ -214,26 +239,79 @@ impl GlyphSet {
                 found: spans.len(),
             });
         }
-        for (&(x0, x1), &ch) in spans.iter().zip(&expected) {
-            let cell = line.cell(x0, x1);
-            match self.templates.iter_mut().find(|t| t.ch == ch) {
-                Some(template) => {
-                    template.samples += 1;
-                    let n = template.samples as f32;
-                    for (mean, value) in template.cell.iter_mut().zip(&cell) {
-                        *mean += (value - *mean) / n;
+        let cells: Vec<(char, Vec<f32>)> = spans
+            .iter()
+            .zip(&expected)
+            .map(|(&(x0, x1), &ch)| (ch, line.cell(x0, x1)))
+            .collect();
+        // The same character must look the same wherever it appears.
+        for (i, (ch, cell)) in cells.iter().enumerate() {
+            let unit = Standardised::new(cell);
+            for (other, cell) in &cells[..i] {
+                if other == ch {
+                    let correlation = unit.correlation(&Standardised::new(cell));
+                    if correlation < SAME_CHARACTER_AGREEMENT {
+                        return Err(LearnError::Inconsistent {
+                            ch: *ch,
+                            correlation,
+                        });
                     }
-                    template.unit = Standardised::new(&template.cell);
                 }
-                None => self.templates.push(Template {
-                    ch,
-                    unit: Standardised::new(&cell),
-                    cell,
-                    samples: 1,
-                }),
             }
         }
+        // On trial first: the font with this example in it must read the
+        // region back as the label.
+        let mut trial = self.templates.clone();
+        for (ch, cell) in &cells {
+            Self::absorb(&mut trial, *ch, cell);
+        }
+        let on_trial = GlyphSet {
+            options: self.options,
+            templates: trial,
+        };
+        let read = on_trial.read(image, region);
+        let agrees = read.value.as_ref().is_some_and(|r| {
+            r.text
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .eq(expected.iter().copied())
+        });
+        if !agrees {
+            return Err(LearnError::DoesNotReadBack {
+                read: read
+                    .value
+                    .map(|r| r.text)
+                    .or_else(|| {
+                        on_trial
+                            .read_all(image, region)
+                            .map(|r| format!("{} (not surely)", r.text))
+                    })
+                    .unwrap_or_default(),
+            });
+        }
+        self.templates = on_trial.templates;
         Ok(expected.len())
+    }
+
+    /// One more example of `ch` into `templates`: averaged into its
+    /// template, or a new template.
+    fn absorb(templates: &mut Vec<Template>, ch: char, cell: &[f32]) {
+        match templates.iter_mut().find(|t| t.ch == ch) {
+            Some(template) => {
+                template.samples += 1;
+                let n = template.samples as f32;
+                for (mean, value) in template.cell.iter_mut().zip(cell) {
+                    *mean += (value - *mean) / n;
+                }
+                template.unit = Standardised::new(&template.cell);
+            }
+            None => templates.push(Template {
+                ch,
+                unit: Standardised::new(cell),
+                cell: cell.to_vec(),
+                samples: 1,
+            }),
+        }
     }
 
     /// Read `region`, glyph by glyph, whatever the confidence.
@@ -420,6 +498,12 @@ impl GlyphSet {
 /// A candidate glyph after trimming — its columns `(x0, x1)` — and how well
 /// it matches its best character.
 type ScoredPiece = ((u32, u32), f32);
+
+/// How alike two cells of the same character in one labelled example must
+/// be for the example to be believed: the same glyph drawn twice in one
+/// line correlates near 1; two patches of noise, or two glyphs that are
+/// not the ones the label says, near 0.
+const SAME_CHARACTER_AGREEMENT: f32 = 0.5;
 
 /// Widest glyph a split may produce, as a multiple of the line height.
 /// Glyph cells are square, so wider pieces would be squeezed to fit anyway.
@@ -927,6 +1011,48 @@ mod tests {
         );
         let boxed: Box<dyn std::error::Error> = Box::new(LearnError::NoText);
         assert_eq!(boxed.to_string(), "no text found in the region");
+    }
+
+    #[test]
+    fn an_example_that_does_not_read_back_is_not_learned() {
+        // The text says 3574/3574; a label with a prefix and brackets has
+        // as many characters as the line can be cut into, and would have
+        // taught a '3' that is really a 'M'. The same character twice in
+        // the label looking nothing alike gives it away.
+        let (image, region) = render("3574/3574", 2, None);
+        let mut set = GlyphSet::new(GlyphOptions::default());
+        let wrong = set.learn(&image, region, "MP[3574/3574]");
+        assert!(
+            matches!(
+                wrong,
+                Err(LearnError::Inconsistent { .. } | LearnError::DoesNotReadBack { .. })
+            ),
+            "{wrong:?}"
+        );
+        assert_eq!(set.chars().count(), 0, "nothing kept from the wrong label");
+        // The right label reads back, and is kept.
+        assert_eq!(set.learn(&image, region, "3574/3574"), Ok(9));
+        assert_eq!(set.read(&image, region).value.unwrap().text, "3574/3574");
+        // Noise with enough runs to cut into a label's worth of pieces is
+        // refused too.
+        let mut state = 99u32;
+        let noise = RgbaImage::from_fn(300, 16, |_, _| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            let v = (state >> 24) as u8;
+            Rgba([v, v / 2, 255 - v, 255])
+        });
+        let whole = Rect {
+            x: 0,
+            y: 0,
+            w: 300,
+            h: 16,
+        };
+        let mut fresh = GlyphSet::new(GlyphOptions::default());
+        let from_noise = fresh.learn(&noise, whole, "HP[6370/6370]");
+        assert!(from_noise.is_err(), "{from_noise:?}");
+        assert_eq!(fresh.chars().count(), 0);
     }
 
     #[test]
