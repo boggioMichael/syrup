@@ -1,0 +1,13 @@
+[1m[93mwarning[0m: output filename collision at D:\a\syrup\syrup\target\release\deps\syrup.pdb
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: the bin target `syrup` in package `syrup-runtime v0.1.0 (D:\a\syrup\syrup\crates\syrup-runtime)` has the same output filename as the lib target `syrup` in package `syrup v0.1.0 (D:\a\syrup\syrup)`
+  [1m[96m= [0m[1m[97mnote[0m: this may become a hard error in the future; see <https://github.com/rust-lang/cargo/issues/6313>
+  [1m[96m= [0m[1m[97mhelp[0m: consider changing their names to be unique or compiling them separately
+[1m[93mwarning[0m: output filename collision at D:\a\syrup\syrup\target\release\syrup.pdb
+  [1m[96m|[0m
+  [1m[96m= [0m[1m[97mnote[0m: the bin target `syrup` in package `syrup-runtime v0.1.0 (D:\a\syrup\syrup\crates\syrup-runtime)` has the same output filename as the lib target `syrup` in package `syrup v0.1.0 (D:\a\syrup\syrup)`
+  [1m[96m= [0m[1m[97mnote[0m: this may become a hard error in the future; see <https://github.com/rust-lang/cargo/issues/6313>
+  [1m[96m= [0m[1m[97mhelp[0m: consider changing their names to be unique or compiling them separately
+[1m[92m   Compiling[0m syrup v0.1.0 (D:\a\syrup\syrup)
+[1m[92m   Compiling[0m syrup-runtime v0.1.0 (D:\a\syrup\syrup\crates\syrup-runtime)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 36.32s
