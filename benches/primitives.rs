@@ -5,13 +5,14 @@
 use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
 use image::{Rgba, RgbaImage};
 
+use syrup::bars::BarModel;
 use syrup::color::is_color_pixel;
 use syrup::components::{self, Connectivity};
 use syrup::draw;
-use syrup::geometry::{self, Rect};
+use syrup::geometry::{self, NormRect, Rect};
 use syrup::glyphs::{GlyphOptions, GlyphSet};
 use syrup::motion::{MotionConfig, MotionDetector};
-use syrup::template::{self, Template};
+use syrup::template::{self, SetSearch, Template, TemplateSet};
 use syrup::threshold::{self, Channel, Polarity};
 use syrup::tracking::ObjectTracker;
 
@@ -278,6 +279,53 @@ fn bench_template(c: &mut Criterion) {
     });
 }
 
+/// Three pictures of one thing, mirrored too: six templates in one search
+/// of the whole frame, as a consumer looking for a creature in its poses
+/// does.
+fn bench_template_set(c: &mut Criterion) {
+    let (frame, icon) = frame_with_icon(40);
+    let mut set = TemplateSet::new(Channel::Luma, true);
+    for shade in [0u8, 15, 30] {
+        let pose = RgbaImage::from_fn(40, 40, |x, y| {
+            let p = icon.get_pixel(x, y).0;
+            Rgba([
+                p[0].saturating_add(shade),
+                p[1],
+                p[2].saturating_sub(shade),
+                255,
+            ])
+        });
+        set.add(&pose);
+    }
+    let whole = Rect {
+        x: 0,
+        y: 0,
+        w: 1366,
+        h: 768,
+    };
+    let options = SetSearch {
+        min_score: 0.7,
+        limit: 12,
+        max_colour_shift: Some(60.0),
+    };
+    c.bench_function("template set 3 poses mirrored, whole 1366x768 frame", |b| {
+        b.iter(|| template::find_set(black_box(&frame), whole, &set, options))
+    });
+}
+
+/// A bar learned once from a rough box, then measured on every frame.
+fn bench_bar_model(c: &mut Criterion) {
+    let (frame, _) = frame_with_bar();
+    let rough = NormRect::from_pixels(130, 724, 240, 22, 1366, 768);
+    c.bench_function("bar model learn", |b| {
+        b.iter(|| BarModel::learn(black_box(&frame), &rough, Some(0.0)))
+    });
+    let model = BarModel::learn(&frame, &rough, Some(0.0)).expect("a bar is there");
+    c.bench_function("bar model measure", |b| {
+        b.iter(|| model.measure(black_box(&frame)))
+    });
+}
+
 /// Tracker update with 60 objects close enough to all compete for each
 /// other's detections: one big assignment problem, the worst case.
 fn bench_tracker_dense(c: &mut Criterion) {
@@ -303,9 +351,41 @@ fn bench_tracker_dense(c: &mut Criterion) {
     });
 }
 
+/// The correlation kernel itself: the three sums of a 56x56 window, as
+/// the refinement of every candidate computes them, on whichever
+/// instruction set `syrup::kernels::backend` chose.
+fn bench_kernels(c: &mut Criterion) {
+    let (stride, rows) = (1366usize, 768usize);
+    let mut state = 12345u32;
+    let mut noise = |n: usize| -> Vec<u8> {
+        (0..n)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                (state >> 24) as u8
+            })
+            .collect()
+    };
+    let plane = noise(stride * rows);
+    let weights = noise(56 * 56);
+    let name = format!("window_stats 56x56 ({})", syrup::kernels::backend().name());
+    c.bench_function(&name, |b| {
+        let mut i = 0usize;
+        b.iter(|| {
+            i += 1;
+            let (x, y) = ((i * 7) % 1200, (i * 13) % 700);
+            syrup::kernels::window_stats(black_box(&plane), stride, x, y, &weights, 56, 56)
+        })
+    });
+}
+
 criterion_group!(
     benches,
+    bench_kernels,
     bench_template,
+    bench_template_set,
+    bench_bar_model,
     bench_motion_detect_busy,
     bench_text_evidence,
     bench_glyph_read,

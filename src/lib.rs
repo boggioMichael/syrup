@@ -36,8 +36,12 @@
 //! - [`capi`]: the library's own C API, for Python and other hosts.
 //! - [`detection`]: the result vocabulary — [`detection::Detection`],
 //!   [`detection::Confidence`], [`detection::Reliability`].
-//! - [`geometry`]: rectangles, pixel-run segmentation, region grouping, and
-//!   horizontal-bar fill measurement.
+//! - [`geometry`]: rectangles (in pixels, and as fractions of the frame),
+//!   pixel-run segmentation, region grouping, and horizontal-bar fill
+//!   measurement.
+//! - [`bars`]: a bar that fills and empties, learned once from roughly
+//!   where it is and measured on every frame, its track refitted from the
+//!   values the application shows.
 //! - [`color`]: RGB→HSV conversion and the pixel predicates detectors share.
 //! - [`components`]: connected-component labelling of masks and predicates.
 //! - [`threshold`]: Otsu thresholds, integral images, channel views, and a
@@ -48,7 +52,8 @@
 //! - [`glyphs`]: reading pixel-font text (counters, HUD values) by template
 //!   matching against glyphs learned from labelled examples.
 //! - [`template`]: finding a known picture (an icon, a marker) anywhere in a
-//!   frame by normalised cross-correlation, coarse to fine.
+//!   frame by normalised cross-correlation, coarse to fine; several
+//!   pictures of one thing, mirrored too, in one search.
 //! - [`cascade`]: boosted cascades of Haar features (Viola–Jones), with the
 //!   bundled frontal-face, profile-face and eye detectors.
 //! - [`face`]: a found face's parts — eyes, mouth — and how open they are.
@@ -66,6 +71,7 @@
 //! observation *means* — and what to do about it — belongs to the consumer.
 
 pub mod abi;
+pub mod bars;
 pub mod capi;
 pub mod capture;
 pub mod cascade;
@@ -77,6 +83,7 @@ pub mod face;
 pub mod geometry;
 pub mod glyphs;
 pub mod intent;
+pub mod kernels;
 pub mod motion;
 pub mod ocr;
 pub mod quality;
@@ -88,7 +95,7 @@ pub mod timing;
 pub mod tracking;
 
 pub use detection::{Confidence, Detection, Reliability, Timestamp};
-pub use geometry::Rect;
+pub use geometry::{NormRect, Rect};
 /// The image crate this library is built on, so callers and generated
 /// code use the same version without naming it.
 pub use image;

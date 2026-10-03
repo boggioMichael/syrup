@@ -5,7 +5,10 @@
 //! (ignoring case) and [`Window::capture`] returns its current contents as
 //! RGBA. Each platform uses its own mechanism:
 //!
-//! - **Windows**: `PrintWindow`, so a covered window is captured as drawn.
+//! - **Windows**: Windows.Graphics.Capture, the compositor's own frames on
+//!   the GPU (Windows 10 1903 and later), with only the regions asked for
+//!   read back; `PrintWindow`, then a copy of the screen, where that is not
+//!   to be had.
 //! - **Linux and the BSDs, X11** (including X11 applications on a Wayland
 //!   desktop, via XWayland): the Composite extension, so a covered window
 //!   is captured as drawn.
@@ -24,11 +27,15 @@
 //! the original entry points, kept for existing callers: they look the
 //! window up on every call and answer `None` or an empty list instead of
 //! saying why. A [`Window`] keeps its window between frames and reports a
-//! [`CaptureError`].
+//! [`CaptureError`]. [`Window::capture_frame`] gives a [`Frame`] that can
+//! be read a region at a time, which on the GPU path is what saves the
+//! trip to the CPU for the pixels nobody looks at.
 
 use std::fmt;
 
 use image::RgbaImage;
+
+use crate::geometry::Rect;
 
 #[cfg_attr(target_os = "windows", path = "windows.rs")]
 #[cfg_attr(target_os = "macos", path = "macos.rs")]
@@ -42,6 +49,8 @@ pub enum CaptureError {
     NotFound,
     /// The window has been closed.
     Closed,
+    /// The window is minimised: it exists but has no picture to give.
+    Minimised,
     /// This system cannot capture windows, e.g. there is no display.
     Unavailable(String),
     /// Capture was refused: a missing permission, or the user declined.
@@ -55,6 +64,7 @@ impl fmt::Display for CaptureError {
         match self {
             CaptureError::NotFound => f.write_str("no window matches"),
             CaptureError::Closed => f.write_str("the window was closed"),
+            CaptureError::Minimised => f.write_str("the window is minimised"),
             CaptureError::Unavailable(reason)
             | CaptureError::Denied(reason)
             | CaptureError::Failed(reason) => f.write_str(reason),
@@ -85,6 +95,145 @@ impl Window {
     /// The window's current contents, without its frame.
     pub fn capture(&mut self) -> Result<RgbaImage, CaptureError> {
         self.inner.capture()
+    }
+
+    /// [`Window::capture`] into `spare`'s buffer when there is one big
+    /// enough, so a stream of frames does not allocate (and fault in) a
+    /// frame's worth of memory every time: hand back a frame that is done
+    /// with and get the next one in it. On the platforms that read the
+    /// whole window at once anyway, the spare is dropped.
+    pub fn capture_into(&mut self, spare: Option<RgbaImage>) -> Result<RgbaImage, CaptureError> {
+        #[cfg(target_os = "windows")]
+        {
+            self.inner.capture_into(spare)
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            drop(spare);
+            self.inner.capture()
+        }
+    }
+
+    /// The window's current contents as a [`Frame`], to read whole or a
+    /// region at a time. On Windows the frame stays on the GPU until read.
+    pub fn capture_frame(&mut self) -> Result<Frame<'_>, CaptureError> {
+        Ok(Frame::new(self.inner.capture_frame()?))
+    }
+
+    /// Why this window's frames are not coming from the GPU, when they are
+    /// not: the platform has no such path, the system or the window rules
+    /// it out, it failed too often, or the CPU path was asked for (with
+    /// `SYRUP_CAPTURE=cpu` in the environment, or [`Window::without_gpu`]).
+    /// `None` while they are — and, on Windows, before the first capture
+    /// has tried.
+    pub fn gpu_unavailable(&self) -> Option<&str> {
+        #[cfg(target_os = "windows")]
+        {
+            self.inner.gpu_unavailable()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            Some("no GPU capture path on this platform")
+        }
+    }
+
+    /// Frames through the CPU path only, from now on (on Windows, GDI
+    /// rather than Windows.Graphics.Capture): for comparing the two, or a
+    /// driver the GPU path does not get on with. Elsewhere nothing changes.
+    pub fn without_gpu(&mut self) {
+        #[cfg(target_os = "windows")]
+        self.inner.without_gpu();
+    }
+}
+
+/// `SYRUP_CAPTURE=cpu` (or `gdi`) in the environment: the CPU path only.
+#[cfg(target_os = "windows")]
+fn cpu_asked_for() -> bool {
+    std::env::var("SYRUP_CAPTURE")
+        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "cpu" | "gdi"))
+        .unwrap_or(false)
+}
+
+/// Where a frame's pixels are: on the CPU already, or still on the GPU.
+pub enum FrameSource<'a> {
+    Cpu(RgbaImage),
+    #[cfg(target_os = "windows")]
+    Gpu(&'a mut platform::Gpu),
+    #[cfg(not(target_os = "windows"))]
+    #[doc(hidden)]
+    Never(std::marker::PhantomData<&'a ()>),
+}
+
+/// One captured frame, read whole or a region at a time.
+pub struct Frame<'a> {
+    source: FrameSource<'a>,
+}
+
+impl<'a> Frame<'a> {
+    fn new(source: FrameSource<'a>) -> Self {
+        Frame { source }
+    }
+
+    /// Width and height.
+    pub fn size(&self) -> (u32, u32) {
+        match &self.source {
+            FrameSource::Cpu(image) => image.dimensions(),
+            #[cfg(target_os = "windows")]
+            FrameSource::Gpu(gpu) => gpu.size(),
+            #[cfg(not(target_os = "windows"))]
+            FrameSource::Never(_) => (0, 0),
+        }
+    }
+
+    /// Whether the pixels are still on the GPU, to be read back a region
+    /// at a time.
+    pub fn on_gpu(&self) -> bool {
+        !matches!(self.source, FrameSource::Cpu(_))
+    }
+
+    /// `region` of the frame, clipped to it; `None` when nothing is left.
+    pub fn read(&mut self, region: Rect) -> Option<RgbaImage> {
+        match &mut self.source {
+            FrameSource::Cpu(image) => {
+                let (fw, fh) = image.dimensions();
+                let x = region.x.min(fw);
+                let y = region.y.min(fh);
+                let w = region.w.min(fw - x);
+                let h = region.h.min(fh - y);
+                (w > 0 && h > 0).then(|| image::imageops::crop_imm(image, x, y, w, h).to_image())
+            }
+            #[cfg(target_os = "windows")]
+            FrameSource::Gpu(gpu) => gpu.read(region),
+            #[cfg(not(target_os = "windows"))]
+            FrameSource::Never(_) => None,
+        }
+    }
+
+    /// The whole frame. Takes the frame: pixels already on the CPU are
+    /// handed over rather than copied.
+    pub fn read_all(self) -> Option<RgbaImage> {
+        self.read_all_into(None)
+    }
+
+    /// [`Frame::read_all`] into `spare`'s buffer where the pixels have to
+    /// be read back (the GPU path); elsewhere the spare is dropped.
+    pub fn read_all_into(self, spare: Option<RgbaImage>) -> Option<RgbaImage> {
+        match self.source {
+            FrameSource::Cpu(image) => {
+                drop(spare);
+                Some(image)
+            }
+            #[cfg(target_os = "windows")]
+            FrameSource::Gpu(gpu) => {
+                let (w, h) = gpu.size();
+                gpu.read_into(Rect { x: 0, y: 0, w, h }, spare)
+            }
+            #[cfg(not(target_os = "windows"))]
+            FrameSource::Never(_) => {
+                drop(spare);
+                None
+            }
+        }
     }
 }
 
@@ -141,4 +290,102 @@ pub fn capture_screen() -> Option<Screen> {
 #[cfg_attr(not(any(unix, windows)), allow(dead_code))]
 fn matches(title: &str, query: &str) -> bool {
     title.to_lowercase().contains(&query.to_lowercase())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// CI opens a window on each system and names it in SYRUP_TEST_WINDOW
+    /// (`.github/open-window.sh`); with `--nocapture` the test says which
+    /// path the frames took.
+    #[test]
+    fn a_window_is_captured_whole_and_a_region_at_a_time() {
+        let Ok(title) = std::env::var("SYRUP_TEST_WINDOW") else {
+            return;
+        };
+        let mut window = Window::find(&title).expect("the window CI opened");
+        let mut frame = window.capture_frame().expect("a frame");
+        let (w, h) = frame.size();
+        assert!(w > 20 && h > 20, "{w}x{h}");
+        let region = frame
+            .read(Rect {
+                x: 1,
+                y: 1,
+                w: 16,
+                h: 16,
+            })
+            .expect("a region");
+        assert_eq!(region.dimensions(), (16, 16));
+        let clipped = frame
+            .read(Rect {
+                x: w - 4,
+                y: h - 4,
+                w: 100,
+                h: 100,
+            })
+            .expect("a region clipped to the frame");
+        assert_eq!(clipped.dimensions(), (4, 4));
+        assert!(
+            frame
+                .read(Rect {
+                    x: w,
+                    y: 0,
+                    w: 8,
+                    h: 8
+                })
+                .is_none(),
+            "a region past the frame is nothing"
+        );
+        let on_gpu = frame.on_gpu();
+        let whole = frame.read_all().expect("the whole frame");
+        assert_eq!(whole.dimensions(), (w, h));
+        // A region is those pixels of the whole frame, whichever side they
+        // were read from.
+        let same = image::imageops::crop_imm(&whole, 1, 1, 16, 16).to_image();
+        assert_eq!(region.as_raw(), same.as_raw());
+        println!(
+            "capture of \"{}\": {w}x{h}, {}",
+            window.title(),
+            match window.gpu_unavailable() {
+                None if on_gpu => "frames from the GPU".to_string(),
+                None => "frames from the CPU".to_string(),
+                Some(why) => format!("frames from the CPU ({why})"),
+            }
+        );
+        // The same window through the CPU path: the same client area and,
+        // where that path gives a real picture, the same content — which
+        // is what shows the client area was found within the compositor's
+        // frame (title bar and all) rather than cut from its corner.
+        window.without_gpu();
+        let cpu = window.capture().expect("a frame through the CPU path");
+        assert_eq!(
+            cpu.dimensions(),
+            (w, h),
+            "the two paths disagree on the client area"
+        );
+        if on_gpu {
+            let ink = |p: &image::Rgba<u8>| p[0] < 200 || p[1] < 200 || p[2] < 200;
+            let close = |a: &image::Rgba<u8>, b: &image::Rgba<u8>| {
+                (0..3).all(|c| a[c].abs_diff(b[c]) <= 32)
+            };
+            let (mut marked, mut agreed) = (0usize, 0usize);
+            for (a, b) in whole.pixels().zip(cpu.pixels()) {
+                if ink(a) || ink(b) {
+                    marked += 1;
+                    agreed += usize::from(close(a, b));
+                }
+            }
+            let agreement = agreed as f64 / marked.max(1) as f64;
+            println!(
+                "  the CPU path's frame agrees on {:.0}% of the {marked} marked pixels",
+                agreement * 100.0
+            );
+            assert!(
+                marked < 100 || agreement > 0.5,
+                "the GPU frame's client area is off: {:.0}% agreement",
+                agreement * 100.0
+            );
+        }
+    }
 }

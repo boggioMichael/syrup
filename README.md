@@ -163,7 +163,14 @@ and is available directly.
   brightness and contrast differences don't affect the score. Large
   searches use a coarse-to-fine image pyramid instead of scoring every
   position at full resolution; small searches are scored exhaustively.
-  Returns a sub-pixel centre estimate.
+  Returns a sub-pixel centre estimate. A `TemplateSet` searches for a
+  thing in several poses, facing either way, with a colour check; a
+  `Prepared` frame shares its pyramids between searches; `find_set_near`
+  is the cheap look where a tracked thing is expected. The inner sums
+  run on `kernels`: AVX2 or SSE2 chosen at run time, the same integers on
+  every path (`SYRUP_SIMD=scalar` forces the plain loops).
+- **Bars** — `bars::BarModel` learns a status bar from one frame (its
+  hue, its track's end) and measures its fill on every frame after.
 - **Cascades** — Viola–Jones boosted cascades of Haar features, evaluated
   exactly as OpenCV evaluates its cascades, with OpenCV's frontal-face,
   profile-face and eye detectors bundled (245 KB in all, their licences
@@ -184,9 +191,13 @@ and is available directly.
 - **Quality** — a sharpness metric that predicts whether OCR on a region
   can succeed at all, so blurred input is reported as *blurred* rather than
   silently producing wrong text.
-- **Capture** — live window capture by title on Windows (works while the
-  window is occluded), or the whole screen with where it sits on the
-  desktop; portable stubs elsewhere.
+- **Capture** — live window capture by title: on Windows through
+  Windows.Graphics.Capture, the compositor's own frames kept on the GPU
+  and read back whole or a region at a time (`Window::capture_frame`,
+  `Frame::read`), with GDI (`PrintWindow`, then a copy of the screen) as
+  the fallback and `SYRUP_CAPTURE=cpu` to ask for it; the whole screen
+  with where it sits on the desktop; X11, Wayland and macOS windows too.
+  A capture that fails says why (`CaptureError`: minimised, closed, …).
 - **Debug drawing** — rectangles and a dependency-free 5×7 bitmap font for
   annotating frames with what a detector saw.
 - **Timing** — FPS and moving-average measurement.
@@ -340,9 +351,11 @@ syrup::intent!(fn find_red_bar(image: &RgbaImage) -> Detection<Vec<Match>>)
 RgbaImage (any source)                                                      │ (abi)
     │                                                                       │
     ├─ geometry / color / threshold  locate regions by shape, colour and contrast
+    ├─ bars                          a status bar learned once, measured every frame
     ├─ components                    the exact connected regions
     ├─ motion / tracking             what moved, with stable identity
     ├─ template / cascade            where a known picture, or a face, is
+    ├─ kernels                       the inner sums, at the CPU's vector width
     ├─ face / sequence               a face's parts and what they do over time
     ├─ glyphs / ocr / quality        what text says, and whether it is readable at all
     │
@@ -481,23 +494,27 @@ the cost there, and it is the library's next performance item.
 
 ## Syrup and MapleSyrup
 
-Syrup is the generic engine. A domain edition consumes it and adds the
-knowledge Syrup deliberately lacks — what the pixels *mean* in one
-particular application:
+Syrup sees, MapleSyrup understands. Syrup is the generic engine: every
+pixel operation — capture, the bars, the glyphs, the template searches,
+the tracking — and nothing about any one application. A domain edition
+consumes it and adds the knowledge Syrup deliberately lacks — what the
+pixels *mean* there:
 
 ```text
         MapleSyrup            the MapleStory edition
              │                github.com/boggioMichael/ms
-             │ submodule
+             │ Cargo git dependency, pinned to a tag
              ▼
            Syrup              this repository
 ```
 
 [MapleSyrup](https://github.com/boggioMichael/ms) is the first such
 edition, and is where these primitives were developed against real
-captures before being generalised. Syrup itself knows nothing about
-MapleStory, or any other application — a second edition for a different
-program would consume it exactly the same way.
+captures before being generalised; its per-frame path runs on Syrup
+alone, with no vision code of its own and no OCR or model on it. Syrup
+itself knows nothing about MapleStory, or any other application — a
+second edition for a different program would consume it exactly the same
+way.
 
 ## License
 

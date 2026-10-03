@@ -1828,6 +1828,7 @@ dependencies = [
  "objc2-core-graphics",
  "objc2-foundation",
  "objc2-screen-capture-kit",
+ "serde",
  "windows",
  "x11rb",
  "zbus",

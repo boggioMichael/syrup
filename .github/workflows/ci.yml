@@ -2,19 +2,58 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "claude/**"]
   pull_request:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # The crates this workspace depends on, for building where crates.io
+  # cannot be reached: published to the `build-cache/vendor` branch, split
+  # into parts under GitHub's file-size limit. Runs only for a commit whose
+  # message says [vendor]; [vendor-only] runs nothing else.
+  vendor:
+    if: contains(github.event.head_commit.message, '[vendor')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Vendor
+        run: |
+          set -o pipefail
+          cargo vendor --versioned-dirs vendor > vendor-config.toml 2> vendor.log || { cat vendor.log; exit 1; }
+          du -sh vendor
+          out="$RUNNER_TEMP/cache"
+          mkdir -p "$out"
+          tar czf "$RUNNER_TEMP/vendor.tar.gz" vendor vendor-config.toml Cargo.lock
+          split -b 90m -d "$RUNNER_TEMP/vendor.tar.gz" "$out/vendor.tar.gz.part-"
+          cp Cargo.lock vendor-config.toml vendor.log "$out/"
+          git rev-parse HEAD > "$out/commit.txt"
+          ls -l "$out"
+      - name: Publish
+        run: |
+          cd "$RUNNER_TEMP/cache"
+          git init -q && git checkout -q -b cache
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "vendored crates [skip ci]"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" "cache:refs/heads/build-cache/vendor"
+
   check:
+    if: ${{ !contains(github.event.head_commit.message, '[vendor-only]') }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -22,23 +61,50 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Format
-        run: cargo fmt --all -- --check
+        run: mkdir -p logs && cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: |
+          set -o pipefail
+          cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tee logs/clippy.log
       - name: Install Tesseract
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
       - name: Open a window to capture
-        shell: bash
         run: .github/open-window.sh
       - name: Test
         # Includes tests/intent_native.rs, which builds an intent into a
         # shared library with cargo and loads it back, and syrup-runtime's
         # tests, which generate, compile (rustc), validate and load modules
         # and detect faces in the fixtures.
-        run: cargo test --workspace
+        run: |
+          set -o pipefail
+          cargo test --workspace 2>&1 | tee logs/test.log
+      - name: Capture path
+        # Which path the window capture took on this system (the GPU or
+        # the CPU, and why), from the capture test's own report.
+        run: |
+          set -o pipefail
+          cargo test -p syrup --lib capture::tests -- --nocapture 2>&1 | tee logs/capture.log
       - name: Build
-        run: cargo build --workspace --all-targets --release
+        run: |
+          set -o pipefail
+          cargo build --workspace --all-targets --release 2>&1 | tee logs/build.log
+      # The logs, where they can be read with git (the Actions log download
+      # is not reachable from everywhere): build-output/<branch>/<os>.
+      - name: Publish the logs
+        if: always() && startsWith(github.ref, 'refs/heads/')
+        run: |
+          out="$RUNNER_TEMP/logs-out"
+          mkdir -p "$out"
+          cp -r logs/. "$out/" 2>/dev/null || true
+          git rev-parse HEAD > "$out/commit.txt"
+          echo "${{ job.status }}" > "$out/status.txt"
+          cd "$out"
+          git init -q && git checkout -q -b out
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "logs of ${{ github.sha }} [skip ci]"
+          os="$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" "out:refs/heads/build-output/$GITHUB_REF_NAME/$os"
       - name: Examples
         run: cargo run --release --example demo && cargo run --release --example intents
       - uses: actions/setup-python@v5
@@ -53,6 +119,7 @@ jobs:
   python:
     # The compiled operations from Python: the package built with maturin
     # and installed, then its tests (python/tests).
+    if: ${{ !contains(github.event.head_commit.message, '[vendor-only]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -88,6 +155,7 @@ jobs:
   wayland:
     # Wayland capture, against a real PipeWire server with a stand-in for
     # the desktop's screen-cast portal (tests/portal).
+    if: ${{ !contains(github.event.head_commit.message, '[vendor-only]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -105,6 +173,7 @@ jobs:
   recipes:
     # The model recipes (syrup.recipes), on real photographs. Heavy
     # dependencies, so a job of their own; elsewhere these tests skip.
+    if: ${{ !contains(github.event.head_commit.message, '[vendor-only]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -168,6 +237,7 @@ jobs:
 
   example:
     # The lipreader example projects: pipeline, service, shared types, extension, web page.
+    if: ${{ !contains(github.event.head_commit.message, '[vendor-only]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

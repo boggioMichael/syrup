@@ -118,6 +118,10 @@ pub fn find(query: &str) -> Result<(String, Window), CaptureError> {
 }
 
 impl Window {
+    pub fn capture_frame(&mut self) -> Result<super::FrameSource<'_>, CaptureError> {
+        self.capture().map(super::FrameSource::Cpu)
+    }
+
     pub fn capture(&mut self) -> Result<RgbaImage, CaptureError> {
         let image = self.screenshot().map_err(|e| {
             let open = windows().is_ok_and(|windows| {

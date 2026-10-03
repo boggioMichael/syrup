@@ -140,6 +140,11 @@ pub struct MotionConfig {
     pub track_match_distance: f32,
     /// How many consecutive missed frames a track survives (occlusion grace).
     pub track_grace_frames: u32,
+    /// The most blobs tracked in one frame: the largest are kept. A frame
+    /// of a busy scene can break into over a thousand moving fragments,
+    /// and the tracker's matching grows with their number times the
+    /// tracks'; the detection says how many were left out.
+    pub max_blobs: usize,
 }
 
 impl Default for MotionConfig {
@@ -151,6 +156,7 @@ impl Default for MotionConfig {
             min_blob_area: 24,
             track_match_distance: 48.0,
             track_grace_frames: 5,
+            max_blobs: 200,
         }
     }
 }
@@ -223,7 +229,12 @@ impl MotionDetector {
         } else {
             moved_pixels as f32 / total_pixels as f32
         };
-        let blobs = blobs_from_runs(runs, &self.config);
+        let mut blobs = blobs_from_runs(runs, &self.config);
+        let found = blobs.len();
+        if found > self.config.max_blobs {
+            blobs.sort_unstable_by_key(|rect| std::cmp::Reverse(rect.area()));
+            blobs.truncate(self.config.max_blobs);
+        }
 
         // Keep this frame as the next baseline by copying into the buffer
         // already held: same size, so no allocation per frame.
@@ -265,7 +276,14 @@ impl MotionDetector {
             } else {
                 Reliability::Heuristic
             };
-            Detection::found(moving, confidence, "motion", reliability)
+            let mut detection = Detection::found(moving, confidence, "motion", reliability);
+            if found > self.config.max_blobs {
+                detection.failure_reason = Some(format!(
+                    "the {} largest of {found} moving regions were tracked",
+                    self.config.max_blobs
+                ));
+            }
+            detection
         }
     }
 
@@ -512,6 +530,43 @@ mod tests {
         assert!(!blobs.is_empty());
         assert!(blobs.iter().all(|blob| blob.is_predicted));
         assert_eq!(predicted.reliability, Reliability::Predicted);
+    }
+
+    #[test]
+    fn a_busy_frame_tracks_its_largest_blobs_and_says_so() {
+        // A grid of squares appearing at once: 6 x 6 = 36 blobs, two of
+        // them bigger than the rest.
+        let mut detector = MotionDetector::new(MotionConfig {
+            max_blobs: 8,
+            ..MotionConfig::default()
+        });
+        detector.detect(&RgbaImage::from_pixel(160, 160, Rgba([20, 20, 20, 255])));
+        let mut busy = RgbaImage::from_pixel(160, 160, Rgba([20, 20, 20, 255]));
+        for row in 0..6u32 {
+            for column in 0..6u32 {
+                let size = if (row, column) == (0, 0) || (row, column) == (5, 5) {
+                    14
+                } else {
+                    6
+                };
+                for y in row * 26..row * 26 + size {
+                    for x in column * 26..column * 26 + size {
+                        busy.put_pixel(x, y, Rgba([230, 230, 230, 255]));
+                    }
+                }
+            }
+        }
+        let detection = detector.detect(&busy);
+        let blobs = detection.value.as_ref().expect("motion");
+        assert_eq!(blobs.len(), 8, "{blobs:?}");
+        assert!(
+            blobs.iter().filter(|b| b.bounds.w >= 14).count() == 2,
+            "the two big ones are among those kept: {blobs:?}"
+        );
+        assert_eq!(
+            detection.failure_reason.as_deref(),
+            Some("the 8 largest of 36 moving regions were tracked")
+        );
     }
 
     #[test]
