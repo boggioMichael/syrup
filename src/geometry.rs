@@ -226,6 +226,55 @@ fn overlap(a: (u32, u32), b: (u32, u32)) -> u32 {
     right.saturating_sub(left).saturating_add(1)
 }
 
+/// Horizontal edges: runs of at least `min_run` adjacent pixels whose
+/// luminance differs from the pixel below by `threshold` (0–255) or more,
+/// grouped row to row into rectangles. A ledge, a floor, the edge of a
+/// panel: anything drawn as a line where one shade meets another.
+///
+/// The frame's luminance is taken once (`threshold::channel_image`), and
+/// the rows compared as bytes, so a frame costs one pass.
+pub fn horizontal_edges(image: &RgbaImage, threshold: u8, min_run: u32) -> Vec<Rect> {
+    let (width, height) = image.dimensions();
+    if width == 0 || height < 2 {
+        return Vec::new();
+    }
+    let luma = crate::threshold::channel_image(
+        image,
+        Rect {
+            x: 0,
+            y: 0,
+            w: width,
+            h: height,
+        },
+        crate::threshold::Channel::Luma,
+    );
+    let plane = luma.as_raw();
+    let width = width as usize;
+    let mut rows: Vec<(u32, u32, u32)> = Vec::new();
+    for y in 0..height as usize - 1 {
+        let (above, below) = (
+            &plane[y * width..(y + 1) * width],
+            &plane[(y + 1) * width..(y + 2) * width],
+        );
+        let mut start: Option<usize> = None;
+        for (x, (&a, &b)) in above.iter().zip(below).enumerate() {
+            if a.abs_diff(b) >= threshold {
+                start.get_or_insert(x);
+            } else if let Some(begin) = start.take()
+                && (x - begin) as u32 >= min_run
+            {
+                rows.push((y as u32, begin as u32, x as u32 - 1));
+            }
+        }
+        if let Some(begin) = start
+            && (width - begin) as u32 >= min_run
+        {
+            rows.push((y as u32, begin as u32, width as u32 - 1));
+        }
+    }
+    group_segments(rows, 1, 0)
+}
+
 /// Group per-row horizontal segments into rectangles by greedily continuing
 /// the best-overlapping active rectangle from the previous row, closing out
 /// rectangles once a vertical gap larger than `max_gap` rows is seen.
@@ -831,6 +880,40 @@ pub fn find_uniform_color_panel(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn horizontal_edges_are_where_one_shade_meets_another() {
+        // A dark scene with a light floor from row 60 down, and a short
+        // light step from x 20 to 50 at row 30 that is too short to count.
+        let mut image = RgbaImage::from_pixel(200, 100, Rgba([20, 20, 20, 255]));
+        for y in 60..100 {
+            for x in 0..200 {
+                image.put_pixel(x, y, Rgba([200, 200, 200, 255]));
+            }
+        }
+        for x in 20..50 {
+            image.put_pixel(x, 30, Rgba([200, 200, 200, 255]));
+        }
+        let edges = horizontal_edges(&image, 40, 60);
+        assert_eq!(edges.len(), 1, "{edges:?}");
+        assert_eq!((edges[0].y, edges[0].x, edges[0].w), (59, 0, 200));
+        // The short step counts once the run may be short: its top and
+        // bottom edges, one above the other, grouped into one.
+        let edges = horizontal_edges(&image, 40, 20);
+        assert_eq!(edges.len(), 2, "{edges:?}");
+        assert!(
+            edges
+                .iter()
+                .any(|e| e.y == 29 && e.x == 20 && e.w == 30 && e.h == 2),
+            "{edges:?}"
+        );
+        // Flat: nothing.
+        assert!(
+            horizontal_edges(&RgbaImage::from_pixel(50, 50, Rgba([9, 9, 9, 255])), 40, 8)
+                .is_empty()
+        );
+        assert!(horizontal_edges(&RgbaImage::new(50, 1), 40, 8).is_empty());
+    }
     use image::Rgba;
 
     /// Build a frame containing one horizontal bar whose track runs from
