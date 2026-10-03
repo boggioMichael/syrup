@@ -49,6 +49,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -56,23 +61,44 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Format
-        run: cargo fmt --all -- --check
+        run: mkdir -p logs && cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: |
+          set -o pipefail
+          cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tee logs/clippy.log
       - name: Install Tesseract
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
       - name: Open a window to capture
-        shell: bash
         run: .github/open-window.sh
       - name: Test
         # Includes tests/intent_native.rs, which builds an intent into a
         # shared library with cargo and loads it back, and syrup-runtime's
         # tests, which generate, compile (rustc), validate and load modules
         # and detect faces in the fixtures.
-        run: cargo test --workspace
+        run: |
+          set -o pipefail
+          cargo test --workspace 2>&1 | tee logs/test.log
       - name: Build
-        run: cargo build --workspace --all-targets --release
+        run: |
+          set -o pipefail
+          cargo build --workspace --all-targets --release 2>&1 | tee logs/build.log
+      # The logs, where they can be read with git (the Actions log download
+      # is not reachable from everywhere): build-output/<branch>/<os>.
+      - name: Publish the logs
+        if: always() && startsWith(github.ref, 'refs/heads/')
+        run: |
+          out="$RUNNER_TEMP/logs-out"
+          mkdir -p "$out"
+          cp -r logs/. "$out/" 2>/dev/null || true
+          git rev-parse HEAD > "$out/commit.txt"
+          echo "${{ job.status }}" > "$out/status.txt"
+          cd "$out"
+          git init -q && git checkout -q -b out
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "logs of ${{ github.sha }} [skip ci]"
+          os="$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" "out:refs/heads/build-output/$GITHUB_REF_NAME/$os"
       - name: Examples
         run: cargo run --release --example demo && cargo run --release --example intents
       - uses: actions/setup-python@v5
