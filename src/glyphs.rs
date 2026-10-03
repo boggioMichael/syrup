@@ -147,6 +147,18 @@ struct Template {
     /// against it is a single dot product (see [`Standardised`]).
     unit: Standardised,
     samples: u32,
+    /// The height of the line it was learned from: a pixel font drawn at
+    /// two sizes is two fonts (the strokes do not scale), and a glyph is
+    /// matched against the templates of its own size when there are any.
+    height: u32,
+}
+
+/// Two line heights within this share of the taller are the same size of
+/// the font.
+const SAME_SIZE_WITHIN: f32 = 0.2;
+
+fn same_size(a: u32, b: u32) -> bool {
+    (a as f32 - b as f32).abs() <= SAME_SIZE_WITHIN * a.max(b) as f32
 }
 
 /// A font learned from labelled examples.
@@ -200,9 +212,14 @@ impl GlyphSet {
         &self.options
     }
 
-    /// Characters learned so far.
+    /// Characters learned so far (each once, however many sizes it was
+    /// learned at).
     pub fn chars(&self) -> impl Iterator<Item = char> + '_ {
-        self.templates.iter().map(|t| t.ch)
+        self.templates
+            .iter()
+            .enumerate()
+            .filter(|(i, t)| !self.templates[..*i].iter().any(|o| o.ch == t.ch))
+            .map(|(_, t)| t.ch)
     }
 
     /// Learn from `region` of `image`, which shows exactly `label` (spaces
@@ -263,7 +280,7 @@ impl GlyphSet {
         // region back as the label.
         let mut trial = self.templates.clone();
         for (ch, cell) in &cells {
-            Self::absorb(&mut trial, *ch, cell);
+            Self::absorb(&mut trial, *ch, cell, line.height);
         }
         let on_trial = GlyphSet {
             options: self.options,
@@ -293,10 +310,14 @@ impl GlyphSet {
         Ok(expected.len())
     }
 
-    /// One more example of `ch` into `templates`: averaged into its
-    /// template, or a new template.
-    fn absorb(templates: &mut Vec<Template>, ch: char, cell: &[f32]) {
-        match templates.iter_mut().find(|t| t.ch == ch) {
+    /// One more example of `ch`, from a line `height` tall, into
+    /// `templates`: averaged into its template of that size, or a new
+    /// template.
+    fn absorb(templates: &mut Vec<Template>, ch: char, cell: &[f32], height: u32) {
+        match templates
+            .iter_mut()
+            .find(|t| t.ch == ch && same_size(t.height, height))
+        {
             Some(template) => {
                 template.samples += 1;
                 let n = template.samples as f32;
@@ -304,12 +325,16 @@ impl GlyphSet {
                     *mean += (value - *mean) / n;
                 }
                 template.unit = Standardised::new(&template.cell);
+                // The size settles on what it has seen.
+                template.height =
+                    (template.height * (template.samples - 1) + height) / template.samples;
             }
             None => templates.push(Template {
                 ch,
                 unit: Standardised::new(cell),
                 cell: cell.to_vec(),
                 samples: 1,
+                height,
             }),
         }
     }
@@ -335,7 +360,7 @@ impl GlyphSet {
                 {
                     text.push(' ');
                 }
-                let found = self.classify(&line.cell(a, b));
+                let found = self.classify(&line.cell(a, b), line.height);
                 text.push(found.0);
                 glyphs.push(GlyphMatch {
                     ch: found.0,
@@ -394,12 +419,18 @@ impl GlyphSet {
         )
     }
 
-    /// Best character for a normalised cell: `(char, score, margin)`.
-    fn classify(&self, cell: &[f32]) -> (char, f32, f32) {
+    /// Best character for a normalised cell from a line `height` tall:
+    /// `(char, score, margin)`. Only the templates of that size are asked
+    /// when there are any; a size never learned is read with all of them.
+    fn classify(&self, cell: &[f32], height: u32) -> (char, f32, f32) {
         let cell = Standardised::new(cell);
         let mut best = (' ', -1.0f32);
         let mut second = -1.0f32;
+        let own_size = self.templates.iter().any(|t| same_size(t.height, height));
         for template in &self.templates {
+            if own_size && !same_size(template.height, height) {
+                continue;
+            }
             let score = cell.correlation(&template.unit);
             if score > best.1 {
                 if best.0 != template.ch {
@@ -426,7 +457,7 @@ impl GlyphSet {
     /// distinct piece once, so a wide smear of unreadable ink costs about as
     /// much as a few glyphs rather than growing with the square of its width.
     fn best_split(&self, line: &Line, x0: u32, x1: u32) -> Vec<(u32, u32)> {
-        let whole = self.classify(&line.cell(x0, x1));
+        let whole = self.classify(&line.cell(x0, x1), line.height);
         if whole.1 >= self.options.min_score || x1 - x0 < 4 {
             return vec![(x0, x1)];
         }
@@ -438,7 +469,7 @@ impl GlyphSet {
             }
             *scores.entry((a, b)).or_insert_with(|| {
                 let (a, b) = line.trim_columns(a, b)?;
-                Some(((a, b), self.classify(&line.cell(a, b)).1))
+                Some(((a, b), self.classify(&line.cell(a, b), line.height).1))
             })
         };
         let mut best = (vec![(x0, x1)], whole.1);
@@ -1312,6 +1343,71 @@ mod tests {
                 h: height,
             },
         )
+    }
+
+    /// `text` in the bitmap font at `scale`, every stroke one pixel wider
+    /// than the scale makes it: the font as another size draws it, not
+    /// the same shapes scaled.
+    fn render_bold(text: &str, scale: u32) -> (RgbaImage, Rect) {
+        let width = draw::text_width(text, scale) + 24;
+        let height = draw::text_height(scale) + 12;
+        let mut image = RgbaImage::from_pixel(width, height, BAR);
+        draw::draw_text(text, 12, 6, scale, |x, y| {
+            for dx in 0..=1 {
+                let x = x as u32 + dx;
+                if x < width {
+                    image.put_pixel(x, y as u32, INK);
+                }
+            }
+        });
+        (
+            image,
+            Rect {
+                x: 0,
+                y: 0,
+                w: width,
+                h: height,
+            },
+        )
+    }
+
+    #[test]
+    fn a_font_learned_at_two_sizes_keeps_a_template_per_size() {
+        // The same characters at 14 and 28 pixels, drawn differently (the
+        // strokes of the larger are five pixels, not four): one font, two
+        // sizes, as a game's HUD has them.
+        let mut set = GlyphSet::new(GlyphOptions::default());
+        let (small, small_region) = render("0123456789/", 2, None);
+        let (big, big_region) = render_bold("0123456789/", 4);
+        assert_eq!(set.learn(&small, small_region, "0123456789/"), Ok(11));
+        assert_eq!(set.learn(&big, big_region, "0123456789/"), Ok(11));
+        assert_eq!(
+            set.chars().count(),
+            11,
+            "each character once, whatever its sizes"
+        );
+        // Each size reads with its own templates, pixel for pixel: had the
+        // sizes been averaged into one template, neither would score so.
+        for (image, region, size) in [(&small, small_region, "small"), (&big, big_region, "big")] {
+            let reading = set.read(image, region).value.expect(size);
+            assert_eq!(reading.text, "0123456789/");
+            let worst = reading
+                .glyphs
+                .iter()
+                .map(|g| g.score)
+                .fold(1.0f32, f32::min);
+            assert!(worst > 0.99, "{size}: the worst glyph scores {worst:.3}");
+        }
+        // A size never learned is read with every template there is (the
+        // glyphs spread out, so no row of the crop is mostly ink).
+        let (middle, middle_region) = render("2026", 3, Some(40));
+        let reading = set.read(&middle, middle_region);
+        assert_eq!(
+            reading.value.map(|r| r.text.replace(' ', "")),
+            Some("2026".to_string()),
+            "{:?}",
+            reading.failure_reason
+        );
     }
 
     #[test]

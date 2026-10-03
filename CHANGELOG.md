@@ -44,6 +44,14 @@
   narrowed to the rows of the glyphs that survive, so a bar's end or the
   track standing taller than the writing no longer stretches it. A font
   learned on a full bar reads the partial ones, and the other way round.
+- `glyphs`, one font at two sizes: a template remembers the height of the
+  line it was learned from, an example joins the template of its own size
+  (within 20%, `SAME_SIZE_WITHIN`) or starts one, and a glyph is matched
+  against the templates of its own size when there are any (a size never
+  learned is read with all of them). A pixel font drawn at two sizes is
+  two fonts — the strokes do not scale — and averaging them broke both:
+  a HUD's small EXP line could not be learned beside its HP line.
+  `chars()` names each character once.
 - CI publishes each check job's logs to `build-output/<branch>/<os>`, and
   `[vendor]` in a commit message publishes the vendored crates to
   `build-cache/vendor`.
