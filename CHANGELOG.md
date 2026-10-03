@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### The vision engine of MapleSyrup
+- `capture`: on Windows, frames come through Windows.Graphics.Capture —
+  the compositor's own picture of the window, kept on the GPU, the client
+  area only, cursor off and the capture border off where the system
+  allows (Windows 11) — read back whole or a region at a time
+  (`Window::capture_frame`, `Frame::read`, `Frame::read_all`). GDI
+  (`PrintWindow`, then a copy of the screen, its objects kept between
+  frames) takes over where that is not to be had; `Window::gpu_unavailable`
+  says why, `Window::without_gpu` and `SYRUP_CAPTURE=cpu` ask for it.
+  `CaptureError::Minimised`; the OCR engine Windows ships with
+  (`ocr::engine`).
+- `kernels`: the correlation sums of template matching at the CPU's
+  vector width — AVX2, SSE2 or plain loops, chosen once at run time, the
+  same integers on every path; `SYRUP_SIMD` forces a narrower one.
+- `template`: `TemplateSet`, `find_set`, `foreground`, `Template::mirrored`
+  and the colour check; `Prepared` and `find_set_in`, sharing a frame's
+  pyramids between searches and threads; `find_set_near`, the full-
+  resolution look where a tracked thing is expected; a level whose
+  candidates would cover a small search region is scored everywhere;
+  the coarse floor is 0.15 under the requested score (measured, from
+  0.25).
+- `bars::BarModel`, `geometry::NormRect`, `glyphs` cells summed in eight
+  lanes, `tracking::ObjectTracker` derives `Clone`, `motion` tracks the
+  largest `max_blobs` of a busy frame and says how many it left out.
+- CI publishes each check job's logs to `build-output/<branch>/<os>`, and
+  `[vendor]` in a commit message publishes the vendored crates to
+  `build-cache/vendor`.
+
 ### Compiled operations by name: `syrup-runtime` (by Eitan, from 0xGh0stAn0n/syrup)
 - `crates/syrup-runtime`: a name such as `find_2_largest_faces_in_top_half`
   is parsed against a composable grammar (counts, selectors, regions,
