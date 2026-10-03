@@ -728,12 +728,8 @@ struct Standardised(Vec<f32>);
 impl Standardised {
     fn new(cell: &[f32]) -> Self {
         let n = cell.len().max(1) as f32;
-        let mean = cell.iter().sum::<f32>() / n;
-        let norm = cell
-            .iter()
-            .map(|v| (v - mean) * (v - mean))
-            .sum::<f32>()
-            .sqrt();
+        let mean = lanes(cell, |v| v) / n;
+        let norm = lanes(cell, |v| (v - mean) * (v - mean)).sqrt();
         // A flat cell has no shape to correlate; all zeros makes every
         // correlation with it 0.
         let scale = if norm > 1e-6 { 1.0 / norm } else { 0.0 };
@@ -742,8 +738,39 @@ impl Standardised {
 
     /// Pearson correlation with another standardised cell of the same size.
     fn correlation(&self, other: &Standardised) -> f32 {
-        self.0.iter().zip(&other.0).map(|(a, b)| a * b).sum()
+        let (a, b) = (&self.0[..], &other.0[..self.0.len().min(other.0.len())]);
+        let a = &a[..b.len()];
+        let mut totals = [0.0f32; 8];
+        for (ca, cb) in a.chunks_exact(8).zip(b.chunks_exact(8)) {
+            for ((total, x), y) in totals.iter_mut().zip(ca).zip(cb) {
+                *total += x * y;
+            }
+        }
+        let tail = a.len() - a.len() % 8;
+        totals.iter().sum::<f32>()
+            + a[tail..]
+                .iter()
+                .zip(&b[tail..])
+                .map(|(x, y)| x * y)
+                .sum::<f32>()
     }
+}
+
+/// The sum of `f` over a cell, in eight running totals: one running total
+/// is a chain of dependent additions the CPU cannot overlap, and the
+/// compiler may not reorder floating-point sums on its own. A cell is
+/// classified against every template of the font, many times a frame, so
+/// this is where the reader's time went.
+#[inline]
+fn lanes(values: &[f32], f: impl Fn(f32) -> f32) -> f32 {
+    let mut totals = [0.0f32; 8];
+    for chunk in values.chunks_exact(8) {
+        for (total, &v) in totals.iter_mut().zip(chunk) {
+            *total += f(v);
+        }
+    }
+    let tail = values.len() - values.len() % 8;
+    totals.iter().sum::<f32>() + values[tail..].iter().map(|&v| f(v)).sum::<f32>()
 }
 
 #[cfg(test)]
