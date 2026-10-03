@@ -76,6 +76,7 @@ impl Track {
 /// general-purpose tracking. Matching is solved separately for each group
 /// of tracks and detections within reach of each other, so its cost stays
 /// negligible at the scale of on-screen entities.
+#[derive(Debug, Clone)]
 pub struct ObjectTracker {
     tracks: Vec<Track>,
     next_id: u64,
