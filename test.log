@@ -1,0 +1,404 @@
+[1m[92m   Compiling[0m syrup v0.1.0 (/Users/runner/work/syrup/syrup)
+[1m[92m   Compiling[0m syrup-runtime v0.1.0 (/Users/runner/work/syrup/syrup/crates/syrup-runtime)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 29.89s
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/syrup-18f6c62d07d90d27)
+
+running 188 tests
+test abi::tests::frame_views_copy_rows_by_stride ... ok
+test abi::tests::detections_survive_the_round_trip ... ok
+test abi::tests::scalars_text_and_failures_cross_too ... ok
+test bars::tests::a_bar_is_found_as_a_band_of_rows_not_the_biggest_blob ... ok
+test bars::tests::a_covered_or_empty_bar_gives_no_number ... ok
+test bars::tests::a_track_showing_the_scene_through_it_is_not_fill ... ok
+test bars::tests::a_bar_is_learned_from_a_rough_box_and_measured ... ok
+test bars::tests::a_thing_of_the_bars_colour_far_along_the_track_is_not_its_fill ... ok
+test capi::tests::refusals_come_back_as_text ... ok
+test bars::tests::readings_refit_the_track_and_the_oldest_are_dropped ... ok
+test capture::tests::a_window_is_captured_whole_and_a_region_at_a_time ... ok
+test cascade::tests::a_small_cluster_inside_a_bigger_one_is_a_fragment ... ok
+test cascade::tests::corrupt_files_are_refused ... ok
+test cascade::tests::every_bundled_cascade_loads ... ok
+test cascade::tests::finds_both_eyes_inside_the_astronauts_face ... ok
+test cascade::tests::a_face_free_image_yields_nothing ... ok
+test cascade::tests::grouping_merges_neighbours_and_drops_lonely_windows ... ok
+test capi::tests::a_host_can_resolve_run_and_free ... ok
+test cascade::tests::the_bundled_cascade_loads ... ok
+test color::tests::grayscale_has_no_saturation ... ok
+test color::tests::hue_ranges_wrap_around_zero ... ok
+test color::tests::lazy_predicates_match_the_eager_reference_exactly ... ok
+test color::tests::primary_colors_convert_correctly ... ok
+test color::tests::transparent_pixels_never_match_color ... ok
+test components::tests::byte_runs_are_inclusive_and_carry_their_row ... ok
+test components::tests::chained_merges_resolve_to_one_root ... ok
+test components::tests::diagonal_touch_depends_on_connectivity ... ok
+test components::tests::empty_and_out_of_bounds_regions_are_safe ... ok
+test components::tests::label_pixels_reports_image_coordinates ... ok
+test components::tests::matches_a_flood_fill_on_random_masks ... ok
+test components::tests::runs_agree_with_pixel_labelling_exactly ... ok
+test components::tests::separate_blobs_get_separate_labels_in_raster_order ... ok
+test components::tests::u_shapes_merge_into_one_component ... ok
+test detection::tests::confidence_clamps_and_combines ... ok
+test detection::tests::detection_found_round_trips_value ... ok
+test detection::tests::detection_missing_has_no_value_and_a_reason ... ok
+test draw::tests::draw_rect_strokes_the_outline_and_clips_to_bounds ... ok
+test draw::tests::draw_rect_survives_sizes_that_overflow ... ok
+test draw::tests::glyphs_stay_within_their_cell ... ok
+test draw::tests::known_characters_have_glyphs ... ok
+test draw::tests::lowercase_falls_back_to_uppercase_glyph ... ok
+test draw::tests::scale_expands_pixel_count_quadratically ... ok
+test draw::tests::space_draws_nothing_but_still_advances ... ok
+test draw::tests::text_width_accounts_for_spacing ... ok
+test draw::tests::unmapped_characters_are_skipped_not_panicking ... ok
+test cascade::tests::finds_the_astronauts_face_where_opencv_does ... ok
+test cascade::tests::size_limits_are_honoured ... ok
+test face::tests::a_face_without_eyes_still_gets_a_mouth_box ... ok
+test face::tests::a_dark_cavity_reads_as_an_open_mouth ... ok
+test face::tests::open_eyes_score_higher_than_painted_over_ones ... ok
+test geometry::tests::a_completely_full_bar_reads_full_not_diluted_by_background ... ok
+test geometry::tests::a_normalised_rect_round_trips_through_pixels ... ok
+test geometry::tests::dominant_color_bucket_is_deterministic_and_rejects_zero_step ... ok
+test geometry::tests::find_color_bar_locates_solid_block ... ok
+test geometry::tests::group_segments_absorbs_a_momentary_split ... ok
+test geometry::tests::group_segments_keeps_side_by_side_regions_apart ... ok
+test geometry::tests::horizontal_edges_are_where_one_shade_meets_another ... ok
+test geometry::tests::measure_bar_fill_handles_a_bar_touching_the_frame_edge ... ok
+test geometry::tests::measure_bar_fill_handles_a_light_groove_not_only_a_dark_one ... ok
+test geometry::tests::measure_bar_fill_is_independent_of_track_width_and_position ... ok
+test geometry::tests::measure_bar_fill_reports_true_fill_ratio ... ok
+test geometry::tests::measure_bar_fill_returns_none_without_a_track ... ok
+test geometry::tests::segment_row_finds_runs_above_min_width ... ok
+test geometry::tests::segment_row_is_safe_outside_the_image ... ok
+test face::tests::mouth_patches_ignore_brightness_and_tell_shapes_apart ... ok
+test glyphs::tests::a_font_learned_at_one_size_reads_other_sizes ... ok
+test glyphs::tests::an_example_that_does_not_read_back_is_not_learned ... ok
+test glyphs::tests::learn_errors_explain_themselves ... ok
+test glyphs::tests::learning_requires_the_label_to_match_the_glyphs ... ok
+test glyphs::tests::min_gap_keeps_segmented_digits_whole ... ok
+test glyphs::tests::dark_text_on_a_light_panel_is_read_with_dark_polarity ... ok
+test glyphs::tests::noise_does_not_change_the_reading ... ok
+test glyphs::tests::reads_back_numbers_in_the_learned_font ... ok
+test glyphs::tests::touching_glyphs_are_split ... ok
+test glyphs::tests::unknown_characters_make_the_reading_missing ... ok
+test glyphs::tests::the_empty_track_beside_a_bars_fill_is_not_a_glyph ... ok
+test intent::codegen::tests::generated_source_names_the_plan_and_exports_the_abi ... ok
+test glyphs::tests::wide_gaps_read_as_spaces ... ok
+test intent::codegen::tests::manifests_point_back_at_the_library ... ok
+test intent::codegen::tests::icons_embed_their_picture ... ok
+test intent::codegen::tests::wrapped_plans_nest_and_stateful_plans_get_a_static ... ok
+test intent::native::tests::artifact_paths_follow_the_platform ... ok
+test intent::native::tests::fingerprints_change_with_content ... ok
+test intent::native::tests::loading_something_that_is_not_a_library_fails_clearly ... ok
+test intent::plans::tests::an_absent_bar_is_missing_not_zero ... ok
+test intent::plans::tests::bars_are_the_wide_blobs ... ok
+test intent::plans::tests::a_region_outside_the_image_cannot_be_searched ... ok
+test intent::templates::tests::registered_pictures_are_found_by_name_and_replaced_on_reregistration ... ok
+test intent::tests::declared_functions_run_their_plans ... ok
+test intent::tests::errors_read_as_sentences ... ok
+test intent::tests::halves_split_a_region ... ok
+test intent::tests::motion_needs_a_previous_frame_then_reports_change ... ok
+test intent::tests::names_parse_into_their_parts ... ok
+test intent::tests::plans_say_what_they_need ... ok
+test intent::tests::qualifiers_and_counts_compose ... ok
+test intent::tests::registered_pictures_make_icon_intents_resolvable ... ok
+test intent::tests::the_declared_type_must_match_the_verb ... ok
+test intent::tests::tracked_matches_keep_their_ids_between_calls ... ok
+test intent::tests::unknown_words_are_refused_with_a_hint ... ok
+test intent::tests::unresolvable_declarations_explain_themselves_on_every_call ... ok
+test kernels::tests::correlated_rows_add_up_the_same ... ok
+test kernels::tests::every_path_sums_the_same_window ... ok
+test kernels::tests::the_backend_is_named ... ok
+test motion::tests::a_busy_frame_tracks_its_largest_blobs_and_says_so ... ok
+test motion::tests::blobs_carried_through_occlusion_are_reported_as_predicted ... ok
+test motion::tests::blobs_from_a_mask_match_the_fused_scan ... ok
+test motion::tests::first_call_reports_warmup_not_failure_masquerading_as_empty ... ok
+test motion::tests::fused_runs_match_scanning_the_mask ... ok
+test motion::tests::grey_changes_are_measured_exactly ... ok
+test motion::tests::motion_mask_flags_only_changed_pixels ... ok
+test motion::tests::motion_mask_rejects_size_mismatch ... ok
+test motion::tests::moving_square_is_tracked_with_stable_id ... ok
+test motion::tests::resize_between_frames_restarts_the_baseline ... ok
+test motion::tests::static_scene_reports_no_motion_confidently ... ok
+test motion::tests::verdict_follows_rec709_luminance ... ok
+test ocr::tests::a_leftover_file_is_never_overwritten ... ok
+test ocr::tests::concurrent_temp_images_get_distinct_files ... ok
+test ocr::tests::config_helpers_reach_the_command_line ... ok
+test ocr::tests::crop_is_clipped_and_overflow_safe ... ok
+test ocr::tests::dark_text_on_light_is_not_inverted ... ok
+test ocr::tests::faint_text_is_stretched_to_full_contrast ... ok
+test ocr::tests::preprocessing_gives_dark_text_on_a_white_framed_page ... ok
+test ocr::tests::reads_rendered_text_with_the_real_engine ... ignored, needs Tesseract installed
+test ocr::tests::recognize_maps_words_to_the_image_and_says_why_it_failed ... ok
+test ocr::tests::tall_crops_are_framed_but_not_enlarged ... ok
+test ocr::tests::temp_image_is_removed_on_drop ... ok
+test ocr::tests::tsv_config_comes_after_option_flags ... ok
+test ocr::tests::tsv_words_carry_boxes_and_confidence ... ok
+test ocr::tests::word_boxes_map_back_to_crop_pixels ... ok
+test quality::tests::a_flat_region_is_reported_as_having_no_text ... ok
+test quality::tests::assessment_is_clipped_to_the_image ... ok
+test quality::tests::native_pixel_text_reads_as_sharp ... ok
+test quality::tests::rescaled_text_reads_as_blurred ... ok
+test scan::tests::finds_every_run_including_at_the_edges ... ok
+test scan::tests::matches_a_plain_scan ... ok
+test sequence::tests::identical_sequences_are_at_distance_zero_and_speed_does_not_matter ... ok
+test sequence::tests::the_matcher_names_the_nearest_label_and_refuses_ties ... ok
+test template::tests::a_look_near_the_expected_place_finds_the_picture_without_a_search ... ok
+test face::tests::the_astronauts_face_is_laid_out_from_her_eyes ... ok
+test intent::plans::tests::faces_are_found_with_saturating_scores ... ok
+test template::tests::a_set_with_one_picture_agrees_with_find_all ... ok
+test template::tests::a_set_of_poses_ranks_every_picture_together ... ok
+test template::tests::brightness_and_contrast_do_not_matter ... ok
+test template::tests::a_set_finds_a_picture_facing_either_way_in_one_search ... ok
+test template::tests::find_all_in_a_small_search_is_exhaustive ... ok
+test template::tests::find_all_returns_every_copy_once_strongest_first ... ok
+test template::tests::detail_too_fine_to_halve_keeps_the_search_exact ... ok
+test template::tests::halving_filters_and_drops_odd_edges ... ok
+test template::tests::icons_with_coarse_structure_get_a_pyramid ... ok
+test template::tests::locate_explains_a_miss ... ok
+test template::tests::pyramid_recall_on_random_crops ... ignored, slow in debug builds; run with --release -- --ignored
+test template::tests::search_is_restricted_to_the_region_and_clipped ... ok
+test template::tests::sliding_sums_match_scoring_each_window_directly ... ok
+test template::tests::sub_pixel_centre_follows_a_half_pixel_shift ... ok
+test template::tests::finds_a_planted_icon_exactly ... ok
+test template::tests::the_foreground_is_what_stands_out_from_the_edges ... ok
+test template::tests::uniform_or_empty_templates_are_refused ... ok
+test threshold::tests::binarize_keeps_values_strictly_above_the_threshold ... ok
+test threshold::tests::channel_views_match_their_definitions_in_any_region ... ok
+test threshold::tests::integral_image_matches_direct_sums ... ok
+test threshold::tests::luma_maps_greys_to_themselves ... ok
+test threshold::tests::min_channel_separates_light_text_from_a_saturated_bar ... ok
+test threshold::tests::otsu_needs_two_distinct_values ... ok
+test threshold::tests::otsu_splits_a_bimodal_histogram_between_the_modes ... ok
+test threshold::tests::regions_outside_the_image_yield_empty_images ... ok
+test threshold::tests::text_evidence_follows_each_rows_own_background ... ok
+test timing::tests::a_bad_sample_only_affects_the_window_it_is_in ... ok
+test timing::tests::average_before_the_window_fills_uses_only_real_samples ... ok
+test timing::tests::clear_forgets_samples ... ok
+test timing::tests::fps_ignores_impossible_durations ... ok
+test timing::tests::fps_is_right_from_the_first_frame ... ok
+test template::tests::the_colour_check_drops_a_lookalike_of_another_colour ... ok
+test timing::tests::moving_avg_works ... ok
+test timing::tests::old_samples_leave_the_window ... ok
+test timing::tests::zero_size_behaves_like_one ... ok
+test tracking::tests::as_many_tracks_as_possible_are_matched ... ok
+test tracking::tests::assign_names_each_detection_s_track_in_order ... ok
+test tracking::tests::assignment_ignores_detection_order ... ok
+test tracking::tests::assignment_is_optimal ... ok
+test tracking::tests::many_objects_in_one_cluster_stay_fast_and_consistent ... ok
+test tracking::tests::nearby_objects_keep_their_identities ... ok
+test tracking::tests::non_finite_detections_are_ignored ... ok
+test tracking::tests::pairs_beyond_reach_are_never_matched ... ok
+test tracking::tests::tracker_assigns_stable_ids_across_frames ... ok
+test tracking::tests::tracker_drops_object_after_grace_period ... ok
+test tracking::tests::tracker_survives_brief_occlusion ... ok
+test timing::tests::long_runs_do_not_drift ... ok
+test template::tests::coarse_to_fine_agrees_with_exhaustive_search ... ok
+
+test result: ok. 186 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 10.08s
+
+[1m[92m     Running[0m tests/intent_native.rs (target/debug/deps/intent_native-43be6d778d1555d7)
+
+running 4 tests
+test a_build_that_cannot_find_the_library_fails_with_the_compiler_log ... ok
+test names_outside_the_vocabulary_never_reach_the_compiler ... ok
+test a_tracked_icon_keeps_its_picture_and_its_memory_inside_the_library has been running for over 60 seconds
+test find_face_runs_as_a_shared_library_and_agrees_with_in_process has been running for over 60 seconds
+test a_tracked_icon_keeps_its_picture_and_its_memory_inside_the_library ... ok
+test find_face_runs_as_a_shared_library_and_agrees_with_in_process ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 70.49s
+
+[1m[92m     Running[0m tests/synthetic_screen.rs (target/debug/deps/synthetic_screen-00d8a6befa789454)
+
+running 3 tests
+test bar_is_located_and_measured_on_a_synthetic_screen ... ok
+test a_static_screen_reports_no_motion_while_the_bar_stays_measurable ... ok
+test a_moving_object_keeps_its_identity_across_the_sequence ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+[1m[92m     Running[0m tests/wayland_capture.rs (target/debug/deps/wayland_capture-2aa911b7a557de96)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/x11_capture.rs (target/debug/deps/x11_capture-65343b11397f4ce7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/syrup_runtime-585bfaa075878583)
+
+running 29 tests
+test codegen::tests::only_used_templates_are_emitted ... ok
+test codegen::tests::the_policy_rejects_escapes ... ok
+test intent::tests::adjacent_regions_partition_the_image ... ok
+test intent::tests::clauses_compose ... ok
+test intent::tests::measurements_compose_with_what_find_takes ... ok
+test intent::tests::ratios_are_exact ... ok
+test intent::tests::refuses_to_guess ... ok
+test intent::tests::synonyms_and_plurals_share_one_intent ... ok
+test interp::tests::an_empty_region_searches_nothing ... ok
+test interp::tests::area_filters_use_percent_of_the_whole_image ... ok
+test interp::tests::boxes_are_clipped_to_the_searched_region_and_empty_ones_dropped ... ok
+test interp::tests::caller_regions_and_max_results ... ok
+test interp::tests::colour_regions_are_found_scored_and_restored ... ok
+test codegen::tests::generated_sources_pass_the_policy ... ok
+test interp::tests::ordering_is_total_and_selectors_limit ... ok
+test interp::tests::region_results_come_back_in_input_coordinates ... ok
+test plan::tests::dangling_and_forward_values_are_rejected ... ok
+test plan::tests::restoring_against_the_wrong_view_is_rejected ... ok
+test plan::tests::unrestored_boxes_are_rejected ... ok
+test plan::tests::equivalent_names_share_a_hash ... ok
+test compiler::tests::rejected_source_reports_the_compiler_output ... ok
+test validate::tests::a_crop_one_row_off_is_caught ... ok
+test validate::tests::a_missing_coordinate_restore_is_caught ... ok
+test validate::tests::a_loosened_hue_test_is_caught ... ok
+
+thread '<unnamed>' (17642) panicked at syrup/op.rs:206:9:
+boom
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test validate::tests::a_panic_is_contained_at_the_boundary ... ok
+test validate::tests::a_reversed_ordering_is_caught ... ok
+test validate::tests::a_wrong_colour_density_is_caught ... ok
+test validate::tests::measuring_before_the_limit_is_caught ... ok
+test validate::tests::faithful_modules_pass ... ok
+
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.50s
+
+[1m[92m     Running[0m unittests src/bin/syrup.rs (target/debug/deps/syrup-e369461dd187fa14)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/added_targets.rs (target/debug/deps/added_targets-2ab726e2f453f39e)
+
+running 3 tests
+test added_nouns_cannot_take_over_the_grammar ... ok
+test detections_with_negative_sizes_fail_the_run ... ok
+test added_targets_compose_like_built_in_ones ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+
+[1m[92m     Running[0m tests/bundles.rs (target/debug/deps/bundles-c740bd1de1c61904)
+
+running 2 tests
+test bundles_for_another_platform_say_so ... ok
+test bundles_run_where_nothing_can_compile ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.37s
+
+[1m[92m     Running[0m tests/cli.rs (target/debug/deps/cli-ee8cad0384fa56d4)
+
+running 4 tests
+test a_missing_ocr_engine_is_a_dependency_error ... ok
+test failures_exit_non_zero_with_the_stage ... ok
+test prepared_modules_run_where_there_is_no_compiler ... ok
+test a_new_process_reuses_the_compiled_module ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.50s
+
+[1m[92m     Running[0m tests/failures.rs (target/debug/deps/failures-414a642eef509886)
+
+running 7 tests
+test bad_inputs_are_input_errors ... ok
+test a_missing_compiler_is_reported_at_the_compile_stage ... ok
+test concurrent_first_use_compiles_once ... ok
+test frozen_mode_never_compiles ... ok
+test unresolvable_names_fail_before_any_image_is_involved ... ok
+test damaged_artifacts_are_refused_and_rebuilt ... ok
+test provider_failures_are_execution_errors ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.98s
+
+[1m[92m     Running[0m tests/find_colors.rs (target/debug/deps/find_colors-398a22db76ffff6b)
+
+running 2 tests
+test regions_are_scored_by_how_much_of_them_has_the_colour ... ok
+test the_new_path_finds_what_the_core_primitives_find ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.18s
+
+[1m[92m     Running[0m tests/find_face.rs (target/debug/deps/find_face-36326c07bc28d282)
+
+running 5 tests
+test grey_and_rgba_inputs_follow_the_same_contract ... ok
+test finds_the_face_then_reuses_the_compiled_module ... ok
+test min_confidence_is_a_runtime_parameter ... ok
+test images_without_faces_give_empty_results ... ok
+test compositions_nobody_wrote_restore_coordinates ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.11s
+
+[1m[92m     Running[0m tests/find_words.rs (target/debug/deps/find_words-b259d7ac558d9b4e)
+
+running 1 test
+test words_are_read_and_placed_in_image_coordinates ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+[1m[92m     Running[0m tests/frames.rs (target/debug/deps/frames-8cf3d59a1bb29fd8)
+
+running 3 tests
+test sessions_read_frames_from_a_source_until_it_ends ... ok
+test the_cli_watches_frames_one_json_line_each ... ok
+test windows_are_captured_into_sessions ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.11s
+
+[1m[92m     Running[0m tests/layout.rs (target/debug/deps/layout-f59704a184a6de9d)
+
+running 2 tests
+test panels_are_what_the_core_finds ... ok
+test text_blocks_are_what_the_core_finds ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.09s
+
+[1m[92m     Running[0m tests/measure.rs (target/debug/deps/measure-96c566e2f6e2d544)
+
+running 3 tests
+test sharpness_tells_crisp_text_from_blurred ... ok
+test fill_is_measured_within_the_searched_region ... ok
+test bar_fill_is_what_the_core_measures ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.21s
+
+[1m[92m     Running[0m tests/qr_codes.rs (target/debug/deps/qr_codes-91e7885547403945)
+
+running 1 test
+test qr_codes_are_found_read_and_composed ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.84s
+
+[1m[92m     Running[0m tests/sessions.rs (target/debug/deps/sessions-8c3ae437c68ee950)
+
+running 4 tests
+test a_failed_frame_leaves_the_session_as_it_was ... ok
+test tracking_needs_a_session_and_sessions_need_tracking ... ok
+test moving_regions_keep_their_id ... ok
+test faces_keep_their_id_as_they_move ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.47s
+
+[1m[92m   Doc-tests[0m syrup
+
+running 5 tests
+test src/abi.rs - abi::export_intent (line 349) ... ignored
+test src/intent/mod.rs - intent::intent (line 817) ... ok
+test src/template.rs - template::Prepared (line 447) - compile ... ok
+test src/glyphs.rs - glyphs::GlyphSet (line 154) ... ok
+test src/intent/mod.rs - intent (line 6) ... ok
+
+test result: ok. 4 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+all doctests ran in 0.99s; merged doctests compilation took 0.92s
+[1m[92m   Doc-tests[0m syrup_runtime
+
+running 1 test
+test crates/syrup-runtime/src/lib.rs - (line 6) - compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 1.21s; merged doctests compilation took 1.20s

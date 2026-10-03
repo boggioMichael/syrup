@@ -1,0 +1,3 @@
+[1m[92m   Compiling[0m syrup v0.1.0 (/Users/runner/work/syrup/syrup)
+[1m[92m   Compiling[0m syrup-runtime v0.1.0 (/Users/runner/work/syrup/syrup/crates/syrup-runtime)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 57.51s
