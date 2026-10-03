@@ -740,19 +740,15 @@ impl Standardised {
     fn correlation(&self, other: &Standardised) -> f32 {
         let (a, b) = (&self.0[..], &other.0[..self.0.len().min(other.0.len())]);
         let a = &a[..b.len()];
+        let (a_chunks, a_rest) = a.as_chunks::<8>();
+        let (b_chunks, b_rest) = b.as_chunks::<8>();
         let mut totals = [0.0f32; 8];
-        for (ca, cb) in a.chunks_exact(8).zip(b.chunks_exact(8)) {
+        for (ca, cb) in a_chunks.iter().zip(b_chunks) {
             for ((total, x), y) in totals.iter_mut().zip(ca).zip(cb) {
                 *total += x * y;
             }
         }
-        let tail = a.len() - a.len() % 8;
-        totals.iter().sum::<f32>()
-            + a[tail..]
-                .iter()
-                .zip(&b[tail..])
-                .map(|(x, y)| x * y)
-                .sum::<f32>()
+        totals.iter().sum::<f32>() + a_rest.iter().zip(b_rest).map(|(x, y)| x * y).sum::<f32>()
     }
 }
 
@@ -763,14 +759,14 @@ impl Standardised {
 /// this is where the reader's time went.
 #[inline]
 fn lanes(values: &[f32], f: impl Fn(f32) -> f32) -> f32 {
+    let (chunks, rest) = values.as_chunks::<8>();
     let mut totals = [0.0f32; 8];
-    for chunk in values.chunks_exact(8) {
+    for chunk in chunks {
         for (total, &v) in totals.iter_mut().zip(chunk) {
             *total += f(v);
         }
     }
-    let tail = values.len() - values.len() % 8;
-    totals.iter().sum::<f32>() + values[tail..].iter().map(|&v| f(v)).sum::<f32>()
+    totals.iter().sum::<f32>() + rest.iter().map(|&v| f(v)).sum::<f32>()
 }
 
 #[cfg(test)]
