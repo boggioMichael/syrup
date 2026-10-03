@@ -1,0 +1,524 @@
+[1m[92m    Updating[0m crates.io index
+[1m[92m Downloading[0m crates ...
+[1m[92m  Downloaded[0m adler2 v2.0.1
+[1m[92m  Downloaded[0m zune-inflate v0.2.54
+[1m[92m  Downloaded[0m zvariant_derive v5.15.0
+[1m[92m  Downloaded[0m zvariant v5.15.0
+[1m[92m  Downloaded[0m zvariant_utils v4.2.0
+[1m[92m  Downloaded[0m block-buffer v0.10.4
+[1m[92m  Downloaded[0m atomic-waker v1.1.2
+[1m[92m  Downloaded[0m ciborium-io v0.2.2
+[1m[92m  Downloaded[0m toml_parser v1.1.3+spec-1.1.0
+[1m[92m  Downloaded[0m async-executor v1.14.0
+[1m[92m  Downloaded[0m blocking v1.7.0
+[1m[92m  Downloaded[0m cfg-if v1.0.4
+[1m[92m  Downloaded[0m crypto-common v0.1.7
+[1m[92m  Downloaded[0m cfg_aliases v0.2.2
+[1m[92m  Downloaded[0m dyn-clone v1.0.20
+[1m[92m  Downloaded[0m tracing-attributes v0.1.31
+[1m[92m  Downloaded[0m clap_lex v1.1.0
+[1m[92m  Downloaded[0m color_quant v1.1.0
+[1m[92m  Downloaded[0m derive-new v0.7.0
+[1m[92m  Downloaded[0m crunchy v0.2.4
+[1m[92m  Downloaded[0m downcast-rs v2.0.2
+[1m[92m  Downloaded[0m wasm-bindgen-macro v0.2.127
+[1m[92m  Downloaded[0m cast v0.3.0
+[1m[92m  Downloaded[0m generic-array v0.14.7
+[1m[92m  Downloaded[0m wasm-bindgen-shared v0.2.127
+[1m[92m  Downloaded[0m async-broadcast v0.7.2
+[1m[92m  Downloaded[0m bitflags v1.3.2
+[1m[92m  Downloaded[0m errno v0.3.14
+[1m[92m  Downloaded[0m async-channel v2.5.0
+[1m[92m  Downloaded[0m tract-extra v0.23.8
+[1m[92m  Downloaded[0m winapi-util v0.1.11
+[1m[92m  Downloaded[0m async-trait v0.1.92
+[1m[92m  Downloaded[0m enumflags2_derive v0.7.12
+[1m[92m  Downloaded[0m anymap3 v1.1.0
+[1m[92m  Downloaded[0m endi v1.1.1
+[1m[92m  Downloaded[0m equivalent v1.0.2
+[1m[92m  Downloaded[0m event-listener-strategy v0.5.4
+[1m[92m  Downloaded[0m futures-core v0.3.34
+[1m[92m  Downloaded[0m g2gen v1.2.2
+[1m[92m  Downloaded[0m gethostname v1.1.0
+[1m[92m  Downloaded[0m async-recursion v1.1.1
+[1m[92m  Downloaded[0m g2poly v1.2.2
+[1m[92m  Downloaded[0m dyn-hash v1.0.0
+[1m[92m  Downloaded[0m windows-link v0.2.1
+[1m[92m  Downloaded[0m windows-numerics v0.2.0
+[1m[92m  Downloaded[0m itoa v1.0.18
+[1m[92m  Downloaded[0m float-ord v0.3.2
+[1m[92m  Downloaded[0m ciborium-ll v0.2.2
+[1m[92m  Downloaded[0m cpufeatures v0.3.1
+[1m[92m  Downloaded[0m futures-task v0.3.34
+[1m[92m  Downloaded[0m version_check v0.9.5
+[1m[92m  Downloaded[0m bit_field v0.10.3
+[1m[92m  Downloaded[0m cpufeatures v0.2.17
+[1m[92m  Downloaded[0m futures-io v0.3.34
+[1m[92m  Downloaded[0m enumflags2 v0.7.12
+[1m[92m  Downloaded[0m erased-serde v0.4.10
+[1m[92m  Downloaded[0m foldhash v0.2.0
+[1m[92m  Downloaded[0m anstyle v1.0.14
+[1m[92m  Downloaded[0m concurrent-queue v2.5.0
+[1m[92m  Downloaded[0m find-msvc-tools v0.1.14
+[1m[92m  Downloaded[0m async-task v4.7.1
+[1m[92m  Downloaded[0m block2 v0.6.2
+[1m[92m  Downloaded[0m digest v0.10.7
+[1m[92m  Downloaded[0m zcheapstr v1.1.0
+[1m[92m  Downloaded[0m windows-collections v0.2.0
+[1m[92m  Downloaded[0m memo-map v0.3.4
+[1m[92m  Downloaded[0m byteorder v1.5.0
+[1m[92m  Downloaded[0m criterion-plot v0.5.0
+[1m[92m  Downloaded[0m fastrand v2.5.0
+[1m[92m  Downloaded[0m memoffset v0.9.1
+[1m[92m  Downloaded[0m transpose v0.2.3
+[1m[92m  Downloaded[0m async-signal v0.2.14
+[1m[92m  Downloaded[0m bit-vec v0.10.1
+[1m[92m  Downloaded[0m g2p v1.2.2
+[1m[92m  Downloaded[0m hermit-abi v0.5.2
+[1m[92m  Downloaded[0m bit-set v0.11.1
+[1m[92m  Downloaded[0m crossbeam-deque v0.8.7
+[1m[92m  Downloaded[0m either v1.17.0
+[1m[92m  Downloaded[0m fdeflate v0.3.7
+[1m[92m  Downloaded[0m hex v0.4.3
+[1m[92m  Downloaded[0m is-terminal v0.4.17
+[1m[92m  Downloaded[0m serde_repr v0.1.21
+[1m[92m  Downloaded[0m tempfile v3.27.0
+[1m[92m  Downloaded[0m async-io v2.6.0
+[1m[92m  Downloaded[0m async-process v2.5.0
+[1m[92m  Downloaded[0m bitflags v2.13.1
+[1m[92m  Downloaded[0m borsh-derive v1.8.1
+[1m[92m  Downloaded[0m crc32fast v1.5.0
+[1m[92m  Downloaded[0m crossbeam-epoch v0.9.20
+[1m[92m  Downloaded[0m event-listener v5.4.2
+[1m[92m  Downloaded[0m paste v1.0.15
+[1m[92m  Downloaded[0m chacha20 v0.10.2
+[1m[92m  Downloaded[0m quote v1.0.47
+[1m[92m  Downloaded[0m objc2-io-surface v0.3.2
+[1m[92m  Downloaded[0m xattr v1.6.1
+[1m[92m  Downloaded[0m async-lock v3.4.2
+[1m[92m  Downloaded[0m ciborium v0.2.2
+[1m[92m  Downloaded[0m crossbeam-utils v0.8.22
+[1m[92m  Downloaded[0m filetime v0.2.29
+[1m[92m  Downloaded[0m gif v0.13.3
+[1m[92m  Downloaded[0m windows-implement v0.60.2
+[1m[92m  Downloaded[0m anes v0.1.6
+[1m[92m  Downloaded[0m bytemuck v1.25.2
+[1m[92m  Downloaded[0m lazy_static v1.5.1
+[1m[92m  Downloaded[0m plotters-backend v0.3.7
+[1m[92m  Downloaded[0m proc-macro-crate v3.5.0
+[1m[92m  Downloaded[0m simd-adler32 v0.3.10
+[1m[92m  Downloaded[0m string-interner v0.20.0
+[1m[92m  Downloaded[0m windows-result v0.3.4
+[1m[92m  Downloaded[0m windows-threading v0.1.0
+[1m[92m  Downloaded[0m anyhow v1.0.104
+[1m[92m  Downloaded[0m autocfg v1.5.1
+[1m[92m  Downloaded[0m bytes v1.12.1
+[1m[92m  Downloaded[0m clap v4.6.6
+[1m[92m  Downloaded[0m dispatch2 v0.3.1
+[1m[92m  Downloaded[0m futures-lite v2.6.1
+[1m[92m  Downloaded[0m getrandom v0.4.3
+[1m[92m  Downloaded[0m half v2.7.1
+[1m[92m  Downloaded[0m pin-project-lite v0.2.17
+[1m[92m  Downloaded[0m piper v0.2.5
+[1m[92m  Downloaded[0m polling v3.11.0
+[1m[92m  Downloaded[0m prost-derive v0.14.4
+[1m[92m  Downloaded[0m shlex v2.0.1
+[1m[92m  Downloaded[0m signal-hook-registry v1.4.8
+[1m[92m  Downloaded[0m borsh v1.8.1
+[1m[92m  Downloaded[0m maplit v1.0.2
+[1m[92m  Downloaded[0m lebe v0.5.3
+[1m[92m  Downloaded[0m inventory v0.3.24
+[1m[92m  Downloaded[0m prost v0.14.4
+[1m[92m  Downloaded[0m sha2 v0.10.9
+[1m[92m  Downloaded[0m flate2 v1.1.9
+[1m[92m  Downloaded[0m parking v2.2.1
+[1m[92m  Downloaded[0m bumpalo v3.20.3
+[1m[92m  Downloaded[0m scopeguard v1.2.0
+[1m[92m  Downloaded[0m windows-strings v0.4.2
+[1m[92m  Downloaded[0m plotters-svg v0.3.7
+[1m[92m  Downloaded[0m primal-check v0.3.4
+[1m[92m  Downloaded[0m rustversion v1.0.23
+[1m[92m  Downloaded[0m same-file v1.0.6
+[1m[92m  Downloaded[0m serde v1.0.229
+[1m[92m  Downloaded[0m cc v1.5.1
+[1m[92m  Downloaded[0m nom-language v0.1.0
+[1m[92m  Downloaded[0m pastey v0.2.3
+[1m[92m  Downloaded[0m rand_distr v0.6.0
+[1m[92m  Downloaded[0m criterion v0.5.1
+[1m[92m  Downloaded[0m portable-atomic-util v0.2.8
+[1m[92m  Downloaded[0m proc-macro2 v1.0.107
+[1m[92m  Downloaded[0m plotters v0.3.7
+[1m[92m  Downloaded[0m typeid v1.0.3
+[1m[92m  Downloaded[0m pulp-wasm-simd-flag v0.1.1
+[1m[92m  Downloaded[0m reborrow v0.5.5
+[1m[92m  Downloaded[0m windows-future v0.2.1
+[1m[92m  Downloaded[0m zmij v1.0.23
+[1m[92m  Downloaded[0m clap_builder v4.6.6
+[1m[92m  Downloaded[0m hashbrown v0.16.1
+[1m[92m  Downloaded[0m lock_api v0.4.14
+[1m[92m  Downloaded[0m lru v0.18.5
+[1m[92m  Downloaded[0m num-integer v0.1.47
+[1m[92m  Downloaded[0m pulp v0.22.3
+[1m[92m  Downloaded[0m rand_core v0.10.1
+[1m[92m  Downloaded[0m strength_reduce v0.2.4
+[1m[92m  Downloaded[0m tinytemplate v1.2.1
+[1m[92m  Downloaded[0m toml_datetime v1.1.1+spec-1.1.0
+[1m[92m  Downloaded[0m uds_windows v1.2.1
+[1m[92m  Downloaded[0m weezl v0.1.12
+[1m[92m  Downloaded[0m windows-interface v0.59.3
+[1m[92m  Downloaded[0m windows-link v0.1.3
+[1m[92m  Downloaded[0m zbus_names v4.3.4
+[1m[92m  Downloaded[0m aho-corasick v1.1.5
+[1m[92m  Downloaded[0m futures-util v0.3.34
+[1m[92m  Downloaded[0m rawpointer v0.2.1
+[1m[92m  Downloaded[0m serde_derive v1.0.229
+[1m[92m  Downloaded[0m smallvec v1.15.2
+[1m[92m  Downloaded[0m hashbrown v0.17.1
+[1m[92m  Downloaded[0m png v0.17.16
+[1m[92m  Downloaded[0m r-efi v6.0.0
+[1m[92m  Downloaded[0m rand v0.10.3
+[1m[92m  Downloaded[0m portable-atomic v1.15.0
+[1m[92m  Downloaded[0m qoi v0.4.1
+[1m[92m  Downloaded[0m serde_json v1.0.151
+[1m[92m  Downloaded[0m tar v0.4.46
+[1m[92m  Downloaded[0m num-complex v0.4.6
+[1m[92m  Downloaded[0m regex v1.13.1
+[1m[92m  Downloaded[0m exr v1.74.2
+[1m[92m  Downloaded[0m rustfft v6.4.1
+[1m[92m  Downloaded[0m ordered-stream v0.2.0
+[1m[92m  Downloaded[0m regex-syntax v0.8.11
+[1m[92m  Downloaded[0m num-rational v0.4.2
+[1m[92m  Downloaded[0m walkdir v2.5.0
+[1m[92m  Downloaded[0m rustix v1.1.5
+[1m[92m  Downloaded[0m syn v2.0.119
+[1m[92m  Downloaded[0m syn v3.0.3
+[1m[92m  Downloaded[0m objc2-encode v4.1.0
+[1m[92m  Downloaded[0m oorandom v11.1.5
+[1m[92m  Downloaded[0m zbus_macros v5.19.0
+[1m[92m  Downloaded[0m toml_edit v0.25.15+spec-1.1.0
+[1m[92m  Downloaded[0m tract-onnx-opl v0.23.8
+[1m[92m  Downloaded[0m objc2-screen-capture-kit v0.3.2
+[1m[92m  Downloaded[0m regex-automata v0.4.18
+[1m[92m  Downloaded[0m slab v0.4.12
+[1m[92m  Downloaded[0m windows-core v0.61.2
+[1m[92m  Downloaded[0m memmap2 v0.9.11
+[1m[92m  Downloaded[0m once_cell v1.21.4
+[1m[92m  Downloaded[0m libloading v0.9.0
+[1m[92m  Downloaded[0m parking_lot v0.12.5
+[1m[92m  Downloaded[0m redox_syscall v0.5.18
+[1m[92m  Downloaded[0m wasm-bindgen v0.2.127
+[1m[92m  Downloaded[0m num-traits v0.2.19
+[1m[92m  Downloaded[0m tracing-core v0.1.36
+[1m[92m  Downloaded[0m unicode-ident v1.0.24
+[1m[92m  Downloaded[0m log v0.4.34
+[1m[92m  Downloaded[0m tract-hir v0.23.8
+[1m[92m  Downloaded[0m rqrr v0.11.0
+[1m[92m  Downloaded[0m wasm-bindgen-macro-support v0.2.127
+[1m[92m  Downloaded[0m miniz_oxide v0.8.9
+[1m[92m  Downloaded[0m parking_lot_core v0.9.12
+[1m[92m  Downloaded[0m uuid v1.26.1
+[1m[92m  Downloaded[0m matrixmultiply v0.3.11
+[1m[92m  Downloaded[0m qrcode v0.14.1
+[1m[92m  Downloaded[0m tract-data v0.23.8
+[1m[92m  Downloaded[0m tract-nnef v0.23.8
+[1m[92m  Downloaded[0m tract-transformers v0.23.8
+[1m[92m  Downloaded[0m objc2-core-graphics v0.3.2
+[1m[92m  Downloaded[0m rayon-core v1.13.0
+[1m[92m  Downloaded[0m serde_core v1.0.229
+[1m[92m  Downloaded[0m num-bigint v0.4.8
+[1m[92m  Downloaded[0m indexmap v2.14.2
+[1m[92m  Downloaded[0m js-sys v0.3.104
+[1m[92m  Downloaded[0m typenum v1.20.1
+[1m[92m  Downloaded[0m memchr v2.8.3
+[1m[92m  Downloaded[0m zerocopy-derive v0.8.56
+[1m[92m  Downloaded[0m itertools v0.10.5
+[1m[92m  Downloaded[0m raw-cpuid v11.6.0
+[1m[92m  Downloaded[0m nom v8.0.0
+[1m[92m  Downloaded[0m tract-onnx v0.23.8
+[1m[92m  Downloaded[0m itertools v0.15.0
+[1m[92m  Downloaded[0m libm v0.2.16
+[1m[92m  Downloaded[0m winnow v1.0.4
+[1m[92m  Downloaded[0m zbus v5.19.0
+[1m[92m  Downloaded[0m objc2-core-foundation v0.3.2
+[1m[92m  Downloaded[0m minijinja v2.24.0
+[1m[92m  Downloaded[0m rayon v1.12.0
+[1m[92m  Downloaded[0m objc2-metal v0.3.2
+[1m[92m  Downloaded[0m x11rb v0.14.0
+[1m[92m  Downloaded[0m image v0.24.9
+[1m[92m  Downloaded[0m ndarray v0.17.2
+[1m[92m  Downloaded[0m zerocopy v0.8.56
+[1m[92m  Downloaded[0m objc2 v0.6.4
+[1m[92m  Downloaded[0m tract-core v0.23.8
+[1m[92m  Downloaded[0m objc2-foundation v0.3.2
+[1m[92m  Downloaded[0m tracing v0.1.44
+[1m[92m  Downloaded[0m x11rb-protocol v0.14.0
+[1m[92m  Downloaded[0m web-sys v0.3.104
+[1m[92m  Downloaded[0m jpeg-decoder v0.3.2
+[1m[92m  Downloaded[0m libc v0.2.189
+[1m[92m  Downloaded[0m tract-linalg v0.23.8
+[1m[92m  Downloaded[0m tiff v0.9.1
+[1m[92m  Downloaded[0m windows-sys v0.61.2
+[1m[92m  Downloaded[0m linux-raw-sys v0.12.1
+[1m[92m  Downloaded[0m windows v0.61.3
+[1m[92m   Vendoring[0m adler2 v2.0.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/adler2-2.0.1) to vendor/adler2-2.0.1
+[1m[92m   Vendoring[0m aho-corasick v1.1.5 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aho-corasick-1.1.5) to vendor/aho-corasick-1.1.5
+[1m[92m   Vendoring[0m anes v0.1.6 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/anes-0.1.6) to vendor/anes-0.1.6
+[1m[92m   Vendoring[0m anstyle v1.0.14 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/anstyle-1.0.14) to vendor/anstyle-1.0.14
+[1m[92m   Vendoring[0m anyhow v1.0.104 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/anyhow-1.0.104) to vendor/anyhow-1.0.104
+[1m[92m   Vendoring[0m anymap3 v1.1.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/anymap3-1.1.0) to vendor/anymap3-1.1.0
+[1m[92m   Vendoring[0m async-broadcast v0.7.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/async-broadcast-0.7.2) to vendor/async-broadcast-0.7.2
+[1m[92m   Vendoring[0m async-channel v2.5.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/async-channel-2.5.0) to vendor/async-channel-2.5.0
+[1m[92m   Vendoring[0m async-executor v1.14.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/async-executor-1.14.0) to vendor/async-executor-1.14.0
+[1m[92m   Vendoring[0m async-io v2.6.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/async-io-2.6.0) to vendor/async-io-2.6.0
+[1m[92m   Vendoring[0m async-lock v3.4.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/async-lock-3.4.2) to vendor/async-lock-3.4.2
+[1m[92m   Vendoring[0m async-process v2.5.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/async-process-2.5.0) to vendor/async-process-2.5.0
+[1m[92m   Vendoring[0m async-recursion v1.1.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/async-recursion-1.1.1) to vendor/async-recursion-1.1.1
+[1m[92m   Vendoring[0m async-signal v0.2.14 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/async-signal-0.2.14) to vendor/async-signal-0.2.14
+[1m[92m   Vendoring[0m async-task v4.7.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/async-task-4.7.1) to vendor/async-task-4.7.1
+[1m[92m   Vendoring[0m async-trait v0.1.92 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/async-trait-0.1.92) to vendor/async-trait-0.1.92
+[1m[92m   Vendoring[0m atomic-waker v1.1.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/atomic-waker-1.1.2) to vendor/atomic-waker-1.1.2
+[1m[92m   Vendoring[0m autocfg v1.5.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/autocfg-1.5.1) to vendor/autocfg-1.5.1
+[1m[92m   Vendoring[0m bit-set v0.11.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bit-set-0.11.1) to vendor/bit-set-0.11.1
+[1m[92m   Vendoring[0m bit-vec v0.10.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bit-vec-0.10.1) to vendor/bit-vec-0.10.1
+[1m[92m   Vendoring[0m bit_field v0.10.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bit_field-0.10.3) to vendor/bit_field-0.10.3
+[1m[92m   Vendoring[0m bitflags v1.3.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bitflags-1.3.2) to vendor/bitflags-1.3.2
+[1m[92m   Vendoring[0m bitflags v2.13.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bitflags-2.13.1) to vendor/bitflags-2.13.1
+[1m[92m   Vendoring[0m block-buffer v0.10.4 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/block-buffer-0.10.4) to vendor/block-buffer-0.10.4
+[1m[92m   Vendoring[0m block2 v0.6.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/block2-0.6.2) to vendor/block2-0.6.2
+[1m[92m   Vendoring[0m blocking v1.7.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/blocking-1.7.0) to vendor/blocking-1.7.0
+[1m[92m   Vendoring[0m borsh v1.8.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/borsh-1.8.1) to vendor/borsh-1.8.1
+[1m[92m   Vendoring[0m borsh-derive v1.8.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/borsh-derive-1.8.1) to vendor/borsh-derive-1.8.1
+[1m[92m   Vendoring[0m bumpalo v3.20.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bumpalo-3.20.3) to vendor/bumpalo-3.20.3
+[1m[92m   Vendoring[0m bytemuck v1.25.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bytemuck-1.25.2) to vendor/bytemuck-1.25.2
+[1m[92m   Vendoring[0m byteorder v1.5.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/byteorder-1.5.0) to vendor/byteorder-1.5.0
+[1m[92m   Vendoring[0m bytes v1.12.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bytes-1.12.1) to vendor/bytes-1.12.1
+[1m[92m   Vendoring[0m cast v0.3.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cast-0.3.0) to vendor/cast-0.3.0
+[1m[92m   Vendoring[0m cc v1.5.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cc-1.5.1) to vendor/cc-1.5.1
+[1m[92m   Vendoring[0m cfg-if v1.0.4 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cfg-if-1.0.4) to vendor/cfg-if-1.0.4
+[1m[92m   Vendoring[0m cfg_aliases v0.2.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cfg_aliases-0.2.2) to vendor/cfg_aliases-0.2.2
+[1m[92m   Vendoring[0m chacha20 v0.10.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/chacha20-0.10.2) to vendor/chacha20-0.10.2
+[1m[92m   Vendoring[0m ciborium v0.2.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ciborium-0.2.2) to vendor/ciborium-0.2.2
+[1m[92m   Vendoring[0m ciborium-io v0.2.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ciborium-io-0.2.2) to vendor/ciborium-io-0.2.2
+[1m[92m   Vendoring[0m ciborium-ll v0.2.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ciborium-ll-0.2.2) to vendor/ciborium-ll-0.2.2
+[1m[92m   Vendoring[0m clap v4.6.6 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clap-4.6.6) to vendor/clap-4.6.6
+[1m[92m   Vendoring[0m clap_builder v4.6.6 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clap_builder-4.6.6) to vendor/clap_builder-4.6.6
+[1m[92m   Vendoring[0m clap_lex v1.1.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clap_lex-1.1.0) to vendor/clap_lex-1.1.0
+[1m[92m   Vendoring[0m color_quant v1.1.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/color_quant-1.1.0) to vendor/color_quant-1.1.0
+[1m[92m   Vendoring[0m concurrent-queue v2.5.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/concurrent-queue-2.5.0) to vendor/concurrent-queue-2.5.0
+[1m[92m   Vendoring[0m cpufeatures v0.2.17 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpufeatures-0.2.17) to vendor/cpufeatures-0.2.17
+[1m[92m   Vendoring[0m cpufeatures v0.3.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cpufeatures-0.3.1) to vendor/cpufeatures-0.3.1
+[1m[92m   Vendoring[0m crc32fast v1.5.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crc32fast-1.5.0) to vendor/crc32fast-1.5.0
+[1m[92m   Vendoring[0m criterion v0.5.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/criterion-0.5.1) to vendor/criterion-0.5.1
+[1m[92m   Vendoring[0m criterion-plot v0.5.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/criterion-plot-0.5.0) to vendor/criterion-plot-0.5.0
+[1m[92m   Vendoring[0m crossbeam-deque v0.8.7 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crossbeam-deque-0.8.7) to vendor/crossbeam-deque-0.8.7
+[1m[92m   Vendoring[0m crossbeam-epoch v0.9.20 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crossbeam-epoch-0.9.20) to vendor/crossbeam-epoch-0.9.20
+[1m[92m   Vendoring[0m crossbeam-utils v0.8.22 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crossbeam-utils-0.8.22) to vendor/crossbeam-utils-0.8.22
+[1m[92m   Vendoring[0m crunchy v0.2.4 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crunchy-0.2.4) to vendor/crunchy-0.2.4
+[1m[92m   Vendoring[0m crypto-common v0.1.7 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crypto-common-0.1.7) to vendor/crypto-common-0.1.7
+[1m[92m   Vendoring[0m derive-new v0.7.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/derive-new-0.7.0) to vendor/derive-new-0.7.0
+[1m[92m   Vendoring[0m digest v0.10.7 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/digest-0.10.7) to vendor/digest-0.10.7
+[1m[92m   Vendoring[0m dispatch2 v0.3.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/dispatch2-0.3.1) to vendor/dispatch2-0.3.1
+[1m[92m   Vendoring[0m downcast-rs v2.0.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/downcast-rs-2.0.2) to vendor/downcast-rs-2.0.2
+[1m[92m   Vendoring[0m dyn-clone v1.0.20 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/dyn-clone-1.0.20) to vendor/dyn-clone-1.0.20
+[1m[92m   Vendoring[0m dyn-hash v1.0.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/dyn-hash-1.0.0) to vendor/dyn-hash-1.0.0
+[1m[92m   Vendoring[0m either v1.17.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/either-1.17.0) to vendor/either-1.17.0
+[1m[92m   Vendoring[0m endi v1.1.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/endi-1.1.1) to vendor/endi-1.1.1
+[1m[92m   Vendoring[0m enumflags2 v0.7.12 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enumflags2-0.7.12) to vendor/enumflags2-0.7.12
+[1m[92m   Vendoring[0m enumflags2_derive v0.7.12 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enumflags2_derive-0.7.12) to vendor/enumflags2_derive-0.7.12
+[1m[92m   Vendoring[0m equivalent v1.0.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/equivalent-1.0.2) to vendor/equivalent-1.0.2
+[1m[92m   Vendoring[0m erased-serde v0.4.10 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/erased-serde-0.4.10) to vendor/erased-serde-0.4.10
+[1m[92m   Vendoring[0m errno v0.3.14 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/errno-0.3.14) to vendor/errno-0.3.14
+[1m[92m   Vendoring[0m event-listener v5.4.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/event-listener-5.4.2) to vendor/event-listener-5.4.2
+[1m[92m   Vendoring[0m event-listener-strategy v0.5.4 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/event-listener-strategy-0.5.4) to vendor/event-listener-strategy-0.5.4
+[1m[92m   Vendoring[0m exr v1.74.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/exr-1.74.2) to vendor/exr-1.74.2
+[1m[92m   Vendoring[0m fastrand v2.5.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/fastrand-2.5.0) to vendor/fastrand-2.5.0
+[1m[92m   Vendoring[0m fdeflate v0.3.7 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/fdeflate-0.3.7) to vendor/fdeflate-0.3.7
+[1m[92m   Vendoring[0m filetime v0.2.29 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/filetime-0.2.29) to vendor/filetime-0.2.29
+[1m[92m   Vendoring[0m find-msvc-tools v0.1.14 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/find-msvc-tools-0.1.14) to vendor/find-msvc-tools-0.1.14
+[1m[92m   Vendoring[0m flate2 v1.1.9 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/flate2-1.1.9) to vendor/flate2-1.1.9
+[1m[92m   Vendoring[0m float-ord v0.3.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/float-ord-0.3.2) to vendor/float-ord-0.3.2
+[1m[92m   Vendoring[0m foldhash v0.2.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/foldhash-0.2.0) to vendor/foldhash-0.2.0
+[1m[92m   Vendoring[0m futures-core v0.3.34 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-core-0.3.34) to vendor/futures-core-0.3.34
+[1m[92m   Vendoring[0m futures-io v0.3.34 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-io-0.3.34) to vendor/futures-io-0.3.34
+[1m[92m   Vendoring[0m futures-lite v2.6.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-lite-2.6.1) to vendor/futures-lite-2.6.1
+[1m[92m   Vendoring[0m futures-task v0.3.34 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-task-0.3.34) to vendor/futures-task-0.3.34
+[1m[92m   Vendoring[0m futures-util v0.3.34 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-util-0.3.34) to vendor/futures-util-0.3.34
+[1m[92m   Vendoring[0m g2gen v1.2.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/g2gen-1.2.2) to vendor/g2gen-1.2.2
+[1m[92m   Vendoring[0m g2p v1.2.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/g2p-1.2.2) to vendor/g2p-1.2.2
+[1m[92m   Vendoring[0m g2poly v1.2.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/g2poly-1.2.2) to vendor/g2poly-1.2.2
+[1m[92m   Vendoring[0m generic-array v0.14.7 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/generic-array-0.14.7) to vendor/generic-array-0.14.7
+[1m[92m   Vendoring[0m gethostname v1.1.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gethostname-1.1.0) to vendor/gethostname-1.1.0
+[1m[92m   Vendoring[0m getrandom v0.4.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/getrandom-0.4.3) to vendor/getrandom-0.4.3
+[1m[92m   Vendoring[0m gif v0.13.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gif-0.13.3) to vendor/gif-0.13.3
+[1m[92m   Vendoring[0m half v2.7.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/half-2.7.1) to vendor/half-2.7.1
+[1m[92m   Vendoring[0m hashbrown v0.16.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hashbrown-0.16.1) to vendor/hashbrown-0.16.1
+[1m[92m   Vendoring[0m hashbrown v0.17.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hashbrown-0.17.1) to vendor/hashbrown-0.17.1
+[1m[92m   Vendoring[0m hermit-abi v0.5.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hermit-abi-0.5.2) to vendor/hermit-abi-0.5.2
+[1m[92m   Vendoring[0m hex v0.4.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/hex-0.4.3) to vendor/hex-0.4.3
+[1m[92m   Vendoring[0m image v0.24.9 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/image-0.24.9) to vendor/image-0.24.9
+[1m[92m   Vendoring[0m indexmap v2.14.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/indexmap-2.14.2) to vendor/indexmap-2.14.2
+[1m[92m   Vendoring[0m inventory v0.3.24 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/inventory-0.3.24) to vendor/inventory-0.3.24
+[1m[92m   Vendoring[0m is-terminal v0.4.17 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/is-terminal-0.4.17) to vendor/is-terminal-0.4.17
+[1m[92m   Vendoring[0m itertools v0.10.5 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/itertools-0.10.5) to vendor/itertools-0.10.5
+[1m[92m   Vendoring[0m itertools v0.15.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/itertools-0.15.0) to vendor/itertools-0.15.0
+[1m[92m   Vendoring[0m itoa v1.0.18 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/itoa-1.0.18) to vendor/itoa-1.0.18
+[1m[92m   Vendoring[0m jpeg-decoder v0.3.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jpeg-decoder-0.3.2) to vendor/jpeg-decoder-0.3.2
+[1m[92m   Vendoring[0m js-sys v0.3.104 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/js-sys-0.3.104) to vendor/js-sys-0.3.104
+[1m[92m   Vendoring[0m lazy_static v1.5.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lazy_static-1.5.1) to vendor/lazy_static-1.5.1
+[1m[92m   Vendoring[0m lebe v0.5.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lebe-0.5.3) to vendor/lebe-0.5.3
+[1m[92m   Vendoring[0m libc v0.2.189 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.189) to vendor/libc-0.2.189
+[1m[92m   Vendoring[0m libloading v0.9.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libloading-0.9.0) to vendor/libloading-0.9.0
+[1m[92m   Vendoring[0m libm v0.2.16 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libm-0.2.16) to vendor/libm-0.2.16
+[1m[92m   Vendoring[0m linux-raw-sys v0.12.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/linux-raw-sys-0.12.1) to vendor/linux-raw-sys-0.12.1
+[1m[92m   Vendoring[0m lock_api v0.4.14 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lock_api-0.4.14) to vendor/lock_api-0.4.14
+[1m[92m   Vendoring[0m log v0.4.34 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.34) to vendor/log-0.4.34
+[1m[92m   Vendoring[0m lru v0.18.5 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lru-0.18.5) to vendor/lru-0.18.5
+[1m[92m   Vendoring[0m maplit v1.0.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/maplit-1.0.2) to vendor/maplit-1.0.2
+[1m[92m   Vendoring[0m matrixmultiply v0.3.11 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matrixmultiply-0.3.11) to vendor/matrixmultiply-0.3.11
+[1m[92m   Vendoring[0m memchr v2.8.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/memchr-2.8.3) to vendor/memchr-2.8.3
+[1m[92m   Vendoring[0m memmap2 v0.9.11 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/memmap2-0.9.11) to vendor/memmap2-0.9.11
+[1m[92m   Vendoring[0m memo-map v0.3.4 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/memo-map-0.3.4) to vendor/memo-map-0.3.4
+[1m[92m   Vendoring[0m memoffset v0.9.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/memoffset-0.9.1) to vendor/memoffset-0.9.1
+[1m[92m   Vendoring[0m minijinja v2.24.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/minijinja-2.24.0) to vendor/minijinja-2.24.0
+[1m[92m   Vendoring[0m miniz_oxide v0.8.9 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/miniz_oxide-0.8.9) to vendor/miniz_oxide-0.8.9
+[1m[92m   Vendoring[0m ndarray v0.17.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ndarray-0.17.2) to vendor/ndarray-0.17.2
+[1m[92m   Vendoring[0m nom v8.0.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/nom-8.0.0) to vendor/nom-8.0.0
+[1m[92m   Vendoring[0m nom-language v0.1.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/nom-language-0.1.0) to vendor/nom-language-0.1.0
+[1m[92m   Vendoring[0m num-bigint v0.4.8 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-bigint-0.4.8) to vendor/num-bigint-0.4.8
+[1m[92m   Vendoring[0m num-complex v0.4.6 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-complex-0.4.6) to vendor/num-complex-0.4.6
+[1m[92m   Vendoring[0m num-integer v0.1.47 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-integer-0.1.47) to vendor/num-integer-0.1.47
+[1m[92m   Vendoring[0m num-rational v0.4.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-rational-0.4.2) to vendor/num-rational-0.4.2
+[1m[92m   Vendoring[0m num-traits v0.2.19 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/num-traits-0.2.19) to vendor/num-traits-0.2.19
+[1m[92m   Vendoring[0m objc2 v0.6.4 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-0.6.4) to vendor/objc2-0.6.4
+[1m[92m   Vendoring[0m objc2-core-foundation v0.3.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-foundation-0.3.2) to vendor/objc2-core-foundation-0.3.2
+[1m[92m   Vendoring[0m objc2-core-graphics v0.3.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-graphics-0.3.2) to vendor/objc2-core-graphics-0.3.2
+[1m[92m   Vendoring[0m objc2-encode v4.1.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-encode-4.1.0) to vendor/objc2-encode-4.1.0
+[1m[92m   Vendoring[0m objc2-foundation v0.3.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-foundation-0.3.2) to vendor/objc2-foundation-0.3.2
+[1m[92m   Vendoring[0m objc2-io-surface v0.3.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-io-surface-0.3.2) to vendor/objc2-io-surface-0.3.2
+[1m[92m   Vendoring[0m objc2-metal v0.3.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-metal-0.3.2) to vendor/objc2-metal-0.3.2
+[1m[92m   Vendoring[0m objc2-screen-capture-kit v0.3.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-screen-capture-kit-0.3.2) to vendor/objc2-screen-capture-kit-0.3.2
+[1m[92m   Vendoring[0m once_cell v1.21.4 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/once_cell-1.21.4) to vendor/once_cell-1.21.4
+[1m[92m   Vendoring[0m oorandom v11.1.5 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/oorandom-11.1.5) to vendor/oorandom-11.1.5
+[1m[92m   Vendoring[0m ordered-stream v0.2.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ordered-stream-0.2.0) to vendor/ordered-stream-0.2.0
+[1m[92m   Vendoring[0m parking v2.2.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/parking-2.2.1) to vendor/parking-2.2.1
+[1m[92m   Vendoring[0m parking_lot v0.12.5 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/parking_lot-0.12.5) to vendor/parking_lot-0.12.5
+[1m[92m   Vendoring[0m parking_lot_core v0.9.12 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/parking_lot_core-0.9.12) to vendor/parking_lot_core-0.9.12
+[1m[92m   Vendoring[0m paste v1.0.15 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/paste-1.0.15) to vendor/paste-1.0.15
+[1m[92m   Vendoring[0m pastey v0.2.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pastey-0.2.3) to vendor/pastey-0.2.3
+[1m[92m   Vendoring[0m pin-project-lite v0.2.17 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pin-project-lite-0.2.17) to vendor/pin-project-lite-0.2.17
+[1m[92m   Vendoring[0m piper v0.2.5 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/piper-0.2.5) to vendor/piper-0.2.5
+[1m[92m   Vendoring[0m plotters v0.3.7 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/plotters-0.3.7) to vendor/plotters-0.3.7
+[1m[92m   Vendoring[0m plotters-backend v0.3.7 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/plotters-backend-0.3.7) to vendor/plotters-backend-0.3.7
+[1m[92m   Vendoring[0m plotters-svg v0.3.7 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/plotters-svg-0.3.7) to vendor/plotters-svg-0.3.7
+[1m[92m   Vendoring[0m png v0.17.16 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/png-0.17.16) to vendor/png-0.17.16
+[1m[92m   Vendoring[0m polling v3.11.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0) to vendor/polling-3.11.0
+[1m[92m   Vendoring[0m portable-atomic v1.15.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/portable-atomic-1.15.0) to vendor/portable-atomic-1.15.0
+[1m[92m   Vendoring[0m portable-atomic-util v0.2.8 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/portable-atomic-util-0.2.8) to vendor/portable-atomic-util-0.2.8
+[1m[92m   Vendoring[0m primal-check v0.3.4 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/primal-check-0.3.4) to vendor/primal-check-0.3.4
+[1m[92m   Vendoring[0m proc-macro-crate v3.5.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/proc-macro-crate-3.5.0) to vendor/proc-macro-crate-3.5.0
+[1m[92m   Vendoring[0m proc-macro2 v1.0.107 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/proc-macro2-1.0.107) to vendor/proc-macro2-1.0.107
+[1m[92m   Vendoring[0m prost v0.14.4 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-0.14.4) to vendor/prost-0.14.4
+[1m[92m   Vendoring[0m prost-derive v0.14.4 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/prost-derive-0.14.4) to vendor/prost-derive-0.14.4
+[1m[92m   Vendoring[0m pulp v0.22.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pulp-0.22.3) to vendor/pulp-0.22.3
+[1m[92m   Vendoring[0m pulp-wasm-simd-flag v0.1.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pulp-wasm-simd-flag-0.1.1) to vendor/pulp-wasm-simd-flag-0.1.1
+[1m[92m   Vendoring[0m qoi v0.4.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/qoi-0.4.1) to vendor/qoi-0.4.1
+[1m[92m   Vendoring[0m qrcode v0.14.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/qrcode-0.14.1) to vendor/qrcode-0.14.1
+[1m[92m   Vendoring[0m quote v1.0.47 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/quote-1.0.47) to vendor/quote-1.0.47
+[1m[92m   Vendoring[0m r-efi v6.0.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/r-efi-6.0.0) to vendor/r-efi-6.0.0
+[1m[92m   Vendoring[0m rand v0.10.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rand-0.10.3) to vendor/rand-0.10.3
+[1m[92m   Vendoring[0m rand_core v0.10.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rand_core-0.10.1) to vendor/rand_core-0.10.1
+[1m[92m   Vendoring[0m rand_distr v0.6.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rand_distr-0.6.0) to vendor/rand_distr-0.6.0
+[1m[92m   Vendoring[0m raw-cpuid v11.6.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/raw-cpuid-11.6.0) to vendor/raw-cpuid-11.6.0
+[1m[92m   Vendoring[0m rawpointer v0.2.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rawpointer-0.2.1) to vendor/rawpointer-0.2.1
+[1m[92m   Vendoring[0m rayon v1.12.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-1.12.0) to vendor/rayon-1.12.0
+[1m[92m   Vendoring[0m rayon-core v1.13.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rayon-core-1.13.0) to vendor/rayon-core-1.13.0
+[1m[92m   Vendoring[0m reborrow v0.5.5 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/reborrow-0.5.5) to vendor/reborrow-0.5.5
+[1m[92m   Vendoring[0m redox_syscall v0.5.18 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/redox_syscall-0.5.18) to vendor/redox_syscall-0.5.18
+[1m[92m   Vendoring[0m regex v1.13.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regex-1.13.1) to vendor/regex-1.13.1
+[1m[92m   Vendoring[0m regex-automata v0.4.18 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regex-automata-0.4.18) to vendor/regex-automata-0.4.18
+[1m[92m   Vendoring[0m regex-syntax v0.8.11 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regex-syntax-0.8.11) to vendor/regex-syntax-0.8.11
+[1m[92m   Vendoring[0m rqrr v0.11.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rqrr-0.11.0) to vendor/rqrr-0.11.0
+[1m[92m   Vendoring[0m rustfft v6.4.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustfft-6.4.1) to vendor/rustfft-6.4.1
+[1m[92m   Vendoring[0m rustix v1.1.5 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustix-1.1.5) to vendor/rustix-1.1.5
+[1m[92m   Vendoring[0m rustversion v1.0.23 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustversion-1.0.23) to vendor/rustversion-1.0.23
+[1m[92m   Vendoring[0m same-file v1.0.6 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/same-file-1.0.6) to vendor/same-file-1.0.6
+[1m[92m   Vendoring[0m scopeguard v1.2.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/scopeguard-1.2.0) to vendor/scopeguard-1.2.0
+[1m[92m   Vendoring[0m serde v1.0.229 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229) to vendor/serde-1.0.229
+[1m[92m   Vendoring[0m serde_core v1.0.229 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.229) to vendor/serde_core-1.0.229
+[1m[92m   Vendoring[0m serde_derive v1.0.229 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_derive-1.0.229) to vendor/serde_derive-1.0.229
+[1m[92m   Vendoring[0m serde_json v1.0.151 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_json-1.0.151) to vendor/serde_json-1.0.151
+[1m[92m   Vendoring[0m serde_repr v0.1.21 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_repr-0.1.21) to vendor/serde_repr-0.1.21
+[1m[92m   Vendoring[0m sha2 v0.10.9 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.10.9) to vendor/sha2-0.10.9
+[1m[92m   Vendoring[0m shlex v2.0.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/shlex-2.0.1) to vendor/shlex-2.0.1
+[1m[92m   Vendoring[0m signal-hook-registry v1.4.8 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signal-hook-registry-1.4.8) to vendor/signal-hook-registry-1.4.8
+[1m[92m   Vendoring[0m simd-adler32 v0.3.10 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/simd-adler32-0.3.10) to vendor/simd-adler32-0.3.10
+[1m[92m   Vendoring[0m slab v0.4.12 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/slab-0.4.12) to vendor/slab-0.4.12
+[1m[92m   Vendoring[0m smallvec v1.15.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smallvec-1.15.2) to vendor/smallvec-1.15.2
+[1m[92m   Vendoring[0m strength_reduce v0.2.4 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/strength_reduce-0.2.4) to vendor/strength_reduce-0.2.4
+[1m[92m   Vendoring[0m string-interner v0.20.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/string-interner-0.20.0) to vendor/string-interner-0.20.0
+[1m[92m   Vendoring[0m syn v2.0.119 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/syn-2.0.119) to vendor/syn-2.0.119
+[1m[92m   Vendoring[0m syn v3.0.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/syn-3.0.3) to vendor/syn-3.0.3
+[1m[92m   Vendoring[0m tar v0.4.46 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tar-0.4.46) to vendor/tar-0.4.46
+[1m[92m   Vendoring[0m tempfile v3.27.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tempfile-3.27.0) to vendor/tempfile-3.27.0
+[1m[92m   Vendoring[0m tiff v0.9.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tiff-0.9.1) to vendor/tiff-0.9.1
+[1m[92m   Vendoring[0m tinytemplate v1.2.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinytemplate-1.2.1) to vendor/tinytemplate-1.2.1
+[1m[92m   Vendoring[0m toml_datetime v1.1.1+spec-1.1.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/toml_datetime-1.1.1+spec-1.1.0) to vendor/toml_datetime-1.1.1+spec-1.1.0
+[1m[92m   Vendoring[0m toml_edit v0.25.15+spec-1.1.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/toml_edit-0.25.15+spec-1.1.0) to vendor/toml_edit-0.25.15+spec-1.1.0
+[1m[92m   Vendoring[0m toml_parser v1.1.3+spec-1.1.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/toml_parser-1.1.3+spec-1.1.0) to vendor/toml_parser-1.1.3+spec-1.1.0
+[1m[92m   Vendoring[0m tracing v0.1.44 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tracing-0.1.44) to vendor/tracing-0.1.44
+[1m[92m   Vendoring[0m tracing-attributes v0.1.31 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tracing-attributes-0.1.31) to vendor/tracing-attributes-0.1.31
+[1m[92m   Vendoring[0m tracing-core v0.1.36 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tracing-core-0.1.36) to vendor/tracing-core-0.1.36
+[1m[92m   Vendoring[0m tract-core v0.23.8 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tract-core-0.23.8) to vendor/tract-core-0.23.8
+[1m[92m   Vendoring[0m tract-data v0.23.8 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tract-data-0.23.8) to vendor/tract-data-0.23.8
+[1m[92m   Vendoring[0m tract-extra v0.23.8 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tract-extra-0.23.8) to vendor/tract-extra-0.23.8
+[1m[92m   Vendoring[0m tract-hir v0.23.8 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tract-hir-0.23.8) to vendor/tract-hir-0.23.8
+[1m[92m   Vendoring[0m tract-linalg v0.23.8 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tract-linalg-0.23.8) to vendor/tract-linalg-0.23.8
+[1m[92m   Vendoring[0m tract-nnef v0.23.8 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tract-nnef-0.23.8) to vendor/tract-nnef-0.23.8
+[1m[92m   Vendoring[0m tract-onnx v0.23.8 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tract-onnx-0.23.8) to vendor/tract-onnx-0.23.8
+[1m[92m   Vendoring[0m tract-onnx-opl v0.23.8 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tract-onnx-opl-0.23.8) to vendor/tract-onnx-opl-0.23.8
+[1m[92m   Vendoring[0m tract-transformers v0.23.8 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tract-transformers-0.23.8) to vendor/tract-transformers-0.23.8
+[1m[92m   Vendoring[0m transpose v0.2.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/transpose-0.2.3) to vendor/transpose-0.2.3
+[1m[92m   Vendoring[0m typeid v1.0.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/typeid-1.0.3) to vendor/typeid-1.0.3
+[1m[92m   Vendoring[0m typenum v1.20.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/typenum-1.20.1) to vendor/typenum-1.20.1
+[1m[92m   Vendoring[0m uds_windows v1.2.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uds_windows-1.2.1) to vendor/uds_windows-1.2.1
+[1m[92m   Vendoring[0m unicode-ident v1.0.24 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/unicode-ident-1.0.24) to vendor/unicode-ident-1.0.24
+[1m[92m   Vendoring[0m uuid v1.26.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.26.1) to vendor/uuid-1.26.1
+[1m[92m   Vendoring[0m version_check v0.9.5 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/version_check-0.9.5) to vendor/version_check-0.9.5
+[1m[92m   Vendoring[0m walkdir v2.5.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/walkdir-2.5.0) to vendor/walkdir-2.5.0
+[1m[92m   Vendoring[0m wasm-bindgen v0.2.127 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wasm-bindgen-0.2.127) to vendor/wasm-bindgen-0.2.127
+[1m[92m   Vendoring[0m wasm-bindgen-macro v0.2.127 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wasm-bindgen-macro-0.2.127) to vendor/wasm-bindgen-macro-0.2.127
+[1m[92m   Vendoring[0m wasm-bindgen-macro-support v0.2.127 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wasm-bindgen-macro-support-0.2.127) to vendor/wasm-bindgen-macro-support-0.2.127
+[1m[92m   Vendoring[0m wasm-bindgen-shared v0.2.127 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wasm-bindgen-shared-0.2.127) to vendor/wasm-bindgen-shared-0.2.127
+[1m[92m   Vendoring[0m web-sys v0.3.104 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/web-sys-0.3.104) to vendor/web-sys-0.3.104
+[1m[92m   Vendoring[0m weezl v0.1.12 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/weezl-0.1.12) to vendor/weezl-0.1.12
+[1m[92m   Vendoring[0m winapi-util v0.1.11 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winapi-util-0.1.11) to vendor/winapi-util-0.1.11
+[1m[92m   Vendoring[0m windows v0.61.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/windows-0.61.3) to vendor/windows-0.61.3
+[1m[92m   Vendoring[0m windows-collections v0.2.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/windows-collections-0.2.0) to vendor/windows-collections-0.2.0
+[1m[92m   Vendoring[0m windows-core v0.61.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/windows-core-0.61.2) to vendor/windows-core-0.61.2
+[1m[92m   Vendoring[0m windows-future v0.2.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/windows-future-0.2.1) to vendor/windows-future-0.2.1
+[1m[92m   Vendoring[0m windows-implement v0.60.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/windows-implement-0.60.2) to vendor/windows-implement-0.60.2
+[1m[92m   Vendoring[0m windows-interface v0.59.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/windows-interface-0.59.3) to vendor/windows-interface-0.59.3
+[1m[92m   Vendoring[0m windows-link v0.1.3 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/windows-link-0.1.3) to vendor/windows-link-0.1.3
+[1m[92m   Vendoring[0m windows-link v0.2.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/windows-link-0.2.1) to vendor/windows-link-0.2.1
+[1m[92m   Vendoring[0m windows-numerics v0.2.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/windows-numerics-0.2.0) to vendor/windows-numerics-0.2.0
+[1m[92m   Vendoring[0m windows-result v0.3.4 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/windows-result-0.3.4) to vendor/windows-result-0.3.4
+[1m[92m   Vendoring[0m windows-strings v0.4.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/windows-strings-0.4.2) to vendor/windows-strings-0.4.2
+[1m[92m   Vendoring[0m windows-sys v0.61.2 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/windows-sys-0.61.2) to vendor/windows-sys-0.61.2
+[1m[92m   Vendoring[0m windows-threading v0.1.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/windows-threading-0.1.0) to vendor/windows-threading-0.1.0
+[1m[92m   Vendoring[0m winnow v1.0.4 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winnow-1.0.4) to vendor/winnow-1.0.4
+[1m[92m   Vendoring[0m x11rb v0.14.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/x11rb-0.14.0) to vendor/x11rb-0.14.0
+[1m[92m   Vendoring[0m x11rb-protocol v0.14.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/x11rb-protocol-0.14.0) to vendor/x11rb-protocol-0.14.0
+[1m[92m   Vendoring[0m xattr v1.6.1 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xattr-1.6.1) to vendor/xattr-1.6.1
+[1m[92m   Vendoring[0m zbus v5.19.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus-5.19.0) to vendor/zbus-5.19.0
+[1m[92m   Vendoring[0m zbus_macros v5.19.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0) to vendor/zbus_macros-5.19.0
+[1m[92m   Vendoring[0m zbus_names v4.3.4 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_names-4.3.4) to vendor/zbus_names-4.3.4
+[1m[92m   Vendoring[0m zcheapstr v1.1.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zcheapstr-1.1.0) to vendor/zcheapstr-1.1.0
+[1m[92m   Vendoring[0m zerocopy v0.8.56 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zerocopy-0.8.56) to vendor/zerocopy-0.8.56
+[1m[92m   Vendoring[0m zerocopy-derive v0.8.56 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zerocopy-derive-0.8.56) to vendor/zerocopy-derive-0.8.56
+[1m[92m   Vendoring[0m zmij v1.0.23 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zmij-1.0.23) to vendor/zmij-1.0.23
+[1m[92m   Vendoring[0m zune-inflate v0.2.54 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zune-inflate-0.2.54) to vendor/zune-inflate-0.2.54
+[1m[92m   Vendoring[0m zvariant v5.15.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zvariant-5.15.0) to vendor/zvariant-5.15.0
+[1m[92m   Vendoring[0m zvariant_derive v5.15.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zvariant_derive-5.15.0) to vendor/zvariant_derive-5.15.0
+[1m[92m   Vendoring[0m zvariant_utils v4.2.0 (/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zvariant_utils-4.2.0) to vendor/zvariant_utils-4.2.0
+To use vendored sources, add this to your .cargo/config.toml for this project:
+
