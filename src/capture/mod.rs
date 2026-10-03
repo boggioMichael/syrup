@@ -5,7 +5,10 @@
 //! (ignoring case) and [`Window::capture`] returns its current contents as
 //! RGBA. Each platform uses its own mechanism:
 //!
-//! - **Windows**: `PrintWindow`, so a covered window is captured as drawn.
+//! - **Windows**: Windows.Graphics.Capture, the compositor's own frames on
+//!   the GPU (Windows 10 1903 and later), with only the regions asked for
+//!   read back; `PrintWindow`, then a copy of the screen, where that is not
+//!   to be had.
 //! - **Linux and the BSDs, X11** (including X11 applications on a Wayland
 //!   desktop, via XWayland): the Composite extension, so a covered window
 //!   is captured as drawn.
@@ -24,11 +27,15 @@
 //! the original entry points, kept for existing callers: they look the
 //! window up on every call and answer `None` or an empty list instead of
 //! saying why. A [`Window`] keeps its window between frames and reports a
-//! [`CaptureError`].
+//! [`CaptureError`]. [`Window::capture_frame`] gives a [`Frame`] that can
+//! be read a region at a time, which on the GPU path is what saves the
+//! trip to the CPU for the pixels nobody looks at.
 
 use std::fmt;
 
 use image::RgbaImage;
+
+use crate::geometry::Rect;
 
 #[cfg_attr(target_os = "windows", path = "windows.rs")]
 #[cfg_attr(target_os = "macos", path = "macos.rs")]
@@ -88,6 +95,83 @@ impl Window {
     /// The window's current contents, without its frame.
     pub fn capture(&mut self) -> Result<RgbaImage, CaptureError> {
         self.inner.capture()
+    }
+
+    /// The window's current contents as a [`Frame`], to read whole or a
+    /// region at a time. On Windows the frame stays on the GPU until read.
+    pub fn capture_frame(&mut self) -> Result<Frame<'_>, CaptureError> {
+        Ok(Frame::new(self.inner.capture_frame()?))
+    }
+}
+
+/// Where a frame's pixels are: on the CPU already, or still on the GPU.
+pub enum FrameSource<'a> {
+    Cpu(RgbaImage),
+    #[cfg(target_os = "windows")]
+    Gpu(&'a mut platform::Gpu),
+    #[cfg(not(target_os = "windows"))]
+    #[doc(hidden)]
+    Never(std::marker::PhantomData<&'a ()>),
+}
+
+/// One captured frame, read whole or a region at a time.
+pub struct Frame<'a> {
+    source: FrameSource<'a>,
+}
+
+impl<'a> Frame<'a> {
+    fn new(source: FrameSource<'a>) -> Self {
+        Frame { source }
+    }
+
+    /// Width and height.
+    pub fn size(&self) -> (u32, u32) {
+        match &self.source {
+            FrameSource::Cpu(image) => image.dimensions(),
+            #[cfg(target_os = "windows")]
+            FrameSource::Gpu(gpu) => gpu.size(),
+            #[cfg(not(target_os = "windows"))]
+            FrameSource::Never(_) => (0, 0),
+        }
+    }
+
+    /// Whether the pixels are still on the GPU, to be read back a region
+    /// at a time.
+    pub fn on_gpu(&self) -> bool {
+        !matches!(self.source, FrameSource::Cpu(_))
+    }
+
+    /// `region` of the frame, clipped to it; `None` when nothing is left.
+    pub fn read(&mut self, region: Rect) -> Option<RgbaImage> {
+        match &mut self.source {
+            FrameSource::Cpu(image) => {
+                let (fw, fh) = image.dimensions();
+                let x = region.x.min(fw);
+                let y = region.y.min(fh);
+                let w = region.w.min(fw - x);
+                let h = region.h.min(fh - y);
+                (w > 0 && h > 0).then(|| image::imageops::crop_imm(image, x, y, w, h).to_image())
+            }
+            #[cfg(target_os = "windows")]
+            FrameSource::Gpu(gpu) => gpu.read(region),
+            #[cfg(not(target_os = "windows"))]
+            FrameSource::Never(_) => None,
+        }
+    }
+
+    /// The whole frame. Takes the frame: pixels already on the CPU are
+    /// handed over rather than copied.
+    pub fn read_all(self) -> Option<RgbaImage> {
+        match self.source {
+            FrameSource::Cpu(image) => Some(image),
+            #[cfg(target_os = "windows")]
+            FrameSource::Gpu(gpu) => {
+                let (w, h) = gpu.size();
+                gpu.read(Rect { x: 0, y: 0, w, h })
+            }
+            #[cfg(not(target_os = "windows"))]
+            FrameSource::Never(_) => None,
+        }
     }
 }
 

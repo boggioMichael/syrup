@@ -33,6 +33,20 @@ windows = { version = "0.61", features = [
     "Graphics_Imaging",
     "Storage_Streams",
     "Foundation",
+    # Windows.Graphics.Capture: the compositor's frames on the GPU.
+    "Graphics_Capture",
+    "Graphics_DirectX",
+    "Graphics_DirectX_Direct3D11",
+    "Security_Authorization_AppCapabilityAccess",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_System_WinRT",
+    "Win32_System_WinRT_Direct3D11",
+    "Win32_System_WinRT_Graphics_Capture",
+    "Win32_UI_HiDpi",
 ] }
 
 # Window capture on Linux and the BSDs: X11 directly, Wayland through the
