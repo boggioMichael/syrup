@@ -1,0 +1,24 @@
+[1m[92m   Compiling[0m num-traits v0.2.19
+[1m[92m   Compiling[0m syn v2.0.119
+[1m[92m   Compiling[0m libm v0.2.16
+[1m[92m   Compiling[0m num-complex v0.4.6
+[1m[92m   Compiling[0m pulp v0.22.3
+[1m[92m   Compiling[0m plotters v0.3.7
+[1m[92m   Compiling[0m zerocopy-derive v0.8.56
+[1m[92m   Compiling[0m zerocopy v0.8.56
+[1m[92m   Compiling[0m half v2.7.1
+[1m[92m   Compiling[0m ciborium-ll v0.2.2
+[1m[92m   Compiling[0m exr v1.74.2
+[1m[92m   Compiling[0m ciborium v0.2.2
+[1m[92m   Compiling[0m criterion v0.5.1
+[1m[92m   Compiling[0m image v0.24.9
+[1m[92m   Compiling[0m syrup v0.1.0 (/Users/runner/work/syrup/syrup)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 56.53s
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/syrup-15af2ee2408ca735)
+
+running 1 test
+capture of "syrup-capture-test.txt": 673x439, frames from the CPU (no GPU capture path on this platform)
+test capture::tests::a_window_is_captured_whole_and_a_region_at_a_time ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 188 filtered out; finished in 0.22s
+
