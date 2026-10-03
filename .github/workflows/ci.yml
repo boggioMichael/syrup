@@ -79,6 +79,12 @@ jobs:
         run: |
           set -o pipefail
           cargo test --workspace 2>&1 | tee logs/test.log
+      - name: Capture path
+        # Which path the window capture took on this system (the GPU or
+        # the CPU, and why), from the capture test's own report.
+        run: |
+          set -o pipefail
+          cargo test -p syrup --lib capture::tests -- --nocapture 2>&1 | tee logs/capture.log
       - name: Build
         run: |
           set -o pipefail

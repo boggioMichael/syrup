@@ -262,3 +262,67 @@ pub fn capture_screen() -> Option<Screen> {
 fn matches(title: &str, query: &str) -> bool {
     title.to_lowercase().contains(&query.to_lowercase())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// CI opens a window on each system and names it in SYRUP_TEST_WINDOW
+    /// (`.github/open-window.sh`); with `--nocapture` the test says which
+    /// path the frames took.
+    #[test]
+    fn a_window_is_captured_whole_and_a_region_at_a_time() {
+        let Ok(title) = std::env::var("SYRUP_TEST_WINDOW") else {
+            return;
+        };
+        let mut window = Window::find(&title).expect("the window CI opened");
+        let mut frame = window.capture_frame().expect("a frame");
+        let (w, h) = frame.size();
+        assert!(w > 20 && h > 20, "{w}x{h}");
+        let region = frame
+            .read(Rect {
+                x: 1,
+                y: 1,
+                w: 16,
+                h: 16,
+            })
+            .expect("a region");
+        assert_eq!(region.dimensions(), (16, 16));
+        let clipped = frame
+            .read(Rect {
+                x: w - 4,
+                y: h - 4,
+                w: 100,
+                h: 100,
+            })
+            .expect("a region clipped to the frame");
+        assert_eq!(clipped.dimensions(), (4, 4));
+        assert!(
+            frame
+                .read(Rect {
+                    x: w,
+                    y: 0,
+                    w: 8,
+                    h: 8
+                })
+                .is_none(),
+            "a region past the frame is nothing"
+        );
+        let on_gpu = frame.on_gpu();
+        let whole = frame.read_all().expect("the whole frame");
+        assert_eq!(whole.dimensions(), (w, h));
+        // A region is those pixels of the whole frame, whichever side they
+        // were read from.
+        let same = image::imageops::crop_imm(&whole, 1, 1, 16, 16).to_image();
+        assert_eq!(region.as_raw(), same.as_raw());
+        println!(
+            "capture of \"{}\": {w}x{h}, {}",
+            window.title(),
+            match window.gpu_unavailable() {
+                None if on_gpu => "frames from the GPU".to_string(),
+                None => "frames from the CPU".to_string(),
+                Some(why) => format!("frames from the CPU ({why})"),
+            }
+        );
+    }
+}
