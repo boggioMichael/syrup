@@ -97,6 +97,23 @@ impl Window {
         self.inner.capture()
     }
 
+    /// [`Window::capture`] into `spare`'s buffer when there is one big
+    /// enough, so a stream of frames does not allocate (and fault in) a
+    /// frame's worth of memory every time: hand back a frame that is done
+    /// with and get the next one in it. On the platforms that read the
+    /// whole window at once anyway, the spare is dropped.
+    pub fn capture_into(&mut self, spare: Option<RgbaImage>) -> Result<RgbaImage, CaptureError> {
+        #[cfg(target_os = "windows")]
+        {
+            self.inner.capture_into(spare)
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            drop(spare);
+            self.inner.capture()
+        }
+    }
+
     /// The window's current contents as a [`Frame`], to read whole or a
     /// region at a time. On Windows the frame stays on the GPU until read.
     pub fn capture_frame(&mut self) -> Result<Frame<'_>, CaptureError> {
@@ -195,15 +212,27 @@ impl<'a> Frame<'a> {
     /// The whole frame. Takes the frame: pixels already on the CPU are
     /// handed over rather than copied.
     pub fn read_all(self) -> Option<RgbaImage> {
+        self.read_all_into(None)
+    }
+
+    /// [`Frame::read_all`] into `spare`'s buffer where the pixels have to
+    /// be read back (the GPU path); elsewhere the spare is dropped.
+    pub fn read_all_into(self, spare: Option<RgbaImage>) -> Option<RgbaImage> {
         match self.source {
-            FrameSource::Cpu(image) => Some(image),
+            FrameSource::Cpu(image) => {
+                drop(spare);
+                Some(image)
+            }
             #[cfg(target_os = "windows")]
             FrameSource::Gpu(gpu) => {
                 let (w, h) = gpu.size();
-                gpu.read(Rect { x: 0, y: 0, w, h })
+                gpu.read_into(Rect { x: 0, y: 0, w, h }, spare)
             }
             #[cfg(not(target_os = "windows"))]
-            FrameSource::Never(_) => None,
+            FrameSource::Never(_) => {
+                drop(spare);
+                None
+            }
         }
     }
 }

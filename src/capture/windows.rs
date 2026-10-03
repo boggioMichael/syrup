@@ -287,8 +287,12 @@ impl Window {
     }
 
     pub fn capture(&mut self) -> Result<RgbaImage, CaptureError> {
+        self.capture_into(None)
+    }
+
+    pub fn capture_into(&mut self, spare: Option<RgbaImage>) -> Result<RgbaImage, CaptureError> {
         super::Frame::new(self.capture_frame()?)
-            .read_all()
+            .read_all_into(spare)
             .ok_or_else(|| CaptureError::Failed("the frame could not be read".into()))
     }
 
@@ -344,8 +348,30 @@ impl Window {
 /// BGRA in place to RGBA, opaque.
 fn swizzle(pixels: &mut [u8]) {
     for pixel in pixels.as_chunks_mut::<4>().0 {
-        pixel.swap(0, 2);
-        pixel[3] = 255;
+        *pixel = rgba(*pixel);
+    }
+}
+
+/// One BGRA pixel as RGBA, opaque: shifts and masks on a 32-bit word,
+/// which the compiler vectorises at the x86-64 baseline (a byte shuffle
+/// would need SSSE3).
+#[inline(always)]
+fn rgba(bgra: [u8; 4]) -> [u8; 4] {
+    let x = u32::from_le_bytes(bgra);
+    (((x & 0x0000_00ff) << 16) | (x & 0x0000_ff00) | ((x >> 16) & 0x0000_00ff) | 0xff00_0000)
+        .to_le_bytes()
+}
+
+/// A row of BGRA pixels into a row of RGBA ones, opaque: the copy out of
+/// the mapped texture and the conversion in one pass.
+fn swizzle_row(bgra: &[u8], rgba_out: &mut [u8]) {
+    for (src, dst) in bgra
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(rgba_out.as_chunks_mut::<4>().0)
+    {
+        *dst = rgba(*src);
     }
 }
 
@@ -605,6 +631,13 @@ impl Gpu {
     /// `region` of the latest frame (clipped to it), read back from the
     /// GPU: only those pixels cross to the CPU.
     pub fn read(&mut self, region: Rect) -> Option<RgbaImage> {
+        self.read_into(region, None)
+    }
+
+    /// [`Gpu::read`] into `spare`'s buffer when there is one and it is big
+    /// enough: a frame of 4K is 33 MB, and a fresh allocation of that every
+    /// frame is faulted in page by page while this reuses the pages.
+    pub fn read_into(&mut self, region: Rect, spare: Option<RgbaImage>) -> Option<RgbaImage> {
         let (latest, fw, fh) = self.latest.clone()?;
         let x0 = region.x.min(fw);
         let y0 = region.y.min(fh);
@@ -623,7 +656,15 @@ impl Gpu {
             back: 1,
         };
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-        let mut pixels = vec![0u8; (w * h * 4) as usize];
+        let bytes = (w * h * 4) as usize;
+        let mut pixels = match spare {
+            Some(image) if image.as_raw().capacity() >= bytes => {
+                let mut v = image.into_raw();
+                v.resize(bytes, 0);
+                v
+            }
+            _ => vec![0u8; bytes],
+        };
         unsafe {
             self.context
                 .CopySubresourceRegion(&staging, 0, 0, 0, 0, &latest, 0, Some(&source));
@@ -633,13 +674,16 @@ impl Gpu {
             let pitch = mapped.RowPitch as usize;
             let row_bytes = (w * 4) as usize;
             for y in 0..h as usize {
-                let src = (mapped.pData as *const u8).add(y * pitch);
-                let dst = &mut pixels[y * row_bytes..(y + 1) * row_bytes];
-                std::ptr::copy_nonoverlapping(src, dst.as_mut_ptr(), row_bytes);
+                // SAFETY: the mapped rows are `pitch` bytes apart and hold
+                // at least `row_bytes` each.
+                let src = std::slice::from_raw_parts(
+                    (mapped.pData as *const u8).add(y * pitch),
+                    row_bytes,
+                );
+                swizzle_row(src, &mut pixels[y * row_bytes..(y + 1) * row_bytes]);
             }
             self.context.Unmap(&staging, 0);
         }
-        swizzle(&mut pixels);
         RgbaImage::from_raw(w, h, pixels)
     }
 }
@@ -784,4 +828,31 @@ fn is_blank(pixels: &[u8]) -> bool {
     (0..count)
         .step_by(step)
         .all(|i| pixels[i * 4..i * 4 + 3] == pixels[..3])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bgra_becomes_opaque_rgba_whole_rows_at_a_time() {
+        assert_eq!(rgba([1, 2, 3, 0]), [3, 2, 1, 255]);
+        assert_eq!(rgba([0xff, 0x80, 0x00, 0x7f]), [0x00, 0x80, 0xff, 0xff]);
+        let bgra = [10u8, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120];
+        let mut out = [0u8; 12];
+        swizzle_row(&bgra, &mut out);
+        assert_eq!(out, [30, 20, 10, 255, 70, 60, 50, 255, 110, 100, 90, 255]);
+        let mut in_place = bgra;
+        swizzle(&mut in_place);
+        assert_eq!(in_place, out);
+    }
+
+    #[test]
+    fn a_blank_surface_is_one_flat_colour() {
+        let flat = vec![7u8; 4 * 1000];
+        assert!(is_blank(&flat));
+        let mut varied = flat.clone();
+        varied[4 * 500] = 200;
+        assert!(!is_blank(&varied));
+    }
 }
