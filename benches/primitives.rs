@@ -351,8 +351,38 @@ fn bench_tracker_dense(c: &mut Criterion) {
     });
 }
 
+/// The correlation kernel itself: the three sums of a 56x56 window, as
+/// the refinement of every candidate computes them, on whichever
+/// instruction set `syrup::kernels::backend` chose.
+fn bench_kernels(c: &mut Criterion) {
+    let (stride, rows) = (1366usize, 768usize);
+    let mut state = 12345u32;
+    let mut noise = |n: usize| -> Vec<u8> {
+        (0..n)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                (state >> 24) as u8
+            })
+            .collect()
+    };
+    let plane = noise(stride * rows);
+    let weights = noise(56 * 56);
+    let name = format!("window_stats 56x56 ({})", syrup::kernels::backend().name());
+    c.bench_function(&name, |b| {
+        let mut i = 0usize;
+        b.iter(|| {
+            i += 1;
+            let (x, y) = ((i * 7) % 1200, (i * 13) % 700);
+            syrup::kernels::window_stats(black_box(&plane), stride, x, y, &weights, 56, 56)
+        })
+    });
+}
+
 criterion_group!(
     benches,
+    bench_kernels,
     bench_template,
     bench_template_set,
     bench_bar_model,

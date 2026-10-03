@@ -75,7 +75,15 @@ const MAX_CANDIDATES: usize = 256;
 
 /// How far below the requested score a coarse position may score and still
 /// be refined: fine detail lost to downscaling lowers coarse scores.
-const COARSE_SLACK: f32 = 0.25;
+///
+/// Measured on 300 frames of a recorded boss fight with three taught
+/// sprites (56 px, one coarse level in use): of 7,904 refinements that
+/// ended at or above 0.72 at full resolution, 5 had scored below 0.43 at
+/// half resolution (a slack of 0.15 from 0.58) and 19 below 0.48; the
+/// matches finally kept were the same to within one near miss in 4,312,
+/// while the refinements at full resolution fell by 29%. Hence 0.15, not
+/// the 0.25 first guessed.
+const COARSE_SLACK: f32 = 0.15;
 
 /// Candidates to keep at `level` of the pyramid.
 fn keep_at(level: usize) -> usize {
@@ -432,6 +440,67 @@ pub struct SetMatch {
     pub mirrored: bool,
 }
 
+/// A frame prepared for several searches: the pyramids the searches build
+/// of their regions are kept and shared, so two sets looked for in the same
+/// band of the frame convert and halve it once.
+///
+/// ```no_run
+/// # use syrup::template::{Prepared, TemplateSet, SetSearch, find_set_in};
+/// # use syrup::geometry::Rect;
+/// # let (frame, band) = (image::RgbaImage::new(1, 1), Rect { x: 0, y: 0, w: 1, h: 1 });
+/// # let (mushrooms, snails) = (TemplateSet::new(syrup::threshold::Channel::Luma, true), TemplateSet::new(syrup::threshold::Channel::Luma, true));
+/// let prepared = Prepared::new(&frame);
+/// let a = find_set_in(&prepared, band, &mushrooms, SetSearch::default());
+/// let b = find_set_in(&prepared, band, &snails, SetSearch::default()); // the band's pyramid, again
+/// ```
+pub struct Prepared<'a> {
+    image: &'a RgbaImage,
+    /// Searches may run from several threads at once: the pyramids are
+    /// behind a lock, held to look one up or put one in, not while
+    /// searching.
+    pyramids: std::sync::Mutex<Vec<std::sync::Arc<Pyramid>>>,
+}
+
+impl<'a> Prepared<'a> {
+    pub fn new(image: &'a RgbaImage) -> Self {
+        Prepared {
+            image,
+            pyramids: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    pub fn image(&self) -> &'a RgbaImage {
+        self.image
+    }
+
+    /// The pyramid of `search` on `channel`, at least `depth` deep: the one
+    /// kept from an earlier search of the same region, or built now. Two
+    /// threads asking for the same new region at once both build it, and
+    /// the later one's is kept: wasted, not wrong.
+    fn pyramid(&self, search: Rect, channel: Channel, depth: usize) -> std::sync::Arc<Pyramid> {
+        let search = clip(search, self.image.width(), self.image.height());
+        let serves = |p: &Pyramid| {
+            p.search == search
+                && p.channel == channel
+                && (p.limit >= depth || p.planes.len() > depth)
+        };
+        if let Some(kept) = self
+            .pyramids
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .find(|p| serves(p))
+        {
+            return std::sync::Arc::clone(kept);
+        }
+        let built = std::sync::Arc::new(Pyramid::new(self.image, search, channel, depth));
+        let mut pyramids = self.pyramids.lock().unwrap_or_else(|e| e.into_inner());
+        pyramids.retain(|p| p.search != search || p.channel != channel);
+        pyramids.push(std::sync::Arc::clone(&built));
+        built
+    }
+}
+
 /// Every place in `search` (clipped to the image) where a picture of `set`
 /// scores at least `options.min_score`, strongest first; where matches of
 /// different pictures overlap by more than a quarter, only the strongest
@@ -442,16 +511,28 @@ pub fn find_set(
     set: &TemplateSet,
     options: SetSearch,
 ) -> Vec<SetMatch> {
+    find_set_in(&Prepared::new(image), search, set, options)
+}
+
+/// [`find_set`] on a [`Prepared`] frame, sharing its pyramids.
+pub fn find_set_in(
+    prepared: &Prepared<'_>,
+    search: Rect,
+    set: &TemplateSet,
+    options: SetSearch,
+) -> Vec<SetMatch> {
     if set.is_empty() || options.limit == 0 {
         return Vec::new();
     }
-    let pyramid = Pyramid::new(image, search, set.channel, set.depth());
+    let image = prepared.image;
+    let pyramid = prepared.pyramid(search, set.channel, set.depth());
+    let pyramid = &*pyramid;
     let mut found: Vec<(usize, bool, usize, usize, f32)> = Vec::new();
     for (index, picture) in set.pictures.iter().enumerate() {
         let variants = std::iter::once((&picture.template, false))
             .chain(picture.mirror.as_ref().map(|m| (m, true)));
         for (template, mirrored) in variants {
-            for (x, y, score) in candidates(&pyramid, template, Some(options.min_score), true) {
+            for (x, y, score) in candidates(pyramid, template, Some(options.min_score), true) {
                 found.push((index, mirrored, x, y, score));
             }
         }
@@ -508,6 +589,88 @@ pub fn find_set(
         }
     }
     kept
+}
+
+/// The best match of a picture of `set` near `centre` — where a tracked
+/// thing is expected — at full resolution and without a coarse search:
+/// each picture is scored at every position within `radius` pixels of
+/// there and then uphill, and the best that reaches `options.min_score`
+/// (and passes its colour check) is the match. A fraction of the cost of
+/// searching a window, for the frames when the thing is where its track
+/// says; `None` says to search the window.
+pub fn find_set_near(
+    prepared: &Prepared<'_>,
+    set: &TemplateSet,
+    centre: (f32, f32),
+    radius: u32,
+    options: SetSearch,
+) -> Option<SetMatch> {
+    if set.is_empty() || options.limit == 0 {
+        return None;
+    }
+    let image = prepared.image;
+    let (fw, fh) = image.dimensions();
+    let reach = radius + MAX_CLIMB as u32;
+    let mut best: Option<(SetMatch, f32)> = None;
+    for (index, picture) in set.pictures.iter().enumerate() {
+        let (w, h) = (picture.width, picture.height);
+        // The region the search can reach: the picture centred at `centre`,
+        // plus the radius and the climb on every side.
+        let left = (centre.0 - w as f32 / 2.0).round() as i64;
+        let top = (centre.1 - h as f32 / 2.0).round() as i64;
+        let x0 = (left - reach as i64).clamp(0, fw as i64) as u32;
+        let y0 = (top - reach as i64).clamp(0, fh as i64) as u32;
+        let x1 = (left + (w + reach) as i64).clamp(0, fw as i64) as u32;
+        let y1 = (top + (h + reach) as i64).clamp(0, fh as i64) as u32;
+        if x1 <= x0 + w || y1 <= y0 + h {
+            continue;
+        }
+        let region = Rect {
+            x: x0,
+            y: y0,
+            w: x1 - x0,
+            h: y1 - y0,
+        };
+        let pyramid = prepared.pyramid(region, set.channel, 0);
+        let plane = &pyramid.planes[0];
+        let (cx, cy) = (
+            (left - x0 as i64).max(0) as usize,
+            (top - y0 as i64).max(0) as usize,
+        );
+        let variants = std::iter::once((&picture.template, false))
+            .chain(picture.mirror.as_ref().map(|m| (m, true)));
+        for (template, mirrored) in variants {
+            let level = &template.levels[0];
+            if plane.width < level.inner.width || plane.height < level.inner.height {
+                continue;
+            }
+            let (x, y, score) = refine(plane, level, cx, cy, radius as usize);
+            if score < options.min_score || best.as_ref().is_some_and(|(_, s)| score <= *s) {
+                continue;
+            }
+            let described = describe(plane, level, pyramid.search, x, y, score);
+            if let Some(max_shift) = options.max_colour_shift {
+                let window = mean_rgb(image, described.bounds);
+                let shift = (0..3)
+                    .map(|c| (window[c] - template.mean_rgb[c]).abs())
+                    .fold(0f32, f32::max);
+                if shift > max_shift {
+                    continue;
+                }
+            }
+            best = Some((
+                SetMatch {
+                    bounds: described.bounds,
+                    score,
+                    centre: described.centre,
+                    picture: index,
+                    mirrored,
+                },
+                score,
+            ));
+        }
+    }
+    best.map(|(m, _)| m)
 }
 
 /// Where a template matched.
@@ -829,23 +992,19 @@ fn dot(a: &[u8], b: &[u8]) -> u32 {
 }
 
 /// The correlation of `template` with the window at `(x, y)`, computing
-/// the window's sums, sum of squares and products in one pass per row.
+/// the window's sums, sum of squares and products in one pass over it
+/// (`kernels::window_stats`, at the CPU's vector width).
 fn score_at(plane: &Plane, template: &TemplateLevel, x: usize, y: usize) -> f32 {
     let (w, h) = (template.inner.width, template.inner.height);
-    let (mut sum, mut squares, mut products) = (0u64, 0u64, 0u64);
-    for v in 0..h {
-        let (row, weights) = (plane.row(y + v, x, w), template.inner.row(v, 0, w));
-        let (mut s, mut q, mut p) = (0u32, 0u32, 0u32);
-        for (&pixel, &weight) in row.iter().zip(weights) {
-            let pixel = u32::from(pixel);
-            s += pixel;
-            q += pixel * pixel;
-            p += pixel * u32::from(weight);
-        }
-        sum += u64::from(s);
-        squares += u64::from(q);
-        products += u64::from(p);
-    }
+    let (sum, squares, products) = crate::kernels::window_stats(
+        &plane.pixels,
+        plane.width,
+        x,
+        y,
+        &template.inner.pixels,
+        w,
+        h,
+    );
     score_from(template, products, sum, squares)
 }
 
@@ -912,16 +1071,11 @@ fn products_everywhere(plane: &Plane, template: &TemplateLevel) -> Vec<u32> {
     let mut out = vec![0u32; columns * rows];
     for (y, accumulator) in out.chunks_exact_mut(columns).enumerate() {
         for v in 0..h {
-            let source = plane.row(y + v, 0, plane.width);
-            for (u, &weight) in template.inner.row(v, 0, w).iter().enumerate() {
-                if weight == 0 {
-                    continue;
-                }
-                let weight = u16::from(weight);
-                for (total, &pixel) in accumulator.iter_mut().zip(&source[u..u + columns]) {
-                    *total += u32::from(weight * u16::from(pixel));
-                }
-            }
+            crate::kernels::correlate_row(
+                accumulator,
+                plane.row(y + v, 0, plane.width),
+                template.inner.row(v, 0, w),
+            );
         }
     }
     out
@@ -1082,11 +1236,16 @@ fn run_with(
 }
 
 /// The search region of a frame on one channel, at full size and halved
-/// `depth` times: built once, shared by every template of a search.
+/// `depth` times: built once, shared by every template of a search (and
+/// by every search of a [`Prepared`] frame).
 struct Pyramid {
     /// The search region as clipped to the image.
     search: Rect,
+    channel: Channel,
     planes: Vec<Plane>,
+    /// The depth asked for; fewer planes than that means the region ran
+    /// out of pixels to halve, and no deeper pyramid of it exists.
+    limit: usize,
 }
 
 impl Pyramid {
@@ -1102,7 +1261,12 @@ impl Pyramid {
             let next = last.half();
             planes.push(next);
         }
-        Pyramid { search, planes }
+        Pyramid {
+            search,
+            channel,
+            planes,
+            limit: depth,
+        }
     }
 }
 
@@ -1168,16 +1332,28 @@ fn candidates(
     };
     let mut candidates = local_maxima(&scores, columns, rows, floor_at(coarsest), first_cut);
     for finer in (0..coarsest).rev() {
-        let (coarse_margin, fine_margin) = (
-            template.levels[finer + 1].margin,
-            template.levels[finer].margin,
+        let (plane, level) = (&planes[finer], &template.levels[finer]);
+        let (columns, rows) = (
+            plane.width - level.inner.width + 1,
+            plane.height - level.inner.height + 1,
         );
+        // Refining each candidate scores a neighbourhood of positions, and
+        // in a small search region the neighbourhoods overlap until they
+        // cover it several times over; scoring every position of the level
+        // once is then both cheaper and more complete.
+        let neighbourhood = (2 * REFINE_RADIUS + 1).pow(2);
+        if candidates.len() * neighbourhood > columns * rows {
+            let scores = score_everywhere(plane, level);
+            candidates = local_maxima(&scores, columns, rows, floor_at(finer), keep_at(finer));
+            continue;
+        }
+        let (coarse_margin, fine_margin) = (template.levels[finer + 1].margin, level.margin);
         candidates = candidates
             .into_iter()
             .map(|(x, y, _)| {
                 refine(
-                    &planes[finer],
-                    &template.levels[finer],
+                    plane,
+                    level,
                     to_finer(x, coarse_margin, fine_margin),
                     to_finer(y, coarse_margin, fine_margin),
                     REFINE_RADIUS,
@@ -1445,6 +1621,35 @@ mod tests {
             },
         );
         assert_eq!(one.len(), 1);
+    }
+
+    #[test]
+    fn a_look_near_the_expected_place_finds_the_picture_without_a_search() {
+        let mut set = TemplateSet::new(Channel::Luma, true);
+        set.add(&creature(false));
+        let frame = field();
+        let prepared = Prepared::new(&frame);
+        let options = SetSearch {
+            min_score: 0.75,
+            limit: 1,
+            max_colour_shift: Some(60.0),
+        };
+        // The creature is at (100, 200), 40x36: its centre is (120, 218).
+        // Expected a few pixels off, as a track would predict it.
+        let found = find_set_near(&prepared, &set, (123.0, 215.0), 3, options).expect("found");
+        assert_eq!((found.bounds.x, found.bounds.y), (100, 200));
+        assert!(found.score > 0.9 && !found.mirrored, "{found:?}");
+        // The mirrored copy at (420, 90), expected further off than the
+        // radius but within the climb.
+        let found = find_set_near(&prepared, &set, (446.0, 108.0), 3, options).expect("found");
+        assert_eq!((found.bounds.x, found.bounds.y), (420, 90));
+        assert!(found.mirrored, "{found:?}");
+        // Expected where there is nothing: no match, and nothing invented.
+        assert!(find_set_near(&prepared, &set, (300.0, 300.0), 3, options).is_none());
+        // Expected far from where it is: out of reach.
+        assert!(find_set_near(&prepared, &set, (180.0, 218.0), 3, options).is_none());
+        // Near the frame's edge, clipped rather than refused.
+        assert!(find_set_near(&prepared, &set, (10.0, 10.0), 3, options).is_none());
     }
 
     #[test]
