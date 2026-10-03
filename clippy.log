@@ -1,0 +1,4 @@
+[1m[92m    Updating[0m crates.io index
+[1m[92m    Checking[0m syrup v0.1.0 (D:\a\syrup\syrup)
+[1m[92m   Compiling[0m syrup-runtime v0.1.0 (D:\a\syrup\syrup\crates\syrup-runtime)
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 29.54s
