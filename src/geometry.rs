@@ -482,7 +482,14 @@ pub fn measure_bar_fill<F>(image: &RgbaImage, fill: Rect, search: Rect, is_fille
 where
     F: Fn(&Rgba<u8>) -> bool,
 {
-    let groove = sample_groove_color(image, fill, search, &is_filled);
+    let groove = match sample_groove_color(image, fill, search, &is_filled) {
+        Groove::Colour(colour) => Some(colour),
+        // Past the fill lies the world outside the bar: the bar is full.
+        Groove::Background => None,
+        // Nothing past the fill to sample: nothing can be said about the
+        // track from here.
+        Groove::Unknown => return None,
+    };
     let is_empty = |pixel: &Rgba<u8>| match groove {
         Some(reference) => is_similar_color(pixel, reference, GROOVE_TOLERANCE),
         None => false,
@@ -637,16 +644,23 @@ fn is_similar_color(pixel: &Rgba<u8>, reference: [u8; 3], tolerance: i32) -> boo
 /// Returns `None` for a bar that is completely full, where there is no
 /// groove to sample — the walk then measures only filled columns and
 /// correctly reports 100%.
-fn sample_groove_color<F>(
-    image: &RgbaImage,
-    fill: Rect,
-    search: Rect,
-    is_filled: &F,
-) -> Option<[u8; 3]>
+/// What lies just past a bar's fill.
+enum Groove {
+    /// The empty track, in this colour.
+    Colour([u8; 3]),
+    /// The world outside the bar: the bar is full.
+    Background,
+    /// Nothing to sample (the bar fills its box to the edge).
+    Unknown,
+}
+
+fn sample_groove_color<F>(image: &RgbaImage, fill: Rect, search: Rect, is_filled: &F) -> Groove
 where
     F: Fn(&Rgba<u8>) -> bool,
 {
-    let (y_start, y_end) = bar_core_rows(image, fill)?;
+    let Some((y_start, y_end)) = bar_core_rows(image, fill) else {
+        return Groove::Unknown;
+    };
     let search_right = search.x.saturating_add(search.w).min(image.width());
 
     // Step just past the fill, skipping a couple of columns of antialiasing
@@ -665,7 +679,7 @@ where
         }
     }
     if samples.is_empty() {
-        return None;
+        return Groove::Unknown;
     }
 
     // The median per channel resists the border pixels caught at the edges
@@ -689,11 +703,25 @@ where
             GROOVE_TOLERANCE,
         )
     {
-        return None;
+        return Groove::Background;
+    }
+    // A groove is dull: the empty track of a bar is grey or dark. Something
+    // vivid past the fill (lava behind a translucent panel, right of a bar
+    // that is full) is the world, not groove.
+    let (max, min) = (
+        *candidate.iter().max().unwrap_or(&0) as f32,
+        *candidate.iter().min().unwrap_or(&0) as f32,
+    );
+    if max > 0.0 && (max - min) / max > GROOVE_SATURATION {
+        return Groove::Background;
     }
 
-    Some(candidate)
+    Groove::Colour(candidate)
 }
+
+/// The most saturation a groove colour may have (a track is grey or dark;
+/// scenery past a full bar is not).
+const GROOVE_SATURATION: f32 = 0.45;
 
 /// Sample the colour just above the bar, which is outside its track.
 fn sample_outside_color(image: &RgbaImage, fill: Rect) -> Option<[u8; 3]> {

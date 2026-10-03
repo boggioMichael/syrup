@@ -26,6 +26,17 @@
 - `bars::BarModel`, `geometry::NormRect`, `glyphs` cells summed in eight
   lanes, `tracking::ObjectTracker` derives `Clone`, `motion` tracks the
   largest `max_blobs` of a busy frame and says how many it left out.
+- `bars`, from a lava map: a model learns the fill's own least saturation
+  and brightness (`min_saturation`, `min_value`) and a pixel of its hue
+  but duller or darker — the scene behind a translucent track — is not
+  fill; the hue tolerance is 16° (`HUE_TOLERANCE`), whatever an old
+  model says; `learn` with a colour expected takes the nearest hue with
+  any presence in the box, however small, and gives up when none is
+  within `EXPECTED_WITHIN` (25°) of it, rather than take the scenery for
+  the bar; `find_bar` finds a bar as a band of rows whose runs of the
+  colour start together and are about as long (not the biggest blob of
+  the colour, nor a line of it). `geometry::measure_bar_fill`: something
+  vivid past the fill is the world, not groove — the bar is full.
 - CI publishes each check job's logs to `build-output/<branch>/<os>`, and
   `[vendor]` in a commit message publishes the vendored crates to
   `build-cache/vendor`.
