@@ -324,5 +324,39 @@ mod tests {
                 Some(why) => format!("frames from the CPU ({why})"),
             }
         );
+        // The same window through the CPU path: the same client area and,
+        // where that path gives a real picture, the same content — which
+        // is what shows the client area was found within the compositor's
+        // frame (title bar and all) rather than cut from its corner.
+        window.without_gpu();
+        let cpu = window.capture().expect("a frame through the CPU path");
+        assert_eq!(
+            cpu.dimensions(),
+            (w, h),
+            "the two paths disagree on the client area"
+        );
+        if on_gpu {
+            let ink = |p: &image::Rgba<u8>| p[0] < 200 || p[1] < 200 || p[2] < 200;
+            let close = |a: &image::Rgba<u8>, b: &image::Rgba<u8>| {
+                (0..3).all(|c| a[c].abs_diff(b[c]) <= 32)
+            };
+            let (mut marked, mut agreed) = (0usize, 0usize);
+            for (a, b) in whole.pixels().zip(cpu.pixels()) {
+                if ink(a) || ink(b) {
+                    marked += 1;
+                    agreed += usize::from(close(a, b));
+                }
+            }
+            let agreement = agreed as f64 / marked.max(1) as f64;
+            println!(
+                "  the CPU path's frame agrees on {:.0}% of the {marked} marked pixels",
+                agreement * 100.0
+            );
+            assert!(
+                marked < 100 || agreement > 0.5,
+                "the GPU frame's client area is off: {:.0}% agreement",
+                agreement * 100.0
+            );
+        }
     }
 }
