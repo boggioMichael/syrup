@@ -151,7 +151,11 @@ pub fn find(query: &str) -> Result<(String, Window), CaptureError> {
                 title,
                 Window {
                     hwnd,
-                    gpu: GpuState::Untried,
+                    gpu: if super::cpu_asked_for() {
+                        GpuState::Unavailable("SYRUP_CAPTURE=cpu".into())
+                    } else {
+                        GpuState::Untried
+                    },
                     gdi: None,
                 },
             )
@@ -241,24 +245,45 @@ impl Window {
                 Err(why) => GpuState::Unavailable(why),
             };
         }
-        if let GpuState::Ready(gpu) = &mut self.gpu {
-            match gpu.refresh(&client) {
+        // Decided first, borrowed after: a borrow of the GPU state that is
+        // returned on one path cannot be live where the other path falls
+        // back to GDI.
+        let mut given_up = None;
+        let fresh = match &mut self.gpu {
+            GpuState::Ready(gpu) => match gpu.refresh(&client) {
                 Ok(()) => {
                     gpu.failures = 0;
-                    return Ok(FrameSource::Gpu(gpu));
+                    true
                 }
                 Err(why) => {
                     gpu.failures += 1;
                     if gpu.failures >= GPU_FAILURES {
-                        self.gpu = GpuState::Unavailable(format!(
-                            "the GPU capture failed {GPU_FAILURES} times running: {why}"
-                        ));
+                        given_up = Some(why);
                     }
+                    false
                 }
-            }
+            },
+            _ => false,
+        };
+        if let Some(why) = given_up {
+            self.gpu = GpuState::Unavailable(format!(
+                "the GPU capture failed {GPU_FAILURES} times running: {why}"
+            ));
+        }
+        if fresh {
+            return match &mut self.gpu {
+                GpuState::Ready(gpu) => Ok(FrameSource::Gpu(gpu)),
+                _ => Err(CaptureError::Failed("the GPU frame went missing".into())),
+            };
         }
         self.capture_gdi(client.width, client.height, client.origin)
             .map(FrameSource::Cpu)
+    }
+
+    /// Frames through GDI only, from now on: for comparing the paths, or a
+    /// driver the GPU path does not get on with.
+    pub fn without_gpu(&mut self) {
+        self.gpu = GpuState::Unavailable("asked for the CPU path".into());
     }
 
     pub fn capture(&mut self) -> Result<RgbaImage, CaptureError> {

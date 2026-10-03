@@ -102,6 +102,39 @@ impl Window {
     pub fn capture_frame(&mut self) -> Result<Frame<'_>, CaptureError> {
         Ok(Frame::new(self.inner.capture_frame()?))
     }
+
+    /// Why this window's frames are not coming from the GPU, when they are
+    /// not: the platform has no such path, the system or the window rules
+    /// it out, it failed too often, or the CPU path was asked for (with
+    /// `SYRUP_CAPTURE=cpu` in the environment, or [`Window::without_gpu`]).
+    /// `None` while they are — and, on Windows, before the first capture
+    /// has tried.
+    pub fn gpu_unavailable(&self) -> Option<&str> {
+        #[cfg(target_os = "windows")]
+        {
+            self.inner.gpu_unavailable()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            Some("no GPU capture path on this platform")
+        }
+    }
+
+    /// Frames through the CPU path only, from now on (on Windows, GDI
+    /// rather than Windows.Graphics.Capture): for comparing the two, or a
+    /// driver the GPU path does not get on with. Elsewhere nothing changes.
+    pub fn without_gpu(&mut self) {
+        #[cfg(target_os = "windows")]
+        self.inner.without_gpu();
+    }
+}
+
+/// `SYRUP_CAPTURE=cpu` (or `gdi`) in the environment: the CPU path only.
+#[cfg(target_os = "windows")]
+fn cpu_asked_for() -> bool {
+    std::env::var("SYRUP_CAPTURE")
+        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "cpu" | "gdi"))
+        .unwrap_or(false)
 }
 
 /// Where a frame's pixels are: on the CPU already, or still on the GPU.
