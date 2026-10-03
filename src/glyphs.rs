@@ -98,13 +98,20 @@ pub struct TextReading {
 }
 
 /// Why a labelled example could not be learned from.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LearnError {
     /// No text-like pixels were found in the region.
     NoText,
     /// The crop splits into a different number of glyphs than the label
     /// has characters.
     GlyphCountMismatch { expected: usize, found: usize },
+    /// A character the label uses twice looks different each time: the
+    /// region is not that text (noise, or the wrong line, or the wrong
+    /// label), however many glyphs it split into.
+    Inconsistent { ch: char, correlation: f32 },
+    /// Learned on trial, the font did not read the region back as the
+    /// label: `read` is what it gave. Nothing was kept.
+    DoesNotReadBack { read: String },
 }
 
 impl std::fmt::Display for LearnError {
@@ -115,6 +122,16 @@ impl std::fmt::Display for LearnError {
                 f,
                 "the label has {expected} characters but the region splits into {found} glyphs"
             ),
+            LearnError::Inconsistent { ch, correlation } => write!(
+                f,
+                "the two {ch:?} in the label look nothing alike in the region (correlation {correlation:.2})"
+            ),
+            LearnError::DoesNotReadBack { read } => {
+                write!(
+                    f,
+                    "learned on trial, the font reads the region as {read:?}, not the label"
+                )
+            }
         }
     }
 }
@@ -130,6 +147,18 @@ struct Template {
     /// against it is a single dot product (see [`Standardised`]).
     unit: Standardised,
     samples: u32,
+    /// The height of the line it was learned from: a pixel font drawn at
+    /// two sizes is two fonts (the strokes do not scale), and a glyph is
+    /// matched against the templates of its own size when there are any.
+    height: u32,
+}
+
+/// Two line heights within this share of the taller are the same size of
+/// the font.
+const SAME_SIZE_WITHIN: f32 = 0.2;
+
+fn same_size(a: u32, b: u32) -> bool {
+    (a as f32 - b as f32).abs() <= SAME_SIZE_WITHIN * a.max(b) as f32
 }
 
 /// A font learned from labelled examples.
@@ -183,9 +212,14 @@ impl GlyphSet {
         &self.options
     }
 
-    /// Characters learned so far.
+    /// Characters learned so far (each once, however many sizes it was
+    /// learned at).
     pub fn chars(&self) -> impl Iterator<Item = char> + '_ {
-        self.templates.iter().map(|t| t.ch)
+        self.templates
+            .iter()
+            .enumerate()
+            .filter(|(i, t)| !self.templates[..*i].iter().any(|o| o.ch == t.ch))
+            .map(|(_, t)| t.ch)
     }
 
     /// Learn from `region` of `image`, which shows exactly `label` (spaces
@@ -199,6 +233,14 @@ impl GlyphSet {
     /// appear on screen: a character that does not reach the full height
     /// (a slash, a dot, a dash) learned from a crop of its own is measured
     /// against its own height instead, and will not match in a real line.
+    ///
+    /// An example is checked before it is kept: a character the label uses
+    /// twice must look alike both times, and the font with the example
+    /// learned (on trial) must read the region back as the label, every
+    /// glyph as surely as [`GlyphSet::read`] demands. A region of noise, the
+    /// wrong line, or a label that is not what the pixels say can all be
+    /// cut into as many pieces as the label has characters; none of them
+    /// reads back, and none of them is learned.
     pub fn learn(
         &mut self,
         image: &RgbaImage,
@@ -214,26 +256,87 @@ impl GlyphSet {
                 found: spans.len(),
             });
         }
-        for (&(x0, x1), &ch) in spans.iter().zip(&expected) {
-            let cell = line.cell(x0, x1);
-            match self.templates.iter_mut().find(|t| t.ch == ch) {
-                Some(template) => {
-                    template.samples += 1;
-                    let n = template.samples as f32;
-                    for (mean, value) in template.cell.iter_mut().zip(&cell) {
-                        *mean += (value - *mean) / n;
+        let cells: Vec<(char, Vec<f32>)> = spans
+            .iter()
+            .zip(&expected)
+            .map(|(&(x0, x1), &ch)| (ch, line.cell(x0, x1)))
+            .collect();
+        // The same character must look the same wherever it appears.
+        for (i, (ch, cell)) in cells.iter().enumerate() {
+            let unit = Standardised::new(cell);
+            for (other, cell) in &cells[..i] {
+                if other == ch {
+                    let correlation = unit.correlation(&Standardised::new(cell));
+                    if correlation < SAME_CHARACTER_AGREEMENT {
+                        return Err(LearnError::Inconsistent {
+                            ch: *ch,
+                            correlation,
+                        });
                     }
-                    template.unit = Standardised::new(&template.cell);
                 }
-                None => self.templates.push(Template {
-                    ch,
-                    unit: Standardised::new(&cell),
-                    cell,
-                    samples: 1,
-                }),
             }
         }
+        // On trial first: the font with this example in it must read the
+        // region back as the label.
+        let mut trial = self.templates.clone();
+        for (ch, cell) in &cells {
+            Self::absorb(&mut trial, *ch, cell, line.height);
+        }
+        let on_trial = GlyphSet {
+            options: self.options,
+            templates: trial,
+        };
+        let read = on_trial.read(image, region);
+        let agrees = read.value.as_ref().is_some_and(|r| {
+            r.text
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .eq(expected.iter().copied())
+        });
+        if !agrees {
+            return Err(LearnError::DoesNotReadBack {
+                read: read
+                    .value
+                    .map(|r| r.text)
+                    .or_else(|| {
+                        on_trial
+                            .read_all(image, region)
+                            .map(|r| format!("{} (not surely)", r.text))
+                    })
+                    .unwrap_or_default(),
+            });
+        }
+        self.templates = on_trial.templates;
         Ok(expected.len())
+    }
+
+    /// One more example of `ch`, from a line `height` tall, into
+    /// `templates`: averaged into its template of that size, or a new
+    /// template.
+    fn absorb(templates: &mut Vec<Template>, ch: char, cell: &[f32], height: u32) {
+        match templates
+            .iter_mut()
+            .find(|t| t.ch == ch && same_size(t.height, height))
+        {
+            Some(template) => {
+                template.samples += 1;
+                let n = template.samples as f32;
+                for (mean, value) in template.cell.iter_mut().zip(cell) {
+                    *mean += (value - *mean) / n;
+                }
+                template.unit = Standardised::new(&template.cell);
+                // The size settles on what it has seen.
+                template.height =
+                    (template.height * (template.samples - 1) + height) / template.samples;
+            }
+            None => templates.push(Template {
+                ch,
+                unit: Standardised::new(cell),
+                cell: cell.to_vec(),
+                samples: 1,
+                height,
+            }),
+        }
     }
 
     /// Read `region`, glyph by glyph, whatever the confidence.
@@ -257,7 +360,7 @@ impl GlyphSet {
                 {
                     text.push(' ');
                 }
-                let found = self.classify(&line.cell(a, b));
+                let found = self.classify(&line.cell(a, b), line.height);
                 text.push(found.0);
                 glyphs.push(GlyphMatch {
                     ch: found.0,
@@ -316,12 +419,18 @@ impl GlyphSet {
         )
     }
 
-    /// Best character for a normalised cell: `(char, score, margin)`.
-    fn classify(&self, cell: &[f32]) -> (char, f32, f32) {
+    /// Best character for a normalised cell from a line `height` tall:
+    /// `(char, score, margin)`. Only the templates of that size are asked
+    /// when there are any; a size never learned is read with all of them.
+    fn classify(&self, cell: &[f32], height: u32) -> (char, f32, f32) {
         let cell = Standardised::new(cell);
         let mut best = (' ', -1.0f32);
         let mut second = -1.0f32;
+        let own_size = self.templates.iter().any(|t| same_size(t.height, height));
         for template in &self.templates {
+            if own_size && !same_size(template.height, height) {
+                continue;
+            }
             let score = cell.correlation(&template.unit);
             if score > best.1 {
                 if best.0 != template.ch {
@@ -348,7 +457,7 @@ impl GlyphSet {
     /// distinct piece once, so a wide smear of unreadable ink costs about as
     /// much as a few glyphs rather than growing with the square of its width.
     fn best_split(&self, line: &Line, x0: u32, x1: u32) -> Vec<(u32, u32)> {
-        let whole = self.classify(&line.cell(x0, x1));
+        let whole = self.classify(&line.cell(x0, x1), line.height);
         if whole.1 >= self.options.min_score || x1 - x0 < 4 {
             return vec![(x0, x1)];
         }
@@ -360,7 +469,7 @@ impl GlyphSet {
             }
             *scores.entry((a, b)).or_insert_with(|| {
                 let (a, b) = line.trim_columns(a, b)?;
-                Some(((a, b), self.classify(&line.cell(a, b)).1))
+                Some(((a, b), self.classify(&line.cell(a, b), line.height).1))
             })
         };
         let mut best = (vec![(x0, x1)], whole.1);
@@ -421,6 +530,12 @@ impl GlyphSet {
 /// it matches its best character.
 type ScoredPiece = ((u32, u32), f32);
 
+/// How alike two cells of the same character in one labelled example must
+/// be for the example to be believed: the same glyph drawn twice in one
+/// line correlates near 1; two patches of noise, or two glyphs that are
+/// not the ones the label says, near 0.
+const SAME_CHARACTER_AGREEMENT: f32 = 0.5;
+
 /// Widest glyph a split may produce, as a multiple of the line height.
 /// Glyph cells are square, so wider pieces would be squeezed to fit anyway.
 const MAX_GLYPH_ASPECT: f32 = 1.5;
@@ -431,6 +546,41 @@ const SPACE_GAP_FRACTION: f32 = 0.5;
 /// How much better the weakest piece of a split must score than the
 /// unsplit run before the split is believed.
 const SPLIT_ADVANTAGE: f32 = 0.05;
+
+/// A filled square of ink this fraction of the line height on a side (and
+/// at least [`MIN_BLOCK_SIDE`] pixels) is a block, not a glyph: the empty
+/// track of a bar beside its fill, a panel's edge. No readable font has a
+/// stroke that thick.
+const BLOCK_SIDE: f32 = 0.5;
+const MIN_BLOCK_SIDE: u32 = 3;
+
+/// How many times, at most, the band is narrowed to the rows of its own
+/// glyphs. Each pass can only shrink it, and two usually settle it.
+const BAND_PASSES: usize = 4;
+
+/// The tallest run of `true` in `inked`, allowing a single-row gap (the dot
+/// of an i, the gap in a colon), as half-open `(start, end)`.
+fn tallest_run(inked: &[bool]) -> Option<(u32, u32)> {
+    let height = inked.len();
+    let mut best: Option<(usize, usize)> = None;
+    let mut y = 0;
+    while y < height {
+        if !inked[y] {
+            y += 1;
+            continue;
+        }
+        let start = y;
+        let mut end = y + 1;
+        while end < height && (inked[end] || (end + 1 < height && inked[end + 1])) {
+            end += 1;
+        }
+        if best.is_none_or(|(s, e)| end - start > e - s) {
+            best = Some((start, end));
+        }
+        y = end;
+    }
+    best.map(|(s, e)| (s as u32, e as u32))
+}
 
 /// The text band of a region: evidence rows the line occupies, and which
 /// columns hold ink.
@@ -464,34 +614,32 @@ impl Line {
         let inked: Vec<bool> = (0..height)
             .map(|y| (0..width).any(|x| evidence.get_pixel(x, y).0[0] >= threshold))
             .collect();
-        let mut best: Option<(u32, u32)> = None;
-        let mut y = 0;
-        while y < height {
-            if !inked[y as usize] {
-                y += 1;
-                continue;
-            }
-            let start = y;
-            let mut end = y + 1;
-            while end < height
-                && (inked[end as usize] || (end + 1 < height && inked[end as usize + 1]))
-            {
-                end += 1;
-            }
-            if best.is_none_or(|(s, e)| end - start > e - s) {
-                best = Some((start, end));
-            }
-            y = end;
-        }
-        let (top, bottom) = best?;
-        Some(Self {
+        let (top, bottom) = tallest_run(&inked)?;
+        let mut line = Self {
             origin: (region.x, region.y),
             evidence,
             top,
             height: bottom - top,
             ink_threshold: threshold,
             min_gap: options.min_gap.max(1),
-        })
+        };
+        // That band took every inked row, and a bar's end or the empty track
+        // beside its fill stands taller than the writing on it. Narrow the
+        // band to the rows of the writing itself — the spans that survive,
+        // blocks and debris dropped — until it holds still, so a line is
+        // measured the same with and without such company.
+        for _ in 0..BAND_PASSES {
+            let spans = line.spans();
+            let Some((top, bottom)) = line.band_of(&spans) else {
+                break;
+            };
+            if (top, bottom) == (line.top, line.top + line.height) {
+                break;
+            }
+            line.top = top;
+            line.height = bottom - top;
+        }
+        Some(line)
     }
 
     fn is_ink(&self, x: u32, y: u32) -> bool {
@@ -535,7 +683,56 @@ impl Line {
                 _ => merged.push(span),
             }
         }
+        // A block of ink is not writing: the empty track of a bar beside its
+        // fill, lighter than the fill the text sits on, or a panel's edge.
+        merged.retain(|&(a, b)| !self.holds_block(a, b));
         self.main_cluster(merged, &ink)
+    }
+
+    /// Whether columns `a..b` of the band hold a filled square of ink
+    /// [`BLOCK_SIDE`] of the line height on a side. No readable font has a
+    /// stroke that thick, so a span holding one is a block of lighter
+    /// background, not a glyph.
+    fn holds_block(&self, a: u32, b: u32) -> bool {
+        let side = ((self.height as f32 * BLOCK_SIDE).ceil() as u32).max(MIN_BLOCK_SIDE);
+        let (w, h) = (b - a, self.height);
+        if w < side || h < side {
+            return false;
+        }
+        // Prefix sums of the ink over the span, so any square is summed in
+        // four lookups.
+        let (w, h, side) = (w as usize, h as usize, side as usize);
+        let stride = w + 1;
+        let mut sums = vec![0u32; stride * (h + 1)];
+        for y in 0..h {
+            let mut row = 0;
+            for x in 0..w {
+                row += u32::from(self.is_ink(a + x as u32, self.top + y as u32));
+                sums[(y + 1) * stride + x + 1] = sums[y * stride + x + 1] + row;
+            }
+        }
+        let at = |x: usize, y: usize| sums[y * stride + x];
+        let full = (side * side) as u32;
+        (0..=h - side).any(|y| {
+            (0..=w - side).any(|x| {
+                // Inclusion-exclusion, added before subtracted so it never
+                // dips below zero on the way.
+                at(x + side, y + side) + at(x, y) - at(x, y + side) - at(x + side, y) == full
+            })
+        })
+    }
+
+    /// The rows of the band that `spans` ink, as the tallest run of them
+    /// (allowing a one-row gap), in image rows.
+    fn band_of(&self, spans: &[(u32, u32)]) -> Option<(u32, u32)> {
+        let inked: Vec<bool> = (self.top..self.top + self.height)
+            .map(|y| {
+                spans
+                    .iter()
+                    .any(|&(a, b)| (a..b).any(|x| self.is_ink(x, y)))
+            })
+            .collect();
+        tallest_run(&inked).map(|(start, end)| (self.top + start, self.top + end))
     }
 
     /// Keep only the line itself: the group of runs with the most ink,
@@ -728,12 +925,8 @@ struct Standardised(Vec<f32>);
 impl Standardised {
     fn new(cell: &[f32]) -> Self {
         let n = cell.len().max(1) as f32;
-        let mean = cell.iter().sum::<f32>() / n;
-        let norm = cell
-            .iter()
-            .map(|v| (v - mean) * (v - mean))
-            .sum::<f32>()
-            .sqrt();
+        let mean = lanes(cell, |v| v) / n;
+        let norm = lanes(cell, |v| (v - mean) * (v - mean)).sqrt();
         // A flat cell has no shape to correlate; all zeros makes every
         // correlation with it 0.
         let scale = if norm > 1e-6 { 1.0 / norm } else { 0.0 };
@@ -742,8 +935,35 @@ impl Standardised {
 
     /// Pearson correlation with another standardised cell of the same size.
     fn correlation(&self, other: &Standardised) -> f32 {
-        self.0.iter().zip(&other.0).map(|(a, b)| a * b).sum()
+        let (a, b) = (&self.0[..], &other.0[..self.0.len().min(other.0.len())]);
+        let a = &a[..b.len()];
+        let (a_chunks, a_rest) = a.as_chunks::<8>();
+        let (b_chunks, b_rest) = b.as_chunks::<8>();
+        let mut totals = [0.0f32; 8];
+        for (ca, cb) in a_chunks.iter().zip(b_chunks) {
+            for ((total, x), y) in totals.iter_mut().zip(ca).zip(cb) {
+                *total += x * y;
+            }
+        }
+        totals.iter().sum::<f32>() + a_rest.iter().zip(b_rest).map(|(x, y)| x * y).sum::<f32>()
     }
+}
+
+/// The sum of `f` over a cell, in eight running totals: one running total
+/// is a chain of dependent additions the CPU cannot overlap, and the
+/// compiler may not reorder floating-point sums on its own. A cell is
+/// classified against every template of the font, many times a frame, so
+/// this is where the reader's time went.
+#[inline]
+fn lanes(values: &[f32], f: impl Fn(f32) -> f32) -> f32 {
+    let (chunks, rest) = values.as_chunks::<8>();
+    let mut totals = [0.0f32; 8];
+    for chunk in chunks {
+        for (total, &v) in totals.iter_mut().zip(chunk) {
+            *total += f(v);
+        }
+    }
+    totals.iter().sum::<f32>() + rest.iter().map(|&v| f(v)).sum::<f32>()
 }
 
 #[cfg(test)]
@@ -907,6 +1127,48 @@ mod tests {
     }
 
     #[test]
+    fn an_example_that_does_not_read_back_is_not_learned() {
+        // The text says 3574/3574; a label with a prefix and brackets has
+        // as many characters as the line can be cut into, and would have
+        // taught a '3' that is really a 'M'. The same character twice in
+        // the label looking nothing alike gives it away.
+        let (image, region) = render("3574/3574", 2, None);
+        let mut set = GlyphSet::new(GlyphOptions::default());
+        let wrong = set.learn(&image, region, "MP[3574/3574]");
+        assert!(
+            matches!(
+                wrong,
+                Err(LearnError::Inconsistent { .. } | LearnError::DoesNotReadBack { .. })
+            ),
+            "{wrong:?}"
+        );
+        assert_eq!(set.chars().count(), 0, "nothing kept from the wrong label");
+        // The right label reads back, and is kept.
+        assert_eq!(set.learn(&image, region, "3574/3574"), Ok(9));
+        assert_eq!(set.read(&image, region).value.unwrap().text, "3574/3574");
+        // Noise with enough runs to cut into a label's worth of pieces is
+        // refused too.
+        let mut state = 99u32;
+        let noise = RgbaImage::from_fn(300, 16, |_, _| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            let v = (state >> 24) as u8;
+            Rgba([v, v / 2, 255 - v, 255])
+        });
+        let whole = Rect {
+            x: 0,
+            y: 0,
+            w: 300,
+            h: 16,
+        };
+        let mut fresh = GlyphSet::new(GlyphOptions::default());
+        let from_noise = fresh.learn(&noise, whole, "HP[6370/6370]");
+        assert!(from_noise.is_err(), "{from_noise:?}");
+        assert_eq!(fresh.chars().count(), 0);
+    }
+
+    #[test]
     fn learning_requires_the_label_to_match_the_glyphs() {
         let mut set = GlyphSet::new(GlyphOptions::default());
         let (image, region) = render("123", 2, None);
@@ -1044,5 +1306,146 @@ mod tests {
             set.read(&image, region).value.map(|r| r.text),
             Some("2026".to_string())
         );
+    }
+
+    /// `text` printed over a status bar 300 wide, filled up to `fill` (the
+    /// whole bar when `None`): the empty track beyond the fill is lighter
+    /// than the fill and taller than the writing, the fill ends in a bright
+    /// edge the full height of the bar, and both ends of the bar are
+    /// capped the same way. The region is the whole bar with a margin.
+    fn bar_with_track(text: &str, fill: Option<u32>) -> (RgbaImage, Rect) {
+        let track = Rgba([150, 140, 145, 255]);
+        let edge = Rgba([255, 205, 220, 255]);
+        let (width, height) = (300, draw::text_height(2) + 16);
+        let mut image = RgbaImage::from_pixel(width, height, BAR);
+        let fill = fill.unwrap_or(width);
+        for y in 0..height {
+            for x in 0..width {
+                let cap = (x < 2 || x + 2 >= width) && y > 0 && y + 1 < height;
+                let fill_end = fill < width && x + 2 >= fill && x < fill;
+                if cap || fill_end {
+                    image.put_pixel(x, y, edge);
+                } else if x >= fill && y >= 2 && y + 2 < height {
+                    image.put_pixel(x, y, track);
+                }
+            }
+        }
+        let left = (width - draw::text_width(text, 2)) / 2;
+        draw::draw_text(text, left as i64, 8, 2, |x, y| {
+            image.put_pixel(x as u32, y as u32, INK)
+        });
+        (
+            image,
+            Rect {
+                x: 0,
+                y: 0,
+                w: width,
+                h: height,
+            },
+        )
+    }
+
+    /// `text` in the bitmap font at `scale`, every stroke one pixel wider
+    /// than the scale makes it: the font as another size draws it, not
+    /// the same shapes scaled.
+    fn render_bold(text: &str, scale: u32) -> (RgbaImage, Rect) {
+        let width = draw::text_width(text, scale) + 24;
+        let height = draw::text_height(scale) + 12;
+        let mut image = RgbaImage::from_pixel(width, height, BAR);
+        draw::draw_text(text, 12, 6, scale, |x, y| {
+            for dx in 0..=1 {
+                let x = x as u32 + dx;
+                if x < width {
+                    image.put_pixel(x, y as u32, INK);
+                }
+            }
+        });
+        (
+            image,
+            Rect {
+                x: 0,
+                y: 0,
+                w: width,
+                h: height,
+            },
+        )
+    }
+
+    #[test]
+    fn a_font_learned_at_two_sizes_keeps_a_template_per_size() {
+        // The same characters at 14 and 28 pixels, drawn differently (the
+        // strokes of the larger are five pixels, not four): one font, two
+        // sizes, as a game's HUD has them.
+        let mut set = GlyphSet::new(GlyphOptions::default());
+        let (small, small_region) = render("0123456789/", 2, None);
+        let (big, big_region) = render_bold("0123456789/", 4);
+        assert_eq!(set.learn(&small, small_region, "0123456789/"), Ok(11));
+        assert_eq!(set.learn(&big, big_region, "0123456789/"), Ok(11));
+        assert_eq!(
+            set.chars().count(),
+            11,
+            "each character once, whatever its sizes"
+        );
+        // Each size reads with its own templates, pixel for pixel: had the
+        // sizes been averaged into one template, neither would score so.
+        for (image, region, size) in [(&small, small_region, "small"), (&big, big_region, "big")] {
+            let reading = set.read(image, region).value.expect(size);
+            assert_eq!(reading.text, "0123456789/");
+            let worst = reading
+                .glyphs
+                .iter()
+                .map(|g| g.score)
+                .fold(1.0f32, f32::min);
+            assert!(worst > 0.99, "{size}: the worst glyph scores {worst:.3}");
+        }
+        // A size never learned is read with every template there is (the
+        // glyphs spread out, so no row of the crop is mostly ink).
+        let (middle, middle_region) = render("2026", 3, Some(40));
+        let reading = set.read(&middle, middle_region);
+        assert_eq!(
+            reading.value.map(|r| r.text.replace(' ', "")),
+            Some("2026".to_string()),
+            "{:?}",
+            reading.failure_reason
+        );
+    }
+
+    #[test]
+    fn the_empty_track_beside_a_bars_fill_is_not_a_glyph() {
+        // The fill ends 20 columns past the writing: the lighter track beside
+        // it, taller than the digits, is nearer to them than a space.
+        let text = "4972/6370";
+        let fill = (300 + draw::text_width(text, 2)) / 2 + 20;
+        let (partial, region) = bar_with_track(text, Some(fill));
+        let (full, _) = bar_with_track(text, None);
+        // Lower still: the fill ends four columns past the last digit.
+        let (lower, _) = bar_with_track(text, Some(fill - 16));
+
+        let mut from_partial = GlyphSet::new(GlyphOptions::default());
+        assert_eq!(from_partial.learn(&partial, region, text), Ok(9));
+        let mut from_full = GlyphSet::new(GlyphOptions::default());
+        assert_eq!(from_full.learn(&full, region, text), Ok(9));
+        for (font, learned_on) in [(&from_partial, "a partial bar"), (&from_full, "a full bar")] {
+            for (picture, shown) in [(&full, "full"), (&partial, "partial"), (&lower, "lower")] {
+                let reading = font.read(picture, region);
+                let read = reading.value.as_ref().map(|r| r.text.as_str());
+                assert_eq!(
+                    read,
+                    Some(text),
+                    "learned on {learned_on}, reading the {shown} bar: {:?}",
+                    reading.failure_reason
+                );
+                // The line is measured by the writing, not by the track or
+                // the bar's edges standing taller beside it.
+                let glyphs = &reading.value.as_ref().unwrap().glyphs;
+                assert!(
+                    glyphs
+                        .iter()
+                        .all(|g| g.bounds.h == draw::text_height(2) && g.bounds.y == 8),
+                    "the {shown} bar's glyphs: {:?}",
+                    glyphs.iter().map(|g| g.bounds).collect::<Vec<_>>()
+                );
+            }
+        }
     }
 }

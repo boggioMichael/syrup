@@ -47,6 +47,7 @@ fn capture_error(e: CaptureError, query: &str) -> SyrupError {
             format!("no window title contains {query:?}"),
         ),
         CaptureError::Closed => (ErrorKind::BadParameter, "the window was closed".into()),
+        CaptureError::Minimised => (ErrorKind::Io, "the window is minimised".into()),
         CaptureError::Unavailable(reason) => (ErrorKind::MissingDependency, reason),
         CaptureError::Denied(reason) => (ErrorKind::PermissionDenied, reason),
         CaptureError::Failed(reason) => (ErrorKind::Io, reason),

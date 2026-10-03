@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+### The vision engine of MapleSyrup
+- `capture`: on Windows, frames come through Windows.Graphics.Capture —
+  the compositor's own picture of the window, kept on the GPU, the client
+  area only, cursor off and the capture border off where the system
+  allows (Windows 11) — read back whole or a region at a time
+  (`Window::capture_frame`, `Frame::read`, `Frame::read_all`). GDI
+  (`PrintWindow`, then a copy of the screen, its objects kept between
+  frames) takes over where that is not to be had; `Window::gpu_unavailable`
+  says why, `Window::without_gpu` and `SYRUP_CAPTURE=cpu` ask for it.
+  `CaptureError::Minimised`; the OCR engine Windows ships with
+  (`ocr::engine`).
+- `kernels`: the correlation sums of template matching at the CPU's
+  vector width — AVX2, SSE2 or plain loops, chosen once at run time, the
+  same integers on every path; `SYRUP_SIMD` forces a narrower one.
+- `template`: `TemplateSet`, `find_set`, `foreground`, `Template::mirrored`
+  and the colour check; `Prepared` and `find_set_in`, sharing a frame's
+  pyramids between searches and threads; `find_set_near`, the full-
+  resolution look where a tracked thing is expected; a level whose
+  candidates would cover a small search region is scored everywhere;
+  the coarse floor is 0.15 under the requested score (measured, from
+  0.25).
+- `bars::BarModel`, `geometry::NormRect`, `glyphs` cells summed in eight
+  lanes, `tracking::ObjectTracker` derives `Clone`, `motion` tracks the
+  largest `max_blobs` of a busy frame and says how many it left out.
+- `bars`, from a lava map: a model learns the fill's own least saturation
+  and brightness (`min_saturation`, `min_value`) and a pixel of its hue
+  but duller or darker — the scene behind a translucent track — is not
+  fill; the hue tolerance is 16° (`HUE_TOLERANCE`), whatever an old
+  model says; `learn` with a colour expected takes the nearest hue with
+  any presence in the box, however small, and gives up when none is
+  within `EXPECTED_WITHIN` (25°) of it, rather than take the scenery for
+  the bar; `find_bar` finds a bar as a band of rows whose runs of the
+  colour start together and are about as long (not the biggest blob of
+  the colour, nor a line of it). `geometry::measure_bar_fill` says
+  nothing (None) when there is nothing past the fill to sample.
+- `glyphs`, a number printed over a partly filled bar: the empty track
+  beside the fill, lighter than the fill the digits sit on, is a block of
+  ink in the evidence, not a glyph — a span holding a filled square half
+  the line height on a side is dropped; and the band of the line is
+  narrowed to the rows of the glyphs that survive, so a bar's end or the
+  track standing taller than the writing no longer stretches it. A font
+  learned on a full bar reads the partial ones, and the other way round.
+- `glyphs`, one font at two sizes: a template remembers the height of the
+  line it was learned from, an example joins the template of its own size
+  (within 20%, `SAME_SIZE_WITHIN`) or starts one, and a glyph is matched
+  against the templates of its own size when there are any (a size never
+  learned is read with all of them). A pixel font drawn at two sizes is
+  two fonts — the strokes do not scale — and averaging them broke both:
+  a HUD's small EXP line could not be learned beside its HP line.
+  `chars()` names each character once.
+- CI publishes each check job's logs to `build-output/<branch>/<os>`, and
+  `[vendor]` in a commit message publishes the vendored crates to
+  `build-cache/vendor`.
+
 ### Compiled operations by name: `syrup-runtime` (by Eitan, from 0xGh0stAn0n/syrup)
 - `crates/syrup-runtime`: a name such as `find_2_largest_faces_in_top_half`
   is parsed against a composable grammar (counts, selectors, regions,

@@ -13,7 +13,9 @@ fn texts(result: &FindResult) -> Vec<&str> {
 
 #[test]
 fn words_are_read_and_placed_in_image_coordinates() {
-    if !syrup::ocr::is_ocr_available() {
+    // Words come with their boxes from Tesseract; the engine Windows ships
+    // with gives the text alone, so with only that one the test skips.
+    if syrup::ocr::engine() != Some(syrup::ocr::Engine::Tesseract) {
         eprintln!("skipped: Tesseract is not installed");
         return;
     }

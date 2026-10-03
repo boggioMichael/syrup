@@ -39,6 +39,10 @@ pub fn list_windows() -> Result<Vec<String>, CaptureError> {
 }
 
 impl Window {
+    pub fn capture_frame(&mut self) -> Result<super::FrameSource<'_>, CaptureError> {
+        self.capture().map(super::FrameSource::Cpu)
+    }
+
     pub fn capture(&mut self) -> Result<RgbaImage, CaptureError> {
         match self {
             Window::X11(window) => window.capture(),

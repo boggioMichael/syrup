@@ -1,10 +1,12 @@
 //! Text recognition for small on-screen UI text.
 //!
-//! The default backend is a Tesseract subprocess, located via
-//! `TESSERACT_BIN`, `PATH`, or the standard Windows install locations. On
-//! Windows the OS's built-in OCR engine is also available via
-//! [`windows`] — it is trained on screen content and often beats
-//! Tesseract on pixel-font UI text.
+//! Two engines: a Tesseract subprocess, located via `TESSERACT_BIN`, `PATH`,
+//! or the standard Windows install locations, and on Windows the OS's
+//! built-in OCR engine ([`windows`]), which is trained on screen content
+//! and often beats Tesseract on pixel-font UI text. [`engine`] says which
+//! one [`ocr_region`] uses on this machine: Tesseract where it is
+//! installed, else the Windows engine, else none; `SYRUP_OCR=tesseract` or
+//! `SYRUP_OCR=windows` chooses explicitly.
 //!
 //! For text drawn in one fixed pixel font — counters, HUD values — the
 //! template reader in [`crate::glyphs`] is faster and more reliable than
@@ -156,17 +158,56 @@ pub struct OcrWord {
     pub confidence: f32,
 }
 
+/// Which recogniser reads text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Engine {
+    /// Tesseract, an external program (`TESSERACT_BIN`, the PATH, or its
+    /// standard Windows install folders).
+    Tesseract,
+    /// The OCR engine built into Windows, used when Tesseract is not
+    /// installed (or when `SYRUP_OCR=windows` asks for it).
+    Windows,
+}
+
+/// The recogniser [`ocr_region`] uses on this machine, if any.
+///
+/// Tesseract comes first where it is installed, since it gives word boxes
+/// and confidences and behaves the same on every platform. Without it — the
+/// usual case on a Windows PC — the engine Windows ships with reads the
+/// text instead of nothing at all. `SYRUP_OCR=tesseract` or
+/// `SYRUP_OCR=windows` chooses explicitly (when that engine is there).
+pub fn engine() -> Option<Engine> {
+    let tesseract = find_tesseract_binary().is_some();
+    let windows = windows_ocr_available();
+    match env::var("SYRUP_OCR").ok().as_deref() {
+        Some("windows") if windows => Some(Engine::Windows),
+        Some("tesseract") if tesseract => Some(Engine::Tesseract),
+        _ if tesseract => Some(Engine::Tesseract),
+        _ if windows => Some(Engine::Windows),
+        _ => None,
+    }
+}
+
+/// Whether the Windows engine can be created, asked once: it depends on an
+/// installed language pack, which does not change while running.
+fn windows_ocr_available() -> bool {
+    static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AVAILABLE.get_or_init(windows::is_available)
+}
+
 /// Run OCR over an image crop with the default configuration and return
 /// the recognized text. See [`ocr_region_with`].
 pub fn ocr_region(image: &RgbaImage, x: u32, y: u32, w: u32, h: u32) -> Option<OcrResult> {
     ocr_region_with(image, x, y, w, h, &OcrConfig::default())
 }
 
-/// Run OCR over an image crop and return the recognized text.
+/// Run OCR over an image crop and return the recognized text, with the
+/// engine [`engine`] picks.
 ///
-/// The crop is clipped to the image. Returns `None` when Tesseract is not
-/// installed, the crop is empty, or nothing was recognised. Word boxes are
-/// relative to the crop's top-left corner. [`recognize`] says why instead.
+/// The crop is clipped to the image. Returns `None` when no engine is
+/// available, the crop is empty, or nothing was recognised. With Tesseract,
+/// word boxes come back relative to the crop's top-left corner ([`recognize`]
+/// says why a read failed instead); the Windows engine gives the text alone.
 pub fn ocr_region_with(
     image: &RgbaImage,
     x: u32,
@@ -175,6 +216,20 @@ pub fn ocr_region_with(
     h: u32,
     config: &OcrConfig,
 ) -> Option<OcrResult> {
+    let engine = engine()?;
+    if engine == Engine::Windows {
+        let crop = crop_region(image, x, y, w, h)?;
+        let prepared = prepare_for_windows(&crop);
+        let text = normalize_text(&windows::recognize(&prepared)?);
+        if text.trim().is_empty() {
+            return None;
+        }
+        return Some(OcrResult {
+            text,
+            available: true,
+            words: Vec::new(),
+        });
+    }
     let binary = find_tesseract_binary()?;
     let words = run_tesseract(&binary, image, Rect { x, y, w, h }, config).ok()?;
     let text = joined_text(words.iter().map(|word| word.text.as_str()));
@@ -376,7 +431,17 @@ fn unscale_word(mut word: OcrWord, placement: Placement, width: u32, height: u32
 
 /// Check whether an OCR backend is available on the current machine.
 pub fn is_ocr_available() -> bool {
-    find_tesseract_binary().is_some()
+    engine().is_some()
+}
+
+/// What the Windows engine reads best: the crop in grey, enlarged so the
+/// text is tall enough, its contrast raised and its strokes sharpened.
+fn prepare_for_windows(crop: &RgbaImage) -> RgbaImage {
+    let (gray, _) = upscale_for_ocr(imageops::grayscale(crop));
+    DynamicImage::ImageLuma8(gray)
+        .adjust_contrast(45.0)
+        .unsharpen(1.0, 1)
+        .to_rgba8()
 }
 
 /// The part of `image` inside the rectangle, or `None` when that part is
@@ -528,7 +593,28 @@ static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 /// threads or two processes OCR-ing at once can never read each other's
 /// input. (A timestamp name could collide within one clock tick.)
 fn write_temp_image(image: &DynamicImage) -> Option<TempImage> {
-    write_temp_image_in(&env::temp_dir(), image)
+    write_temp_image_in(&ocr_temp_dir(), image)
+}
+
+/// Where the crops handed to Tesseract are written.
+///
+/// Tesseract opens its input with narrow-character file calls, which cannot
+/// reach a path with non-ASCII characters — and on Windows the temporary
+/// folder sits under the user's name, which need not be ASCII. There, the
+/// crops go to the Public folder, which every Windows has under an ASCII
+/// path, instead.
+fn ocr_temp_dir() -> PathBuf {
+    let temp = env::temp_dir();
+    if cfg!(windows)
+        && !temp.to_string_lossy().is_ascii()
+        && let Some(public) = env::var_os("PUBLIC")
+    {
+        let dir = PathBuf::from(public).join("syrup").join("ocr");
+        if fs::create_dir_all(&dir).is_ok() && dir.to_string_lossy().is_ascii() {
+            return dir;
+        }
+    }
+    temp
 }
 
 fn write_temp_image_in(dir: &Path, image: &DynamicImage) -> Option<TempImage> {
