@@ -42,6 +42,8 @@ pub enum CaptureError {
     NotFound,
     /// The window has been closed.
     Closed,
+    /// The window is minimised: it exists but has no picture to give.
+    Minimised,
     /// This system cannot capture windows, e.g. there is no display.
     Unavailable(String),
     /// Capture was refused: a missing permission, or the user declined.
@@ -55,6 +57,7 @@ impl fmt::Display for CaptureError {
         match self {
             CaptureError::NotFound => f.write_str("no window matches"),
             CaptureError::Closed => f.write_str("the window was closed"),
+            CaptureError::Minimised => f.write_str("the window is minimised"),
             CaptureError::Unavailable(reason)
             | CaptureError::Denied(reason)
             | CaptureError::Failed(reason) => f.write_str(reason),

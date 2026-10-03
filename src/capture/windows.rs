@@ -16,8 +16,9 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::Storage::Xps::{PRINT_WINDOW_FLAGS, PrintWindow};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetClientRect, GetSystemMetrics, GetWindowTextLengthW, GetWindowTextW, IsWindow,
-    IsWindowVisible, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+    EnumWindows, GetClientRect, GetSystemMetrics, GetWindowTextLengthW, GetWindowTextW, IsIconic,
+    IsWindow, IsWindowVisible, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+    SM_YVIRTUALSCREEN,
 };
 use windows::core::BOOL;
 
@@ -100,9 +101,12 @@ impl Window {
         }
         let (width, height) = (rect.right - rect.left, rect.bottom - rect.top);
         if width <= 0 || height <= 0 {
-            return Err(CaptureError::Failed(
-                "the window has no client area; is it minimised?".into(),
-            ));
+            // A minimised window's client rectangle collapses to nothing.
+            return Err(if unsafe { IsIconic(self.hwnd).as_bool() } {
+                CaptureError::Minimised
+            } else {
+                CaptureError::Failed("the window has no client area".into())
+            });
         }
 
         let screen = unsafe { GetDC(None) };
