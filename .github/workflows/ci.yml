@@ -2,14 +2,48 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "claude/**"]
   pull_request:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # The crates this workspace depends on, for building where crates.io
+  # cannot be reached: published to the `build-cache/vendor` branch, split
+  # into parts under GitHub's file-size limit. Runs only for a commit whose
+  # message says [vendor]; [vendor-only] runs nothing else.
+  vendor:
+    if: contains(github.event.head_commit.message, '[vendor')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Vendor
+        run: |
+          set -o pipefail
+          cargo vendor --versioned-dirs vendor > vendor-config.toml 2> vendor.log || { cat vendor.log; exit 1; }
+          du -sh vendor
+          out="$RUNNER_TEMP/cache"
+          mkdir -p "$out"
+          tar czf "$RUNNER_TEMP/vendor.tar.gz" vendor vendor-config.toml Cargo.lock
+          split -b 90m -d "$RUNNER_TEMP/vendor.tar.gz" "$out/vendor.tar.gz.part-"
+          cp Cargo.lock vendor-config.toml vendor.log "$out/"
+          git rev-parse HEAD > "$out/commit.txt"
+          ls -l "$out"
+      - name: Publish
+        run: |
+          cd "$RUNNER_TEMP/cache"
+          git init -q && git checkout -q -b cache
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "vendored crates [skip ci]"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" "cache:refs/heads/build-cache/vendor"
+
   check:
+    if: ${{ !contains(github.event.head_commit.message, '[vendor-only]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -53,6 +87,7 @@ jobs:
   python:
     # The compiled operations from Python: the package built with maturin
     # and installed, then its tests (python/tests).
+    if: ${{ !contains(github.event.head_commit.message, '[vendor-only]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -88,6 +123,7 @@ jobs:
   wayland:
     # Wayland capture, against a real PipeWire server with a stand-in for
     # the desktop's screen-cast portal (tests/portal).
+    if: ${{ !contains(github.event.head_commit.message, '[vendor-only]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -105,6 +141,7 @@ jobs:
   recipes:
     # The model recipes (syrup.recipes), on real photographs. Heavy
     # dependencies, so a job of their own; elsewhere these tests skip.
+    if: ${{ !contains(github.event.head_commit.message, '[vendor-only]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -168,6 +205,7 @@ jobs:
 
   example:
     # The lipreader example projects: pipeline, service, shared types, extension, web page.
+    if: ${{ !contains(github.event.head_commit.message, '[vendor-only]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
