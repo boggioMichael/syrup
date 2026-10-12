@@ -320,6 +320,19 @@ fn average_confidence(tracks: &[Track]) -> Confidence {
     Confidence::new(total / tracks.len() as f32)
 }
 
+/// The changed regions between two same-sized frames: what
+/// [`MotionDetector`] hands its tracker (before `max_blobs`), from the same
+/// fused scan, for callers that keep the frames and their own tracking.
+/// Equal to [`extract_blobs`] of [`motion_mask`] without building the mask.
+/// Returns `None` on a size mismatch.
+pub fn regions(a: &RgbaImage, b: &RgbaImage, config: &MotionConfig) -> Option<Vec<Rect>> {
+    if a.dimensions() != b.dimensions() {
+        return None;
+    }
+    let (runs, _) = motion_runs(a, b, config.diff_threshold, config.min_run_width);
+    Some(blobs_from_runs(runs, config))
+}
+
 /// Changed regions of a motion mask (from [`motion_mask`]): runs of at
 /// least `min_run_width` moved pixels, grouped into blobs at least
 /// `min_blob_height` rows tall and `min_blob_area` pixels large — the
@@ -372,6 +385,11 @@ mod tests {
         let (runs, _) = motion_runs(&a, &b, config.diff_threshold, config.min_run_width);
         let from_mask = extract_blobs(&mask, &config);
         assert_eq!(from_mask, blobs_from_runs(runs, &config));
+        assert_eq!(regions(&a, &b, &config).as_ref(), Some(&from_mask));
+        assert_eq!(
+            regions(&a, &frame_with_square(32, 48, (0, 0), 1), &config),
+            None
+        );
         // The square it left and the square it entered.
         assert_eq!(from_mask.len(), 2, "{from_mask:?}");
     }
