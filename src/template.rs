@@ -1012,14 +1012,41 @@ fn score_at(plane: &Plane, template: &TemplateLevel, x: usize, y: usize) -> f32 
 const MAX_AREA_32: usize = (u32::MAX / (255 * 255)) as usize;
 
 /// Correlation at every position of `plane`, row-major over the
-/// `(width - w + 1) x (height - h + 1)` positions. Window sums slide: each
-/// column's sum over the template's height is updated one row at a time,
-/// and each window's sum one column at a time.
+/// `(width - w + 1) x (height - h + 1)` positions.
 fn score_everywhere(plane: &Plane, template: &TemplateLevel) -> Vec<f32> {
+    let (w, h) = (template.inner.width, template.inner.height);
+    let mut scores = Vec::with_capacity((plane.width - w + 1) * (plane.height - h + 1));
+    for_each_score(plane, template, |_, _, score| scores.push(score));
+    scores
+}
+
+/// The strongest position of `plane` and its score: of equally strong ones
+/// the first in scan order (by `total_cmp`, as the peak search ranks them).
+/// The strongest position is always a peak, so this is what
+/// `local_maxima(.., f32::NEG_INFINITY, 1)` keeps of the scores, found
+/// while scoring and without keeping them.
+fn best_everywhere(plane: &Plane, template: &TemplateLevel) -> Option<(usize, usize, f32)> {
+    let mut best: Option<(usize, usize, f32)> = None;
+    for_each_score(plane, template, |x, y, score| {
+        if best.is_none_or(|b| score.total_cmp(&b.2).is_gt()) {
+            best = Some((x, y, score));
+        }
+    });
+    best
+}
+
+/// Calls `visit(x, y, score)` for every position in scan order. Window
+/// sums slide: each column's sum over the template's height is updated one
+/// row at a time, and each window's sum one column at a time.
+#[inline(always)]
+fn for_each_score(
+    plane: &Plane,
+    template: &TemplateLevel,
+    mut visit: impl FnMut(usize, usize, f32),
+) {
     let (w, h) = (template.inner.width, template.inner.height);
     let (columns, rows) = (plane.width - w + 1, plane.height - h + 1);
     let products = (template.area() <= MAX_AREA_32).then(|| products_everywhere(plane, template));
-    let mut scores = Vec::with_capacity(columns * rows);
     let mut column_sums = vec![0u64; plane.width];
     let mut column_squares = vec![0u64; plane.width];
     for y in 0..h {
@@ -1036,12 +1063,16 @@ fn score_everywhere(plane: &Plane, template: &TemplateLevel) -> Vec<f32> {
                 sum = sum + column_sums[x + w - 1] - column_sums[x - 1];
                 squares = squares + column_squares[x + w - 1] - column_squares[x - 1];
             }
-            scores.push(match &products {
-                Some(products) => {
-                    score_from(template, u64::from(products[y * columns + x]), sum, squares)
-                }
-                None => correlation(plane, template, x, y, sum, squares),
-            });
+            visit(
+                x,
+                y,
+                match &products {
+                    Some(products) => {
+                        score_from(template, u64::from(products[y * columns + x]), sum, squares)
+                    }
+                    None => correlation(plane, template, x, y, sum, squares),
+                },
+            );
         }
         if y + 1 < rows {
             let (leaving, entering) = (
@@ -1055,7 +1086,6 @@ fn score_everywhere(plane: &Plane, template: &TemplateLevel) -> Vec<f32> {
             }
         }
     }
-    scores
 }
 
 /// The sum of products of the template with the window at every position
@@ -1330,6 +1360,12 @@ fn candidates(
     // the rankings get more reliable.
     let coarsest = depth;
     let (plane, level) = (&planes[coarsest], &template.levels[coarsest]);
+    if coarsest == 0 && min_score.is_none() {
+        // Every score is exact and only the best is asked for: the
+        // strongest position, which the peak search below would keep with
+        // a limit of one, and the overlap check below would keep alone.
+        return best_everywhere(plane, level).into_iter().collect();
+    }
     let scores = score_everywhere(plane, level);
     let (columns, rows) = (
         plane.width - level.inner.width + 1,
