@@ -46,6 +46,16 @@ def command(impl: str, binary: str | None, task: str, a, out: str, extra=()):
     return [binary, task, *flags, *args.get(impl, "").split()]
 
 
+def thread_env(threads: int) -> dict:
+    """The environment of a measured process: numpy's BLAS (imported by the
+    OpenCV side) held to the same thread count, or its idle worker threads
+    spin and count as CPU time."""
+    env = dict(os.environ)
+    for name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+        env[name] = str(threads)
+    return env
+
+
 def environment(a, impls):
     def run(cmd):
         try:
@@ -111,14 +121,15 @@ def measure(a):
                     continue
                 cmd = command(name, binary, task, a, out)
                 print(f"round {r} {task:9s} {name:13s}", flush=True)
-                subprocess.run(cmd, check=True)
+                subprocess.run(cmd, check=True, env=thread_env(a.threads))
     if "motion" in tasks:
         for name, binary in impls:
             dump = os.path.join(a.out, "masks", name)
             out = os.path.join(raw, f"motion.{name}.masks.json")
             if os.path.exists(out) and not a.again:
                 continue
-            subprocess.run(command(name, binary, "motion", a, out, ["--dump", dump]), check=True)
+            subprocess.run(command(name, binary, "motion", a, out, ["--dump", dump]), check=True,
+                           env=thread_env(a.threads))
 
 
 # -------------------------------------------------------------- summarise
@@ -209,7 +220,7 @@ def source_of(task, item_input, sources, cases):
 
 
 def percentiles(values):
-    if not values:
+    if len(values) == 0:
         return [None, None, None]
     return [float(v) for v in np.percentile(values, [50, 95, 99])]
 
@@ -275,7 +286,8 @@ def summarise(a):
             for x in runs[(task, impl)]:
                 for k, v in x["init"].items():
                     init[k].append(v)
-            summary["init"][f"{task}/{impl}"] = {k: float(np.median(v)) for k, v in init.items()}
+            summary["init"][f"{task}/{impl}"] = {k: float(np.median(v)) for k, v in init.items()
+                                                 if all(isinstance(x, (int, float)) for x in v)}
         reference = "opencv" if "opencv" in impls else None
         for src in sorted({s for impl in impls for s in per[impl]}, key=lambda s: (s != "all", s)):
             for impl in impls:
@@ -299,7 +311,7 @@ def summarise(a):
                     row["opencv_over_this_p95"] = float(np.percentile(np.array(ref["times"]) / 1e6, 95) / p95)
                     row["opencv_over_this_p50_ci95"] = bootstrap_ratio(ca, cr, lambda v: np.percentile(v, 50), rng)
                     row["opencv_over_this_p95_ci95"] = bootstrap_ratio(ca, cr, lambda v: np.percentile(v, 95), rng)
-                if impl == "syrup-after" and "syrup-before" in per and src in per["syrup-before"]:
+                if impl.startswith("syrup-after") and "syrup-before" in per and src in per["syrup-before"]:
                     before = per["syrup-before"][src]
                     cb = {k: np.array(v) / 1e6 for k, v in before["clusters"].items()}
                     ca = {k: np.array(v) / 1e6 for k, v in b["clusters"].items()}
