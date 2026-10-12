@@ -1,0 +1,786 @@
+{
+ "rows": [
+  {
+   "task": "glyphs",
+   "source": "all",
+   "impl": "opencv",
+   "calls": 10000,
+   "inputs": 400,
+   "p50_ms": 0.07530400000000001,
+   "p95_ms": 0.15912949999999995,
+   "p99_ms": 0.2256771,
+   "p50_round_range": [
+    0.072014,
+    0.085012
+   ],
+   "p95_round_range": [
+    0.12831125000000002,
+    0.19307535
+   ],
+   "throughput_per_s": 10697.13404417144
+  },
+  {
+   "task": "glyphs",
+   "source": "all",
+   "impl": "syrup-after",
+   "calls": 10000,
+   "inputs": 400,
+   "p50_ms": 0.11912600000000001,
+   "p95_ms": 0.5372462999999995,
+   "p99_ms": 0.8104383600000001,
+   "p50_round_range": [
+    0.1079875,
+    0.1286365
+   ],
+   "p95_round_range": [
+    0.461658,
+    0.59727335
+   ],
+   "throughput_per_s": 5572.420880515687,
+   "opencv_over_this_p50": 0.6321374007353558,
+   "opencv_over_this_p95": 0.296194687613484,
+   "opencv_over_this_p50_ci95": [
+    0.570738318817099,
+    0.7360517695395641
+   ],
+   "opencv_over_this_p95_ci95": [
+    0.2734404881306699,
+    0.34091329622880423
+   ]
+  },
+  {
+   "task": "glyphs",
+   "source": "all",
+   "impl": "tinynet",
+   "calls": 10000,
+   "inputs": 400,
+   "p50_ms": 0.078797,
+   "p95_ms": 0.15921375,
+   "p99_ms": 0.2264347200000002,
+   "p50_round_range": [
+    0.0754935,
+    0.0947855
+   ],
+   "p95_round_range": [
+    0.13928264999999998,
+    0.19009969999999995
+   ],
+   "throughput_per_s": 10667.954024152123,
+   "opencv_over_this_p50": 0.9556709011764408,
+   "opencv_over_this_p95": 0.9994708371607349,
+   "opencv_over_this_p50_ci95": [
+    0.933291144724099,
+    0.976572144508646
+   ],
+   "opencv_over_this_p95_ci95": [
+    0.9553847520277735,
+    1.0461791865308776
+   ]
+  },
+  {
+   "task": "glyphs",
+   "source": "s050/bar",
+   "impl": "opencv",
+   "calls": 1675,
+   "inputs": 67,
+   "p50_ms": 0.069097,
+   "p95_ms": 0.1379857,
+   "p99_ms": 0.1755082,
+   "p50_round_range": [
+    0.065283,
+    0.073053
+   ],
+   "p95_round_range": [
+    0.11702750000000003,
+    0.157371
+   ],
+   "throughput_per_s": 11579.409948110973
+  },
+  {
+   "task": "glyphs",
+   "source": "s050/bar",
+   "impl": "syrup-after",
+   "calls": 1675,
+   "inputs": 67,
+   "p50_ms": 0.284426,
+   "p95_ms": 0.7010078999999998,
+   "p99_ms": 0.93663178,
+   "p50_round_range": [
+    0.264601,
+    0.310866
+   ],
+   "p95_round_range": [
+    0.5697397000000001,
+    0.7878018
+   ],
+   "throughput_per_s": 3101.394913001336,
+   "opencv_over_this_p50": 0.24293489343449615,
+   "opencv_over_this_p95": 0.1968390085190196,
+   "opencv_over_this_p50_ci95": [
+    0.22361038050561474,
+    0.2865318377060732
+   ],
+   "opencv_over_this_p95_ci95": [
+    0.17465200391048266,
+    0.23149766714444697
+   ]
+  },
+  {
+   "task": "glyphs",
+   "source": "s050/bar",
+   "impl": "tinynet",
+   "calls": 1675,
+   "inputs": 67,
+   "p50_ms": 0.073512,
+   "p95_ms": 0.1588116,
+   "p99_ms": 0.21156061999999998,
+   "p50_round_range": [
+    0.068541,
+    0.095639
+   ],
+   "p95_round_range": [
+    0.13275910000000005,
+    0.2054169
+   ],
+   "throughput_per_s": 11288.538937142881,
+   "opencv_over_this_p50": 0.939941778213081,
+   "opencv_over_this_p95": 0.8688641132007989,
+   "opencv_over_this_p50_ci95": [
+    0.8734036153980991,
+    0.9969441872710068
+   ],
+   "opencv_over_this_p95_ci95": [
+    0.7737511327103666,
+    0.987242086413485
+   ]
+  },
+  {
+   "task": "glyphs",
+   "source": "s050/flat",
+   "impl": "opencv",
+   "calls": 1675,
+   "inputs": 67,
+   "p50_ms": 0.066713,
+   "p95_ms": 0.1462192,
+   "p99_ms": 0.21168135999999993,
+   "p50_round_range": [
+    0.064112,
+    0.074331
+   ],
+   "p95_round_range": [
+    0.1153786,
+    0.1761531
+   ],
+   "throughput_per_s": 11758.477254871936
+  },
+  {
+   "task": "glyphs",
+   "source": "s050/flat",
+   "impl": "syrup-after",
+   "calls": 1675,
+   "inputs": 67,
+   "p50_ms": 0.166505,
+   "p95_ms": 0.5781193,
+   "p99_ms": 0.9929389399999999,
+   "p50_round_range": [
+    0.145946,
+    0.196637
+   ],
+   "p95_round_range": [
+    0.5045681000000001,
+    0.8366028000000002
+   ],
+   "throughput_per_s": 4315.331200561826,
+   "opencv_over_this_p50": 0.4006666466472478,
+   "opencv_over_this_p95": 0.2529221909733856,
+   "opencv_over_this_p50_ci95": [
+    0.3000451338908144,
+    0.48259131676228423
+   ],
+   "opencv_over_this_p95_ci95": [
+    0.21377488618010154,
+    0.2906076234335764
+   ]
+  },
+  {
+   "task": "glyphs",
+   "source": "s050/flat",
+   "impl": "tinynet",
+   "calls": 1675,
+   "inputs": 67,
+   "p50_ms": 0.067723,
+   "p95_ms": 0.1520945,
+   "p99_ms": 0.20959488,
+   "p50_round_range": [
+    0.065052,
+    0.092543
+   ],
+   "p95_round_range": [
+    0.1115168,
+    0.1866975
+   ],
+   "throughput_per_s": 11736.723143755078,
+   "opencv_over_this_p50": 0.9850863074583227,
+   "opencv_over_this_p95": 0.9613707267521179,
+   "opencv_over_this_p50_ci95": [
+    0.9511685570413138,
+    1.0092108826781678
+   ],
+   "opencv_over_this_p95_ci95": [
+    0.8407249166616074,
+    1.090346496175125
+   ]
+  },
+  {
+   "task": "glyphs",
+   "source": "s050/noise",
+   "impl": "opencv",
+   "calls": 1650,
+   "inputs": 66,
+   "p50_ms": 0.06648899999999999,
+   "p95_ms": 0.15220944999999997,
+   "p99_ms": 0.21984647,
+   "p50_round_range": [
+    0.06421099999999999,
+    0.069975
+   ],
+   "p95_round_range": [
+    0.12395675000000005,
+    0.17188445
+   ],
+   "throughput_per_s": 11583.185595066154
+  },
+  {
+   "task": "glyphs",
+   "source": "s050/noise",
+   "impl": "syrup-after",
+   "calls": 1650,
+   "inputs": 66,
+   "p50_ms": 0.19366450000000002,
+   "p95_ms": 0.5818814,
+   "p99_ms": 0.85071765,
+   "p50_round_range": [
+    0.172151,
+    0.2352105
+   ],
+   "p95_round_range": [
+    0.5391194,
+    0.7192598
+   ],
+   "throughput_per_s": 4083.676501581957,
+   "opencv_over_this_p50": 0.34332053628827164,
+   "opencv_over_this_p95": 0.2615815697150656,
+   "opencv_over_this_p50_ci95": [
+    0.2718042745928177,
+    0.43667758795996475
+   ],
+   "opencv_over_this_p95_ci95": [
+    0.22119508997889056,
+    0.3264044298092735
+   ]
+  },
+  {
+   "task": "glyphs",
+   "source": "s050/noise",
+   "impl": "tinynet",
+   "calls": 1650,
+   "inputs": 66,
+   "p50_ms": 0.07810349999999999,
+   "p95_ms": 0.15045530000000001,
+   "p99_ms": 0.22288702999999993,
+   "p50_round_range": [
+    0.06801950000000001,
+    0.099577
+   ],
+   "p95_round_range": [
+    0.11874055,
+    0.18997110000000003
+   ],
+   "throughput_per_s": 11057.535008457406,
+   "opencv_over_this_p50": 0.8512934759645855,
+   "opencv_over_this_p95": 1.011658944550308,
+   "opencv_over_this_p50_ci95": [
+    0.7514375623092427,
+    0.9370721940924388
+   ],
+   "opencv_over_this_p95_ci95": [
+    0.8844906664036669,
+    1.1525550698538065
+   ]
+  },
+  {
+   "task": "glyphs",
+   "source": "s075/bar",
+   "impl": "opencv",
+   "calls": 1675,
+   "inputs": 67,
+   "p50_ms": 0.083056,
+   "p95_ms": 0.1742886,
+   "p99_ms": 0.25401014,
+   "p50_round_range": [
+    0.073613,
+    0.103866
+   ],
+   "p95_round_range": [
+    0.13610150000000001,
+    0.2125043
+   ],
+   "throughput_per_s": 9932.364275739437
+  },
+  {
+   "task": "glyphs",
+   "source": "s075/bar",
+   "impl": "syrup-after",
+   "calls": 1675,
+   "inputs": 67,
+   "p50_ms": 0.079025,
+   "p95_ms": 0.21206669999999997,
+   "p99_ms": 0.65307328,
+   "p50_round_range": [
+    0.072544,
+    0.083202
+   ],
+   "p95_round_range": [
+    0.17391950000000006,
+    0.2881559000000001
+   ],
+   "throughput_per_s": 9755.520539869924,
+   "opencv_over_this_p50": 1.0510091743119268,
+   "opencv_over_this_p95": 0.8218574627699682,
+   "opencv_over_this_p50_ci95": [
+    0.9674149142435041,
+    1.48723236895551
+   ],
+   "opencv_over_this_p95_ci95": [
+    0.5048235803184997,
+    1.0238633374343475
+   ]
+  },
+  {
+   "task": "glyphs",
+   "source": "s075/bar",
+   "impl": "tinynet",
+   "calls": 1675,
+   "inputs": 67,
+   "p50_ms": 0.086199,
+   "p95_ms": 0.1691191,
+   "p99_ms": 0.24445103999999998,
+   "p50_round_range": [
+    0.080919,
+    0.091738
+   ],
+   "p95_round_range": [
+    0.14823340000000002,
+    0.18520710000000004
+   ],
+   "throughput_per_s": 10019.752671228673,
+   "opencv_over_this_p50": 0.9635378600679823,
+   "opencv_over_this_p95": 1.0305672156486168,
+   "opencv_over_this_p50_ci95": [
+    0.9029522427555097,
+    1.022947685718989
+   ],
+   "opencv_over_this_p95_ci95": [
+    0.9410742920077528,
+    1.1301335372107535
+   ]
+  },
+  {
+   "task": "glyphs",
+   "source": "s075/flat",
+   "impl": "opencv",
+   "calls": 1675,
+   "inputs": 67,
+   "p50_ms": 0.078276,
+   "p95_ms": 0.1645061999999999,
+   "p99_ms": 0.22316783999999995,
+   "p50_round_range": [
+    0.074143,
+    0.101303
+   ],
+   "p95_round_range": [
+    0.1317926,
+    0.19707500000000003
+   ],
+   "throughput_per_s": 10227.293320628612
+  },
+  {
+   "task": "glyphs",
+   "source": "s075/flat",
+   "impl": "syrup-after",
+   "calls": 1675,
+   "inputs": 67,
+   "p50_ms": 0.07069,
+   "p95_ms": 0.181232,
+   "p99_ms": 0.31906527999999995,
+   "p50_round_range": [
+    0.059053,
+    0.08188
+   ],
+   "p95_round_range": [
+    0.1671685,
+    0.20933900000000008
+   ],
+   "throughput_per_s": 11471.681783683653,
+   "opencv_over_this_p50": 1.1073136228603762,
+   "opencv_over_this_p95": 0.9077105588417052,
+   "opencv_over_this_p50_ci95": [
+    0.9856553942222023,
+    1.5572673868459082
+   ],
+   "opencv_over_this_p95_ci95": [
+    0.6664304884347654,
+    1.0327494558158559
+   ]
+  },
+  {
+   "task": "glyphs",
+   "source": "s075/flat",
+   "impl": "tinynet",
+   "calls": 1675,
+   "inputs": 67,
+   "p50_ms": 0.079357,
+   "p95_ms": 0.15660090000000002,
+   "p99_ms": 0.21701501999999992,
+   "p50_round_range": [
+    0.076055,
+    0.083598
+   ],
+   "p95_round_range": [
+    0.1384735,
+    0.17736920000000003
+   ],
+   "throughput_per_s": 10431.125841812094,
+   "opencv_over_this_p50": 0.9863780132817521,
+   "opencv_over_this_p95": 1.0504805527937573,
+   "opencv_over_this_p50_ci95": [
+    0.9422382398285538,
+    1.0216689809310675
+   ],
+   "opencv_over_this_p95_ci95": [
+    0.9802021805230876,
+    1.11862380128609
+   ]
+  },
+  {
+   "task": "glyphs",
+   "source": "s075/noise",
+   "impl": "opencv",
+   "calls": 1650,
+   "inputs": 66,
+   "p50_ms": 0.099113,
+   "p95_ms": 0.1687639,
+   "p99_ms": 0.2338673099999999,
+   "p50_round_range": [
+    0.0782255,
+    0.1162755
+   ],
+   "p95_round_range": [
+    0.1354294,
+    0.2176202
+   ],
+   "throughput_per_s": 9545.286887617998
+  },
+  {
+   "task": "glyphs",
+   "source": "s075/noise",
+   "impl": "syrup-after",
+   "calls": 1650,
+   "inputs": 66,
+   "p50_ms": 0.080662,
+   "p95_ms": 0.1707706,
+   "p99_ms": 0.30288948999999993,
+   "p50_round_range": [
+    0.0770785,
+    0.084912
+   ],
+   "p95_round_range": [
+    0.16186540000000002,
+    0.22756390000000024
+   ],
+   "throughput_per_s": 11413.5834467734,
+   "opencv_over_this_p50": 1.2287446381195608,
+   "opencv_over_this_p95": 0.9882491482725949,
+   "opencv_over_this_p50_ci95": [
+    1.0456601783205448,
+    1.3894142824583835
+   ],
+   "opencv_over_this_p95_ci95": [
+    0.895810808558579,
+    1.1444878643719414
+   ]
+  },
+  {
+   "task": "glyphs",
+   "source": "s075/noise",
+   "impl": "tinynet",
+   "calls": 1650,
+   "inputs": 66,
+   "p50_ms": 0.093076,
+   "p95_ms": 0.16882835,
+   "p99_ms": 0.23696046999999998,
+   "p50_round_range": [
+    0.0832325,
+    0.1015755
+   ],
+   "p95_round_range": [
+    0.1506667,
+    0.19490575000000002
+   ],
+   "throughput_per_s": 9744.550045903621,
+   "opencv_over_this_p50": 1.0648609738278396,
+   "opencv_over_this_p95": 0.999618251318573,
+   "opencv_over_this_p50_ci95": [
+    0.9989322619889333,
+    1.112415064233719
+   ],
+   "opencv_over_this_p95_ci95": [
+    0.9285296303132687,
+    1.105172998463107
+   ]
+  }
+ ],
+ "quality": {
+  "glyphs": {
+   "same_output_every_round": {
+    "opencv": true,
+    "syrup-after": true,
+    "tinynet": true
+   },
+   "readings": {
+    "opencv": {
+     "all": {
+      "correct": 374,
+      "wrong": 26,
+      "refused": 0,
+      "cases": 400,
+      "accuracy": 0.935,
+      "wrong_rate": 0.065,
+      "refusal_rate": 0.0
+     },
+     "s050": {
+      "correct": 174,
+      "wrong": 26,
+      "refused": 0,
+      "cases": 200,
+      "accuracy": 0.87,
+      "wrong_rate": 0.13,
+      "refusal_rate": 0.0
+     },
+     "flat": {
+      "correct": 123,
+      "wrong": 11,
+      "refused": 0,
+      "cases": 134,
+      "accuracy": 0.917910447761194,
+      "wrong_rate": 0.08208955223880597,
+      "refusal_rate": 0.0
+     },
+     "bar": {
+      "correct": 122,
+      "wrong": 12,
+      "refused": 0,
+      "cases": 134,
+      "accuracy": 0.9104477611940298,
+      "wrong_rate": 0.08955223880597014,
+      "refusal_rate": 0.0
+     },
+     "noise": {
+      "correct": 129,
+      "wrong": 3,
+      "refused": 0,
+      "cases": 132,
+      "accuracy": 0.9772727272727273,
+      "wrong_rate": 0.022727272727272728,
+      "refusal_rate": 0.0
+     },
+     "s075": {
+      "correct": 200,
+      "wrong": 0,
+      "refused": 0,
+      "cases": 200,
+      "accuracy": 1.0,
+      "wrong_rate": 0.0,
+      "refusal_rate": 0.0
+     }
+    },
+    "syrup-after": {
+     "all": {
+      "correct": 193,
+      "wrong": 0,
+      "refused": 207,
+      "cases": 400,
+      "accuracy": 0.4825,
+      "wrong_rate": 0.0,
+      "refusal_rate": 0.5175
+     },
+     "s050": {
+      "correct": 36,
+      "wrong": 0,
+      "refused": 164,
+      "cases": 200,
+      "accuracy": 0.18,
+      "wrong_rate": 0.0,
+      "refusal_rate": 0.82
+     },
+     "flat": {
+      "correct": 61,
+      "wrong": 0,
+      "refused": 73,
+      "cases": 134,
+      "accuracy": 0.4552238805970149,
+      "wrong_rate": 0.0,
+      "refusal_rate": 0.5447761194029851
+     },
+     "bar": {
+      "correct": 68,
+      "wrong": 0,
+      "refused": 66,
+      "cases": 134,
+      "accuracy": 0.5074626865671642,
+      "wrong_rate": 0.0,
+      "refusal_rate": 0.4925373134328358
+     },
+     "noise": {
+      "correct": 64,
+      "wrong": 0,
+      "refused": 68,
+      "cases": 132,
+      "accuracy": 0.48484848484848486,
+      "wrong_rate": 0.0,
+      "refusal_rate": 0.5151515151515151
+     },
+     "s075": {
+      "correct": 157,
+      "wrong": 0,
+      "refused": 43,
+      "cases": 200,
+      "accuracy": 0.785,
+      "wrong_rate": 0.0,
+      "refusal_rate": 0.215
+     }
+    },
+    "tinynet": {
+     "all": {
+      "correct": 374,
+      "wrong": 26,
+      "refused": 0,
+      "cases": 400,
+      "accuracy": 0.935,
+      "wrong_rate": 0.065,
+      "refusal_rate": 0.0
+     },
+     "s050": {
+      "correct": 174,
+      "wrong": 26,
+      "refused": 0,
+      "cases": 200,
+      "accuracy": 0.87,
+      "wrong_rate": 0.13,
+      "refusal_rate": 0.0
+     },
+     "flat": {
+      "correct": 123,
+      "wrong": 11,
+      "refused": 0,
+      "cases": 134,
+      "accuracy": 0.917910447761194,
+      "wrong_rate": 0.08208955223880597,
+      "refusal_rate": 0.0
+     },
+     "bar": {
+      "correct": 122,
+      "wrong": 12,
+      "refused": 0,
+      "cases": 134,
+      "accuracy": 0.9104477611940298,
+      "wrong_rate": 0.08955223880597014,
+      "refusal_rate": 0.0
+     },
+     "noise": {
+      "correct": 129,
+      "wrong": 3,
+      "refused": 0,
+      "cases": 132,
+      "accuracy": 0.9772727272727273,
+      "wrong_rate": 0.022727272727272728,
+      "refusal_rate": 0.0
+     },
+     "s075": {
+      "correct": 200,
+      "wrong": 0,
+      "refused": 0,
+      "cases": 200,
+      "accuracy": 1.0,
+      "wrong_rate": 0.0,
+      "refusal_rate": 0.0
+     }
+    }
+   },
+   "learned": {
+    "opencv": [
+     {
+      "file": "glyphs/test/train_s050.png",
+      "learned": 13
+     },
+     {
+      "file": "glyphs/test/train_s075.png",
+      "learned": 13
+     }
+    ],
+    "syrup-after": [
+     {
+      "file": "glyphs/test/train_s050.png",
+      "error": "learned on trial, the font reads the region as \"0123456719%. (not surely)\", not the label"
+     },
+     {
+      "file": "glyphs/test/train_s075.png",
+      "learned": 13
+     }
+    ],
+    "tinynet": [
+     {
+      "file": "glyphs-int8.onnx",
+      "learned": 5642
+     }
+    ]
+   }
+  }
+ },
+ "process": {
+  "glyphs/opencv": {
+   "cpu_over_wall": 0.9685251923526779,
+   "max_rss_kb": 66516,
+   "rss_after_imports_kb": 66516,
+   "rounds": 5
+  },
+  "glyphs/syrup-after": {
+   "cpu_over_wall": 0.9713409091009221,
+   "max_rss_kb": 5632,
+   "rss_after_imports_kb": null,
+   "rounds": 5
+  },
+  "glyphs/tinynet": {
+   "cpu_over_wall": 0.9861106985766968,
+   "max_rss_kb": 96884,
+   "rss_after_imports_kb": 79060,
+   "rounds": 5
+  }
+ },
+ "init": {
+  "glyphs/opencv": {
+   "load_ns": 887788.0,
+   "first_call_ns": 90828.0,
+   "binding_overhead_ns": 935.0
+  },
+  "glyphs/syrup-after": {
+   "load_ns": 2275837.0,
+   "first_call_ns": 239164.0
+  },
+  "glyphs/tinynet": {
+   "load_ns": 3972384.0,
+   "first_call_ns": 296570.0,
+   "binding_overhead_ns": 981.0
+  }
+ }
+}

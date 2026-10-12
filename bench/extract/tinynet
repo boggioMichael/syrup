@@ -1,0 +1,4 @@
+#!/bin/sh
+# The tiny-network baseline with the command line `bench/vs-opencv/run.py`
+# gives every implementation: `tinynet TASK --data ... --out ... [--model M]`.
+exec python3 "$(dirname "$(readlink -f "$0")")/tinynet.py" "$@"

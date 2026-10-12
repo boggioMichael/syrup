@@ -1,0 +1,236 @@
+{
+ "task": "glyphs",
+ "split": "test",
+ "items": 400,
+ "explicit": "syrup-after",
+ "pairs": {
+  "syrup-after \u2192 opencv": {
+   "items": 400,
+   "system_minus_fallback_correct": {
+    "points": 0.02,
+    "ci95": [
+     0.0075,
+     0.035
+    ]
+   },
+   "coverage": {
+    "count": 193,
+    "rate": 0.4825,
+    "ci95": [
+     0.43493750000000003,
+     0.5300624999999991
+    ]
+   },
+   "explicit": {
+    "correct": {
+     "count": 193,
+     "rate": 0.4825,
+     "ci95": [
+      0.4325,
+      0.5325
+     ]
+    },
+    "wrong": {
+     "count": 0,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.0
+     ]
+    },
+    "refused": {
+     "count": 207,
+     "rate": 0.5175,
+     "ci95": [
+      0.4675,
+      0.5675
+     ]
+    }
+   },
+   "system": {
+    "correct": {
+     "count": 382,
+     "rate": 0.955,
+     "ci95": [
+      0.935,
+      0.9725
+     ]
+    },
+    "wrong": {
+     "count": 18,
+     "rate": 0.045,
+     "ci95": [
+      0.025,
+      0.065
+     ]
+    },
+    "refused": {
+     "count": 0,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.0
+     ]
+    }
+   },
+   "fallback_alone": {
+    "correct": {
+     "count": 374,
+     "rate": 0.935,
+     "ci95": [
+      0.91,
+      0.9575
+     ]
+    },
+    "wrong": {
+     "count": 26,
+     "rate": 0.065,
+     "ci95": [
+      0.0425,
+      0.09
+     ]
+    },
+    "refused": {
+     "count": 0,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.0
+     ]
+    }
+   },
+   "cost_ms": {
+    "explicit_mean": 0.1578653575,
+    "fallback_alone_mean": 0.0828188325,
+    "fallback_alone_ci95": [
+     0.08048520243749999,
+     0.08522165493749999
+    ],
+    "system_mean": 0.19412181250000005,
+    "system_ci95": [
+     0.17936887575000002,
+     0.2093925388125
+    ],
+    "fallback_alone_over_system": 0.42663331561464773,
+    "fallback_alone_over_system_ci95": [
+     0.39431101222563414,
+     0.4627805730292339
+    ]
+   }
+  },
+  "syrup-after \u2192 tinynet": {
+   "items": 400,
+   "system_minus_fallback_correct": {
+    "points": 0.02,
+    "ci95": [
+     0.0075,
+     0.035
+    ]
+   },
+   "coverage": {
+    "count": 193,
+    "rate": 0.4825,
+    "ci95": [
+     0.4325,
+     0.53
+    ]
+   },
+   "explicit": {
+    "correct": {
+     "count": 193,
+     "rate": 0.4825,
+     "ci95": [
+      0.4325,
+      0.5325
+     ]
+    },
+    "wrong": {
+     "count": 0,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.0
+     ]
+    },
+    "refused": {
+     "count": 207,
+     "rate": 0.5175,
+     "ci95": [
+      0.4675,
+      0.565
+     ]
+    }
+   },
+   "system": {
+    "correct": {
+     "count": 382,
+     "rate": 0.955,
+     "ci95": [
+      0.935,
+      0.975
+     ]
+    },
+    "wrong": {
+     "count": 18,
+     "rate": 0.045,
+     "ci95": [
+      0.025,
+      0.0675
+     ]
+    },
+    "refused": {
+     "count": 0,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.0
+     ]
+    }
+   },
+   "fallback_alone": {
+    "correct": {
+     "count": 374,
+     "rate": 0.935,
+     "ci95": [
+      0.91,
+      0.9575
+     ]
+    },
+    "wrong": {
+     "count": 26,
+     "rate": 0.065,
+     "ci95": [
+      0.0425,
+      0.09
+     ]
+    },
+    "refused": {
+     "count": 0,
+     "rate": 0.0,
+     "ci95": [
+      0.0,
+      0.0
+     ]
+    }
+   },
+   "cost_ms": {
+    "explicit_mean": 0.1578653575,
+    "fallback_alone_mean": 0.08219048,
+    "fallback_alone_ci95": [
+     0.0801919678125,
+     0.08420582731249998
+    ],
+    "system_mean": 0.19472171500000002,
+    "system_ci95": [
+     0.18008593700000003,
+     0.2100289919375
+    ],
+    "fallback_alone_over_system": 0.42209200961484955,
+    "fallback_alone_over_system_ci95": [
+     0.3912140353055294,
+     0.457555049578932
+    ]
+   }
+  }
+ }
+}

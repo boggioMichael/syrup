@@ -1,0 +1,32 @@
+{
+ "chars": "0123456789/%.",
+ "seed": 20261012,
+ "variants_per_line": 300,
+ "training_lines_kept": 434,
+ "training_lines_skipped": 168,
+ "training_cells": 5642,
+ "tried": [
+  {
+   "hidden": 16,
+   "dev_exact": 0.95
+  },
+  {
+   "hidden": 32,
+   "dev_exact": 0.95
+  },
+  {
+   "hidden": 64,
+   "dev_exact": 0.95
+  },
+  {
+   "hidden": 128,
+   "dev_exact": 0.95
+  }
+ ],
+ "chosen_hidden": 16,
+ "float_dev_exact": 0.95,
+ "int8_dev_exact": 0.95,
+ "parameters": 4333,
+ "onnx_sha256": "c7d49d8eb1708af58152e7e5482d86b5d88bb12e9404a9308a8901899cefb058",
+ "onnx_bytes": 5223
+}
