@@ -6,6 +6,7 @@
 //! ```text
 //! cargo run --release --example vs_opencv -- TASK --data DIR --split dev|test \
 //!     [--threads N] [--calls K] [--warmup W] [--dump DIR] [--min-deviation D] \
+//!     [--min-size S] [--min-neighbors N] \
 //!     --out FILE.json
 //! ```
 //!
@@ -37,6 +38,10 @@ struct Args {
     out: PathBuf,
     /// `faces`: `CascadeOptions::min_deviation` (OpenCV's window gate is 10).
     min_deviation: Option<f32>,
+    /// `faces`: smallest face side (0: the cascade's 20-pixel window) and
+    /// minimum neighbours; the comparison uses 0 and 3.
+    min_size: u32,
+    min_neighbors: u32,
 }
 
 fn args() -> Args {
@@ -52,6 +57,8 @@ fn args() -> Args {
         dump: None,
         out: PathBuf::from("out.json"),
         min_deviation: None,
+        min_size: 0,
+        min_neighbors: 3,
     };
     while let Some(flag) = it.next() {
         let mut value = || it.next().unwrap_or_else(|| usage());
@@ -66,6 +73,8 @@ fn args() -> Args {
             "--min-deviation" => {
                 a.min_deviation = Some(value().parse().unwrap_or_else(|_| usage()))
             }
+            "--min-size" => a.min_size = value().parse().unwrap_or_else(|_| usage()),
+            "--min-neighbors" => a.min_neighbors = value().parse().unwrap_or_else(|_| usage()),
             _ => usage(),
         }
     }
@@ -74,7 +83,7 @@ fn args() -> Args {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: vs_opencv faces|templates|motion --data DIR --split dev|test [--threads N] [--calls K] [--warmup W] [--dump DIR] [--min-deviation D] --out FILE"
+        "usage: vs_opencv faces|templates|motion --data DIR --split dev|test [--threads N] [--calls K] [--warmup W] [--dump DIR] [--min-deviation D] [--min-size S] [--min-neighbors N] --out FILE"
     );
     std::process::exit(2)
 }
@@ -146,8 +155,8 @@ fn faces(a: &Args) -> (Vec<Item>, String) {
     let (cascade, load_ns) = time(Cascade::frontal_face);
     let options = CascadeOptions {
         scale_factor: 1.1,
-        min_neighbors: 3,
-        min_size: 0,
+        min_neighbors: a.min_neighbors,
+        min_size: a.min_size,
         max_size: None,
         threads: a.threads,
         min_deviation: a.min_deviation,
