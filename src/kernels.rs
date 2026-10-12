@@ -162,6 +162,58 @@ fn correlate_row_scalar(totals: &mut [u32], source: &[u8], weights: &[u8]) {
     }
 }
 
+/// The products of a `w`×`h` template with the window of a plane
+/// (`width`×`height`, row-major) at every position, row by row:
+/// `out[y · columns + x] = Σ weights[v · w + u] · plane[(y + v) · width + x + u]`
+/// over the `columns = width - w + 1` by `height - h + 1` positions. The
+/// sums must fit in 32 bits (a template of at most `u32::MAX / 255²`
+/// pixels).
+pub(crate) fn correlate_everywhere(
+    plane: &[u8],
+    width: usize,
+    height: usize,
+    weights: &[u8],
+    w: usize,
+    h: usize,
+) -> Vec<u32> {
+    assert!(w > 0 && h > 0 && w <= width && h <= height);
+    assert!(plane.len() >= width * height && weights.len() >= w * h);
+    let (columns, rows) = (width - w + 1, height - h + 1);
+    let mut out = vec![0u32; columns * rows];
+    match backend() {
+        #[cfg(target_arch = "x86_64")]
+        // SAFETY: `backend()` reported AVX2 on this CPU; the sizes are
+        // checked above.
+        Backend::Avx2 => unsafe {
+            x86::correlate_everywhere_avx2(&mut out, plane, width, height, weights, w, h)
+        },
+        _ => correlate_everywhere_rows(&mut out, plane, width, weights, w, h),
+    }
+    out
+}
+
+/// Row by row: each template row multiplied into a whole row of positions
+/// (`correlate_row`).
+fn correlate_everywhere_rows(
+    out: &mut [u32],
+    plane: &[u8],
+    width: usize,
+    weights: &[u8],
+    w: usize,
+    h: usize,
+) {
+    let columns = width - w + 1;
+    for (y, accumulator) in out.chunks_exact_mut(columns).enumerate() {
+        for v in 0..h {
+            correlate_row(
+                accumulator,
+                &plane[(y + v) * width..(y + v + 1) * width],
+                &weights[v * w..(v + 1) * w],
+            );
+        }
+    }
+}
+
 #[cfg(target_arch = "x86_64")]
 mod x86 {
     use std::arch::x86_64::*;
@@ -348,6 +400,103 @@ mod x86 {
         (sum, squares, products)
     }
 
+    /// Every position's products, 8 positions a vector: each pixel is
+    /// stored beside its right-hand neighbour as the two 16-bit halves of a
+    /// 32-bit lane, so that one multiply-add of 16-bit pairs (`madd`) with
+    /// two neighbouring template weights adds two taps of the correlation
+    /// for 8 positions at once — a load, a multiply-add and an add per 16
+    /// products, the accumulators staying in registers over the whole
+    /// template. The paired copy of the plane is made once per search.
+    /// Integer sums, so the order they are added in changes nothing; the
+    /// 32-bit lanes wrap exactly as the `u32` totals do.
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn correlate_everywhere_avx2(
+        out: &mut [u32],
+        plane: &[u8],
+        width: usize,
+        height: usize,
+        weights: &[u8],
+        w: usize,
+        h: usize,
+    ) {
+        let (columns, rows) = (width - w + 1, height - h + 1);
+        assert!(out.len() >= columns * rows);
+        assert!(plane.len() >= width * height && weights.len() >= w * h);
+        let mut pairs = vec![0u32; width * height];
+        for (paired, row) in pairs.chunks_exact_mut(width).zip(plane.chunks_exact(width)) {
+            for ((pair, &here), &next) in paired.iter_mut().zip(row).zip(&row[1..]) {
+                *pair = u32::from(here) | (u32::from(next) << 16);
+            }
+            paired[width - 1] = u32::from(row[width - 1]);
+        }
+        // Neighbouring weights in pairs, row by row; an odd row's last
+        // weight is paired with zero.
+        let half = w.div_ceil(2);
+        let mut weight_pairs = Vec::with_capacity(h * half);
+        for line in weights[..w * h].chunks_exact(w) {
+            for k in 0..half {
+                let a = u32::from(line[2 * k]);
+                let b = line.get(2 * k + 1).map_or(0, |&b| u32::from(b));
+                weight_pairs.push(_mm256_set1_epi32((a | (b << 16)) as i32));
+            }
+        }
+        // The furthest a vector load reaches: position `x + 7` of a block
+        // and pair `2 (half - 1)`, i.e. `columns - 1 + 2 half - 2 <= width - 1`.
+        debug_assert!(columns + 2 * half - 2 <= width);
+        let base = pairs.as_ptr();
+        for (y, out_row) in out[..columns * rows].chunks_exact_mut(columns).enumerate() {
+            let mut x = 0;
+            while x + 32 <= columns {
+                let mut acc = [_mm256_setzero_si256(); 4];
+                for v in 0..h {
+                    // SAFETY: rows `y + v < height`, and every load below
+                    // ends within the row (the bound above).
+                    let row = unsafe { base.add((y + v) * width + x) };
+                    for (k, &pair) in weight_pairs[v * half..(v + 1) * half].iter().enumerate() {
+                        let at = unsafe { row.add(2 * k) };
+                        for (lane, sum) in acc.iter_mut().enumerate() {
+                            let pixels = unsafe { _mm256_loadu_si256(at.add(8 * lane).cast()) };
+                            *sum = _mm256_add_epi32(*sum, _mm256_madd_epi16(pixels, pair));
+                        }
+                    }
+                }
+                for (lane, sum) in acc.iter().enumerate() {
+                    // SAFETY: `x + 32 <= columns`, the row's length.
+                    unsafe {
+                        _mm256_storeu_si256(out_row.as_mut_ptr().add(x + 8 * lane).cast(), *sum)
+                    };
+                }
+                x += 32;
+            }
+            while x + 8 <= columns {
+                let mut sum = _mm256_setzero_si256();
+                for v in 0..h {
+                    // SAFETY: as above.
+                    let row = unsafe { base.add((y + v) * width + x) };
+                    for (k, &pair) in weight_pairs[v * half..(v + 1) * half].iter().enumerate() {
+                        let pixels = unsafe { _mm256_loadu_si256(row.add(2 * k).cast()) };
+                        sum = _mm256_add_epi32(sum, _mm256_madd_epi16(pixels, pair));
+                    }
+                }
+                // SAFETY: `x + 8 <= columns`.
+                unsafe { _mm256_storeu_si256(out_row.as_mut_ptr().add(x).cast(), sum) };
+                x += 8;
+            }
+            // The last few positions one at a time.
+            for (x, total) in out_row.iter_mut().enumerate().skip(x) {
+                let mut sum = 0u32;
+                for v in 0..h {
+                    let row = &plane[(y + v) * width + x..(y + v) * width + x + w];
+                    let line = &weights[v * w..(v + 1) * w];
+                    for (&p, &t) in row.iter().zip(line) {
+                        sum = sum.wrapping_add(u32::from(p) * u32::from(t));
+                    }
+                }
+                *total = sum;
+            }
+        }
+    }
+
     /// The row correlation compiled for AVX2: the compiler vectorises the
     /// inner loop itself, 32 pixels a step.
     #[target_feature(enable = "avx2")]
@@ -452,6 +601,45 @@ mod tests {
             correlate_row(&mut got, &source[..columns + 55], &weights);
             assert_eq!(got, expected, "{columns} columns");
         }
+    }
+
+    #[test]
+    fn correlations_everywhere_add_up_the_same() {
+        let (width, height) = (173usize, 61usize);
+        let plane = noise(width * height, 11);
+        for &(w, h) in &[
+            (1usize, 1usize),
+            (2, 3),
+            (7, 5),
+            (16, 16),
+            (17, 9),
+            (32, 32),
+            (48, 33),
+            (64, 60),
+            (173, 1),
+            (140, 61),
+        ] {
+            let weights = noise(w * h, (w * 131 + h) as u32);
+            let mut expected = vec![0u32; (width - w + 1) * (height - h + 1)];
+            correlate_everywhere_rows(&mut expected, &plane, width, &weights, w, h);
+            let got = correlate_everywhere(&plane, width, height, &weights, w, h);
+            assert_eq!(got, expected, "{w}x{h} on {:?}", backend());
+            #[cfg(target_arch = "x86_64")]
+            if is_x86_feature_detected!("avx2") {
+                let mut avx2 = vec![0u32; expected.len()];
+                // SAFETY: the CPU reported AVX2.
+                unsafe {
+                    x86::correlate_everywhere_avx2(&mut avx2, &plane, width, height, &weights, w, h)
+                };
+                assert_eq!(avx2, expected, "{w}x{h} on avx2");
+            }
+        }
+        // All 255s: the largest sums, and lanes past 2^31.
+        let (width, height) = (300usize, 260usize);
+        let white = vec![255u8; width * height];
+        let weights = vec![255u8; 256 * 256];
+        let got = correlate_everywhere(&white, width, height, &weights, 256, 256);
+        assert!(got.iter().all(|&t| t == 256 * 256 * 255 * 255));
     }
 
     #[test]

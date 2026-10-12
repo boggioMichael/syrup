@@ -1058,27 +1058,20 @@ fn score_everywhere(plane: &Plane, template: &TemplateLevel) -> Vec<f32> {
     scores
 }
 
-/// The sum of products of the template with the window at every position.
-///
-/// Rather than a short dot product per position, each template pixel is
-/// multiplied into a whole row of positions at once: long, independent
-/// integer multiply-adds that vectorise well. Each product is at most
-/// 255 * 255, which fits 16 bits exactly, so the multiply is a 16-bit one.
-/// Callers must keep the template area at or below [`MAX_AREA_32`].
+/// The sum of products of the template with the window at every position
+/// (`kernels::correlate_everywhere`: on AVX2 two template pixels per
+/// 16-bit multiply-add, 8 positions a vector, otherwise each template
+/// pixel multiplied into a whole row of positions at once). Callers must
+/// keep the template area at or below [`MAX_AREA_32`].
 fn products_everywhere(plane: &Plane, template: &TemplateLevel) -> Vec<u32> {
-    let (w, h) = (template.inner.width, template.inner.height);
-    let (columns, rows) = (plane.width - w + 1, plane.height - h + 1);
-    let mut out = vec![0u32; columns * rows];
-    for (y, accumulator) in out.chunks_exact_mut(columns).enumerate() {
-        for v in 0..h {
-            crate::kernels::correlate_row(
-                accumulator,
-                plane.row(y + v, 0, plane.width),
-                template.inner.row(v, 0, w),
-            );
-        }
-    }
-    out
+    crate::kernels::correlate_everywhere(
+        &plane.pixels,
+        plane.width,
+        plane.height,
+        &template.inner.pixels,
+        template.inner.width,
+        template.inner.height,
+    )
 }
 
 /// Positions whose score is at least `floor` and no lower than any of their
