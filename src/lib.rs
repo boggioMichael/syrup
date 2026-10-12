@@ -87,6 +87,7 @@ pub mod kernels;
 pub mod motion;
 pub mod ocr;
 pub mod quality;
+mod resample;
 mod scan;
 pub mod sequence;
 pub mod template;

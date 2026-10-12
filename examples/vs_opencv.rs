@@ -5,7 +5,8 @@
 //!
 //! ```text
 //! cargo run --release --example vs_opencv -- TASK --data DIR --split dev|test \
-//!     [--threads N] [--calls K] [--warmup W] [--dump DIR] --out FILE.json
+//!     [--threads N] [--calls K] [--warmup W] [--dump DIR] [--min-deviation D] \
+//!     --out FILE.json
 //! ```
 //!
 //! Tasks: `faces` (Haar cascade on the prepared grey images), `templates`
@@ -34,6 +35,8 @@ struct Args {
     warmup: usize,
     dump: Option<PathBuf>,
     out: PathBuf,
+    /// `faces`: `CascadeOptions::min_deviation` (OpenCV's window gate is 10).
+    min_deviation: Option<f32>,
 }
 
 fn args() -> Args {
@@ -48,6 +51,7 @@ fn args() -> Args {
         warmup: 3,
         dump: None,
         out: PathBuf::from("out.json"),
+        min_deviation: None,
     };
     while let Some(flag) = it.next() {
         let mut value = || it.next().unwrap_or_else(|| usage());
@@ -59,6 +63,9 @@ fn args() -> Args {
             "--warmup" => a.warmup = value().parse().unwrap_or_else(|_| usage()),
             "--dump" => a.dump = Some(value().into()),
             "--out" => a.out = value().into(),
+            "--min-deviation" => {
+                a.min_deviation = Some(value().parse().unwrap_or_else(|_| usage()))
+            }
             _ => usage(),
         }
     }
@@ -67,7 +74,7 @@ fn args() -> Args {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: vs_opencv faces|templates|motion --data DIR --split dev|test [--threads N] [--calls K] [--warmup W] [--dump DIR] --out FILE"
+        "usage: vs_opencv faces|templates|motion --data DIR --split dev|test [--threads N] [--calls K] [--warmup W] [--dump DIR] [--min-deviation D] --out FILE"
     );
     std::process::exit(2)
 }
@@ -143,6 +150,7 @@ fn faces(a: &Args) -> (Vec<Item>, String) {
         min_size: 0,
         max_size: None,
         threads: a.threads,
+        min_deviation: a.min_deviation,
     };
     let mut items = Vec::new();
     let mut first_call_ns = None;

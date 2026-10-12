@@ -25,7 +25,7 @@
 
 use std::sync::OnceLock;
 
-use image::{GrayImage, RgbaImage, imageops};
+use image::{GrayImage, RgbaImage};
 
 use crate::geometry::Rect;
 use crate::threshold::{Channel, channel_image};
@@ -295,31 +295,59 @@ impl Cascade {
     /// `base` of the integral image. Returns how many stages the window
     /// passed; a window is accepted when it passes all of them.
     fn stages_passed(&self, integral: &Integral, level: &Level, base: usize) -> usize {
+        // The window's part of the integral images, checked once: every
+        // offset of `level` is below `level.span` (asserted when the level
+        // was laid out), so the look-ups below need no check each — the
+        // checks were a third of this function's instructions.
+        let sums = &integral.sums[base..base + level.span];
+        let squares = &integral.squares[base..base + level.span];
+        // SAFETY: offsets come from `Level`, all below `level.span`, the
+        // length of both slices.
+        let sum_at = |o: &[usize; 4]| unsafe {
+            *sums.get_unchecked(o[0]) + *sums.get_unchecked(o[3])
+                - *sums.get_unchecked(o[1])
+                - *sums.get_unchecked(o[2])
+        };
         // Variance normalisation over the window with a one-pixel border
         // trimmed, exactly as the reference implementation does.
-        let sum = integral.sum_at(base, &level.norm) as f64;
-        let squares = integral.squares_at(base, &level.norm) as f64;
+        let sum = sum_at(&level.norm) as f64;
+        // SAFETY: as above.
+        let squares = unsafe {
+            *squares.get_unchecked(level.norm[0]) + *squares.get_unchecked(level.norm[3])
+                - *squares.get_unchecked(level.norm[1])
+                - *squares.get_unchecked(level.norm[2])
+        } as f64;
         let variance = level.norm_area * squares - sum * sum;
         let inverse_deviation = if variance > 0.0 {
             (1.0 / variance.sqrt()) as f32
         } else {
             1.0
         };
+        // `CascadeOptions::min_deviation`, computed as OpenCV computes it.
+        if let Some(limit) = level.flat_limit
+            && !(variance > 0.0 && level.norm_area * f64::from(inverse_deviation) < limit)
+        {
+            return 0;
+        }
 
-        let sums = &integral.sums;
         let mut passed = 0;
         for stage in &self.stages {
             let mut total = 0.0f32;
-            for weak in &self.weak[stage.weak.clone()] {
+            // SAFETY: `from_bytes` built every stage's range within `weak`.
+            for weak in unsafe { self.weak.get_unchecked(stage.weak.clone()) } {
                 let mut index = 0i32;
                 loop {
-                    let node = &level.nodes[weak.first_node as usize + index as usize];
+                    // SAFETY: `from_bytes` checked that every link of a tree
+                    // stays within the tree's nodes, and `level.nodes`
+                    // holds one per cascade node.
+                    let node = unsafe {
+                        level
+                            .nodes
+                            .get_unchecked(weak.first_node as usize + index as usize)
+                    };
                     let mut value = 0.0f32;
                     for rect in &node.rects[..node.count as usize] {
-                        let area = sums[base + rect.offsets[0]] + sums[base + rect.offsets[3]]
-                            - sums[base + rect.offsets[1]]
-                            - sums[base + rect.offsets[2]];
-                        value += rect.weight * area as f32;
+                        value += rect.weight * sum_at(&rect.offsets) as f32;
                     }
                     index = if value * inverse_deviation < node.threshold {
                         node.left
@@ -330,7 +358,13 @@ impl Cascade {
                         break;
                     }
                 }
-                total += self.leaves[weak.first_leaf as usize + (-index) as usize];
+                // SAFETY: `from_bytes` checked that every leaf link is within
+                // the tree's leaves.
+                total += unsafe {
+                    *self
+                        .leaves
+                        .get_unchecked(weak.first_leaf as usize + (-index) as usize)
+                };
             }
             if total < stage.threshold {
                 return passed;
@@ -357,7 +391,7 @@ impl Cascade {
             offsets: [0; 4],
             weight: 0.0,
         };
-        let nodes = self
+        let nodes: Vec<LevelNode> = self
             .nodes
             .iter()
             .map(|node| {
@@ -386,10 +420,25 @@ impl Cascade {
                 }
             })
             .collect();
+        // Every rectangle lies within the window (`from_bytes` checks), so
+        // every offset is below the bottom-right corner's plus one.
+        let span = wh as usize * stride + ww as usize + 1;
+        let norm = corners(1, 1, ww - 2, wh - 2);
+        assert!(
+            nodes
+                .iter()
+                .flat_map(|n: &LevelNode| n.rects[..n.count as usize].iter())
+                .flat_map(|r| r.offsets)
+                .chain(norm)
+                .all(|o| o < span),
+            "a feature outside its window"
+        );
         Level {
             nodes,
-            norm: corners(1, 1, ww - 2, wh - 2),
+            norm,
             norm_area: f64::from((ww - 2) * (wh - 2)),
+            span,
+            flat_limit: None,
         }
     }
 
@@ -420,15 +469,13 @@ impl Cascade {
             let level = if (scaled_w, scaled_h) == (width, height) {
                 std::borrow::Cow::Borrowed(gray)
             } else {
-                std::borrow::Cow::Owned(imageops::resize(
-                    gray,
-                    scaled_w,
-                    scaled_h,
-                    imageops::FilterType::Triangle,
-                ))
+                // Byte for byte the `image` crate's triangle filter, which
+                // this used before (`resample` says why it is its own).
+                std::borrow::Cow::Owned(crate::resample::resize_triangle(gray, scaled_w, scaled_h))
             };
             let integral = Integral::new(&level);
-            let offsets = self.level(integral.stride);
+            let mut offsets = self.level(integral.stride);
+            offsets.flat_limit = options.min_deviation.map(|d| 1.0 / f64::from(d));
             // The reference implementation slides two pixels at a time until
             // the window has doubled, then one.
             let step = if scale > 2.0 { 1 } else { 2 };
@@ -518,6 +565,19 @@ pub struct CascadeOptions {
     /// Threads to scan each scale with; the default is the machine's
     /// parallelism. Results do not depend on it.
     pub threads: usize,
+    /// Reject, before the first stage, every window whose grey levels vary
+    /// by at most this much: their standard deviation over the window less
+    /// a one-pixel border, the deviation the features are normalised by.
+    /// `None`, the default, evaluates every window.
+    ///
+    /// `Some(10.0)` is what OpenCV's `CascadeClassifier` does to every
+    /// window (`HaarEvaluator::setWindow`, also dropping windows of no
+    /// variance at all), so with it a scan does what OpenCV's does. Flat
+    /// background then costs a variance per window instead of the first
+    /// stages — on the GRID video frames of `bench/vs-opencv` a third of
+    /// the time — but an object whose window varies by 10 grey levels or
+    /// less is not found, though the cascade's normalisation finds it.
+    pub min_deviation: Option<f32>,
 }
 
 impl Default for CascadeOptions {
@@ -530,6 +590,7 @@ impl Default for CascadeOptions {
             threads: std::thread::available_parallelism()
                 .map(|n| n.get())
                 .unwrap_or(1),
+            min_deviation: None,
         }
     }
 }
@@ -575,18 +636,6 @@ impl Integral {
             squares,
         }
     }
-
-    #[inline]
-    fn sum_at(&self, base: usize, corners: &[usize; 4]) -> u32 {
-        let s = &self.sums;
-        s[base + corners[0]] + s[base + corners[3]] - s[base + corners[1]] - s[base + corners[2]]
-    }
-
-    #[inline]
-    fn squares_at(&self, base: usize, corners: &[usize; 4]) -> u64 {
-        let s = &self.squares;
-        s[base + corners[0]] + s[base + corners[3]] - s[base + corners[1]] - s[base + corners[2]]
-    }
 }
 
 /// A feature rectangle resolved to integral-image offsets for one stride.
@@ -605,6 +654,14 @@ struct Level {
     /// The variance-normalisation window.
     norm: [usize; 4],
     norm_area: f64,
+    /// One past the largest offset: how much of the integral images a
+    /// window reads from its top-left corner on.
+    span: usize,
+    /// With `CascadeOptions::min_deviation` = `d`: `1 / d`. A window is
+    /// rejected before the first stage unless its normalisation area times
+    /// the inverse of its deviation (as an `f32`, as OpenCV keeps it) is
+    /// below this: OpenCV's `area * varianceNormFactor < 1e-1` for `d = 10`.
+    flat_limit: Option<f64>,
 }
 
 /// A tree node resolved for one pyramid level.
@@ -851,6 +908,59 @@ mod tests {
         };
         let matches = Cascade::frontal_face().detect_in(&image, region, &CascadeOptions::default());
         assert!(matches.is_empty(), "false positives: {matches:?}");
+    }
+
+    /// The astronaut's grey frame with its contrast scaled by `k` about the
+    /// mean.
+    fn astronaut_at_contrast(k: f32) -> GrayImage {
+        let image = astronaut();
+        let gray = channel_image(
+            &image,
+            Rect {
+                x: 0,
+                y: 0,
+                w: 320,
+                h: 320,
+            },
+            Channel::Luma,
+        );
+        let mean = gray.as_raw().iter().map(|&v| f32::from(v)).sum::<f32>() / (320.0 * 320.0);
+        GrayImage::from_fn(320, 320, |x, y| {
+            let v = f32::from(gray.get_pixel(x, y).0[0]);
+            image::Luma([(mean + (v - mean) * k).round().clamp(0.0, 255.0) as u8])
+        })
+    }
+
+    /// OpenCV rejects every window that varies by 10 grey levels or less
+    /// before its first stage; `min_deviation: Some(10.0)` does the same.
+    /// At a tenth of its contrast the astronaut's face window varies by
+    /// about 5: OpenCV 5.0 finds no face there, nor does the gate, while
+    /// the plain scan (the cascade normalises each window by its
+    /// deviation) still finds it. At full contrast the gate changes
+    /// nothing.
+    #[test]
+    fn the_flat_window_gate_drops_low_contrast_faces_as_opencv_does() {
+        let plain = CascadeOptions {
+            threads: 1,
+            ..CascadeOptions::default()
+        };
+        let gated = CascadeOptions {
+            min_deviation: Some(10.0),
+            ..plain
+        };
+        let faint = astronaut_at_contrast(0.1);
+        assert_eq!(Cascade::frontal_face().detect(&faint, &plain).len(), 1);
+        assert!(Cascade::frontal_face().detect(&faint, &gated).is_empty());
+        let normal = astronaut_at_contrast(1.0);
+        let found = Cascade::frontal_face().detect(&normal, &plain);
+        assert_eq!(found.len(), 1);
+        assert_eq!(Cascade::frontal_face().detect(&normal, &gated), found);
+        // A deviation limit of zero only drops windows of one grey level.
+        let zero = CascadeOptions {
+            min_deviation: Some(0.0),
+            ..plain
+        };
+        assert_eq!(Cascade::frontal_face().detect(&faint, &zero).len(), 1);
     }
 
     #[test]
