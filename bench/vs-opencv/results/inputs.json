@@ -7217,6 +7217,3674 @@
    "task": "motion",
    "split": "test",
    "source": "opencv_samples:Megamind.avi"
+  },
+  {
+   "file": "glyphs/dev/train_s050.png",
+   "sha256": "1b6e407c1b3c0a9bf9140bc5bfa6605dbf92a752f0f7f5f60047ecf7c8681a8d",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5"
+  },
+  {
+   "file": "glyphs/dev/s050_000.png",
+   "sha256": "45ee197300a8458f142e8bff17ec0d4f704a06efccc2c01c176edf6a774d7832",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_001.png",
+   "sha256": "9b19c02f83f9370b32352e816a5d56650ab4951076b5470e6c682073222481ca",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_002.png",
+   "sha256": "6a2905a4b709f55cc6fe0403137440aba5c676990965b7a6fdda64046c5d9bdb",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_003.png",
+   "sha256": "4ad0a78b522e07a1da69004731358de5e28dcb143031e896212fad72b286eed2",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_004.png",
+   "sha256": "2adce23323ff44bd18191f8527b34c7aa23d631abd893fc7d838c60edd7cbcc2",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_005.png",
+   "sha256": "4d88e9eb963a739ad29976576ae7b15a83f5b524299e30fe395c14dbebcea3e6",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_006.png",
+   "sha256": "0646954ac77543391fdd499c5507e8381c1127a0e53c3c30a0b6ee35aa05abc6",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_007.png",
+   "sha256": "4cb518678c10e6df689e2e33295823c27bf42041fec3ca88a4f4ad2b2eb77c6a",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_008.png",
+   "sha256": "0f10b8502bad5a7639d92eea5a870c2e9d10a512dc19a4a61a93e9b4f5def580",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_009.png",
+   "sha256": "49b8f8a592318f68b71d633d7b367bbfa35f01e25e5f36608af87921c874913c",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_010.png",
+   "sha256": "c2bc8fbd0efa111c155733f32daf0e60484b45c982e42fea04733bd5efe314f8",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_011.png",
+   "sha256": "a4ed2f0f1c2475fc00aab3a128dfb7d7cf1ba0904bb8a25e62b57eae25bb1abe",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_012.png",
+   "sha256": "c3605514dbd7ca2d870eed11587754402dca01a56f6e7c0eb2717c0cda2267d1",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_013.png",
+   "sha256": "29d618dde3dfd842b709a34455608f3cf5c52b66f57936915bc2e932cec67509",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_014.png",
+   "sha256": "c00248709907b6dfe4d6ac5a282bffee2fe0a2d7993e292ef748b74758ce52aa",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_015.png",
+   "sha256": "721fde38fdb187089194f2c58f9a0f7e1351955541ccc216cb705e87be87ada4",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_016.png",
+   "sha256": "db178bcc1e39371fe0f2969221862ae36910a0ccb56f1d8e1758f86891ed7993",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_017.png",
+   "sha256": "1299ada9201d0a3e4e8aee4525edb9563ccd4b676dc67292c13439e30eed8fa2",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_018.png",
+   "sha256": "8d2c7318b11e60b3fb672f76064d1b8be758cc59612068365a7717f2b91761eb",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_019.png",
+   "sha256": "fcdcb0f058cc2cff8f1c9da57e747132c626356f98d103c1e93805b4474c6549",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_020.png",
+   "sha256": "0239e2f4772ac9bc642d10e2d992327d9c059c49e265d2095a16cd0555f4d578",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_021.png",
+   "sha256": "3d735fdbcd811a1e64cbc7937c15ff149c47d51763f437e166daaa8834a98b2b",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_022.png",
+   "sha256": "1a96a984bbc0789678462d2608ddf3b7a374325cf4202691160e98b888ed686e",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_023.png",
+   "sha256": "98f9e518808d2828ea49aa17634372159d031c95c738d41ce14a538ddc969ecd",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_024.png",
+   "sha256": "9ec04cbeb0ace8ca46260b18d099dcaf10730193135a9bdd26cc54749fcb033d",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_025.png",
+   "sha256": "a8aa6b4878f244ef8b1cdf1304472119a707dd24ac64fcb8a773404125694d62",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_026.png",
+   "sha256": "1401167bc8c3b14765d596aa8d54de4d7766499ac556e9e7639689d00ca62701",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_027.png",
+   "sha256": "5d095bb59ba5825a982d2360c84232365e129ce3436b6b099a7080b8fb567e87",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_028.png",
+   "sha256": "a31c73f3f2fb23b661bc2a9ebb3a6e6facbf15281efbee002a3925bd4dd57ac1",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_029.png",
+   "sha256": "866383a6c72e3bf1fe97cfce6d935b7db62a4ea9fba64dceb1f903895378ae67",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_030.png",
+   "sha256": "dd61a6dcf904a7d5a56c459e3e64752165eb993dfab09697ed56677863a8ffff",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_031.png",
+   "sha256": "d8681fbc0cd3e6f89dc7c8ec520771d2e8e6094580755c4c39d52b2f8439c6fd",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_032.png",
+   "sha256": "81450585171db503e89aafbd69131cdff2f3b43ee88c62d4219106518eed4844",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_033.png",
+   "sha256": "c823197a5691e03d28ae38b8c7c7015dd0a92cd2dfcef13d9e34fd2d0ea5cc54",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_034.png",
+   "sha256": "97d53dce5b81657c40449c36fae81aff4f4cbd1578ba00986578d272cdba43e7",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_035.png",
+   "sha256": "2547629b216230a959e4a5f5880fa73635cde4f3f261e9cdadbae476098d37f5",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_036.png",
+   "sha256": "27c0ed137a8539a1fd7d20c0bf63ee56a876f23f55087d348ae8d0401b2ecf7d",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_037.png",
+   "sha256": "749f355c5142327b4dc353d98ba4aa3ba4f3604701c8ed6cebbba15b340d14c4",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_038.png",
+   "sha256": "3bf5cb0a734b8aa2ed4d84f21abd49eb58d8320f8de483d74105b8935f499591",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_039.png",
+   "sha256": "5113fdf526e8f975934bd91d31b1115771d93fbfa70b50e1b7a14abd3adebbae",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_040.png",
+   "sha256": "adec5fea56b5e0c08f4c90026315a44ded2bdb142bbf01f853aef5012e1aacb8",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_041.png",
+   "sha256": "e320e0b32a5f63a36f966f2a26d3a0dc71948bdb4fb50ff85196592d268b6272",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_042.png",
+   "sha256": "40b00d04b6f3a8125e68a92a1381b8d84ec5504286ae6e2fb980d71aa2182424",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_043.png",
+   "sha256": "3849d863787e0e81092606e424d929a05d8b107850824a8c3522fad983d731d3",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_044.png",
+   "sha256": "65c75c0dc5260fef06a6bb29bb9634f5d7c0b34f2fe743665e04e4d65f68a4dd",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_045.png",
+   "sha256": "947cc167f4acbe6c0bb17a4ad5a62f619e23d3e744f8380f124a55c847a04deb",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_046.png",
+   "sha256": "b8ee5c771cfa30a17663d6f0255117ba37fa2fae2fa771b6a2244d1a78862ddf",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_047.png",
+   "sha256": "ba8c41ec7b54a85e4ee8ad4d4ce58b8cd1911c02a88100d47971e1d032d680da",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_048.png",
+   "sha256": "c38ca39565fd557b2a67ff363b546af809aaa4d4238d2e22f3a5351876ab63e9",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_049.png",
+   "sha256": "14cb68ffff6b899dfefa569f05b5a71b6328df064a4bb5bc307fb2513871ec1d",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_050.png",
+   "sha256": "c665ac6a35138573243b104427d7dd2550828e9dfb20ba07363db8f8962de0a1",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_051.png",
+   "sha256": "4ca9b918485fd5d4208a47150eeea9ed26b7c4031625d7e3e5e12bfc197746ae",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_052.png",
+   "sha256": "ddb56d4fcdcccc5cf3e02ecdd88152139e5565ffcf31afac8f8f98354e7425b9",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_053.png",
+   "sha256": "22233017cbcc98dbb81e1c1c2d8000f30878bdbccaee7b2c59d14aaebbf3ebc1",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_054.png",
+   "sha256": "2d870893f713268c5a0f11227731b8fa910dddf017a4515be60563fa81cb6e13",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_055.png",
+   "sha256": "7bb1f10f40f0001a7abe93a40654c628b751429c12d6464a8345124ee9dd48c9",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_056.png",
+   "sha256": "4b8685ca4874de4cac736d9a8814ab4c23dcc6b7471e76c9157fd28d03247d97",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/s050_057.png",
+   "sha256": "fbefa040f34c2472f92642154bef1d10b186d652eeffc65a16d3db64e9ea43a7",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/dev/s050_058.png",
+   "sha256": "98d3f531464032c742f5b619c829a2a513f4e8e9e98f4908016ba29b9fd2099b",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/dev/s050_059.png",
+   "sha256": "ed83bf96bf2f8f2b9c2d6be03962e3d37031e79169f4bb7e093f4f2c8c183505",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/dev/train_s075.png",
+   "sha256": "7f5fe669f744ba89c358f56404cec6d998c9deb37f033a0de5efff4ade70815c",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75"
+  },
+  {
+   "file": "glyphs/dev/s075_000.png",
+   "sha256": "3b91205330b4b2f32b87fdbdc83f480f441bf1a50e2f210ead78c1a3a3a51613",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_001.png",
+   "sha256": "5d79fe83ad99781d5b8f096deae26e631d4816f0597b2e2116dfd22702d871e6",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_002.png",
+   "sha256": "b36c0e23abc36406a660f0e7959d46d4157ef7b26baaec2a4f1f043571602e88",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_003.png",
+   "sha256": "ac26c90f40f68634dcbe9e2a57cc036e607d3872ca5b4f6a3194694c4bd46dfb",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_004.png",
+   "sha256": "a980ac895c6792d5fe86f05001220205ebcdca9cb2fabba4638fd614aa9eb861",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_005.png",
+   "sha256": "38ef3050608e24fa43da7e7148ad0d5c2ba492c04d84c10a668706af24f57cb6",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_006.png",
+   "sha256": "50bc7f45d34f9073772a785bbd31072a4c2e1e630ab5413882488fa2ab4aa3c3",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_007.png",
+   "sha256": "c93d90d6184c6552b0f3686ff86ff774d183b1089470f8f79fc71940c50fbc9d",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_008.png",
+   "sha256": "9096b1c9532f9b3aae730a9b9b20a2a2c7de2be1db13d328e232b76594507fb8",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_009.png",
+   "sha256": "80ede060490e2e62b7db47c4ad453d8dd5d75767b706e79d241452a66d95ab1f",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_010.png",
+   "sha256": "7f7c8aabc1f26deb16bd10640f7253a08ca8af457d94329669f1a080f8811261",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_011.png",
+   "sha256": "becb41d70f2fdfb2bd95053c19cf266640e9a08c5b267b62278bd33278a97ba3",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_012.png",
+   "sha256": "25d77c5fb34474ef886ddcbe84ad096e30246de6c42000145f4617f94c2fdbfb",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_013.png",
+   "sha256": "fd0bac3489bef2696c195f6dc018c711315f9ad1a5df41eb301b2dfad778d2ec",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_014.png",
+   "sha256": "664d83ed509989681b43a79f3058740c24c641b4e121b5180aafe8ceb3268098",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_015.png",
+   "sha256": "428aa5ed3ee67da2ac5be2a4db805f58afbba8f883ccaa722b2acb7c8e11093b",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_016.png",
+   "sha256": "6e4852c903ddd068c850a84efb979d7c6c8d3ad575ee9e5a9a0848cc1bef4804",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_017.png",
+   "sha256": "7f3a3cb703090e110ce5a90409f4ffa9cb7b82aad0cd4f799d28a769eb4ec43c",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_018.png",
+   "sha256": "a39a654cd42656db1e18893684f510f6946d880e89a5cd8d4fd7258f5e801679",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_019.png",
+   "sha256": "ecfbc4c24162247b40fd1e670905ee037298742c8e41411b90e694696cb957d9",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_020.png",
+   "sha256": "ce7dfa708b7a5828f6033a86c0beba68f5d66cbe7e6e310d2b72889d86ee26cf",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_021.png",
+   "sha256": "594ef6ad4d9cf259b4a653a53317c0876671f17e9f5dc58c78b9f969231fd901",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_022.png",
+   "sha256": "d21b267a625b9ac5d2112c4ea98852cbe6d161ddf5afb123193bc96bd734e717",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_023.png",
+   "sha256": "23723dbc02093a9caa1eda4864e01601deb8a546cfb53015fac47300b1bb085e",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_024.png",
+   "sha256": "7cc94e038817a446cd945fc07b74cf335725301ac88d2e012b4707fa54107690",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_025.png",
+   "sha256": "17a90faf6f3a2bacc373731198e716fdee67058a24d53256dfa80aadfe13e554",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_026.png",
+   "sha256": "de23700a9511be00965bac976c24ea86b81230c2d171f4eea95c4324f43dc5b1",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_027.png",
+   "sha256": "e4e757f8ef57d234b17dd43c25e4fc8bc347192f623b09d7a569319bd4db3e7e",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_028.png",
+   "sha256": "14ef28c6f1686f81a535f76e2693b6f0fc5d6793df59d91f87dcb32bedeb83f0",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_029.png",
+   "sha256": "f457014c198cbab8b64743a036b686045144285b6c088338ca6afc8f3f4df2f1",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_030.png",
+   "sha256": "0498f0e585b51d6646b4820d38d5dbd4bbfe5d7177160b1f60937f0bf8634c2c",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_031.png",
+   "sha256": "896e56184a959fd1aa07c4079829bc26bdeb5c247c8f5e89a70e32f35bdaf8de",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_032.png",
+   "sha256": "3723b305c5f4ad34d52eab29fb4ac024ebf7ab103198d857b9c18949f2211616",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_033.png",
+   "sha256": "020c433718b1a65f47d6c626d880b515c49ead3844300b9b1fe589f998f0c9dc",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_034.png",
+   "sha256": "acf54c6c0a130022e334e7a9f6e307945c0eb995ea02989c2ca0451dc2acb79b",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_035.png",
+   "sha256": "06c472e8356e3d1dde819cc1c68be57b7d497080d9518727ab1d5726760fd766",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_036.png",
+   "sha256": "f6c2ed46272ad0c97ad6f888c51d48d51af998c3fcbc5d96cdb0b2a5526c673e",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_037.png",
+   "sha256": "12a6d07f3ca5a241383eb8ddab3b76818e1a321560eb6e6e29f41ef4d04c0648",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_038.png",
+   "sha256": "f5f3b9f4069a47f9b137889d6fc8b71c821570682e0f80756f465aa00456aedc",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_039.png",
+   "sha256": "3d06d8a1efbb9e53111a44ac04bd06ba9372798e33abfe472193e740dd9e6ddf",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_040.png",
+   "sha256": "3930771dabc62949320a74e95e48ac2ae15ca2de9926d2f5f3831b9c081ce64e",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_041.png",
+   "sha256": "881e96c0c32ab5f7d72d743cd2bef9f9a32120493174c63862d0a9e5b20ea757",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_042.png",
+   "sha256": "6de1e0b44b3ba82358ee62490affc99194926cc11b007864c7e8aa905c100cae",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_043.png",
+   "sha256": "076d47ef4c86a91b27b1007b8fe0cc53db0185bfc8a380270e8aa04f45c99c0c",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_044.png",
+   "sha256": "12567c0bb861e5d20e48c95e3bb26fbd653615562df87dca384c3994dca712ac",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_045.png",
+   "sha256": "7f9db9bc24414695e38f1fc625edc4a97b0ab5ffa322868626dc9c496e17f770",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_046.png",
+   "sha256": "71124df8ef3368cb86eb39200c141085aed27b7e3eaba45335b5ad97b43a637b",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_047.png",
+   "sha256": "ae5566a2443033b7604898c67c328d70c46994e19e0d044091c96077f3c6e9e3",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_048.png",
+   "sha256": "a474c69046dab4deadeee5d0df09576a5755b3bdba5ecf2dd49aaa8dfde281d0",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_049.png",
+   "sha256": "2135f1eeb476d3baf75efe4bb56de01d43c173a22d04a5830725e79cd7f0457b",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_050.png",
+   "sha256": "e03cc89c53d8935c3af60acfe03837eff93a281036e801978fa818988687bb99",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_051.png",
+   "sha256": "ec930d13b32791dffb2dd0775ff5e06ae4881ebfcf05991987a8f63f265f3bd7",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_052.png",
+   "sha256": "5760b5e6184bc1b57495c7ae29a6a8a680dff8edcb0b91241e1309d35addbf97",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_053.png",
+   "sha256": "3806643acb686f02fd85ee7ad1ca49e162338271af9b1718659dece6363d2f2a",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_054.png",
+   "sha256": "db358c7430c16f45dc1a710ee6172e508f2a068941a26e2954f725238f6a04e8",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_055.png",
+   "sha256": "49e061250a4d95c8f3ba0483438e3a6531d9f2152b9f35d5117e99a0a7037a53",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_056.png",
+   "sha256": "6b997a99324b690fa52ef06575a581c7894019411616a0e91a4aceddd7d3a341",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/dev/s075_057.png",
+   "sha256": "7337f0bf6a1cb1c2ead836d6e18dcd8332d6f7db96e1b4518ea6a3e2b47e6e8c",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/dev/s075_058.png",
+   "sha256": "951e04afe28d6e4fd9bdc346b94e95157ce14b476a2f4984d5514ffe287bce7a",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/dev/s075_059.png",
+   "sha256": "4046345485b5517c9015945525fe09f7884507aba660e54e5b68ffcd96106b3a",
+   "task": "glyphs",
+   "split": "dev",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/train_s050.png",
+   "sha256": "1b6e407c1b3c0a9bf9140bc5bfa6605dbf92a752f0f7f5f60047ecf7c8681a8d",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5"
+  },
+  {
+   "file": "glyphs/test/s050_000.png",
+   "sha256": "12c2b27016daf4fc8e6a9aa5f2df96849c247a955b1bc0480b3392c9e6dd7107",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_001.png",
+   "sha256": "93dd7b84bf866080f33dab0bb8f8511ff313f56e3aa5eeb68f270376a19f84a6",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_002.png",
+   "sha256": "971d939311273822d80dcd6914a19330763a579b94dfb06e0ab01f3dff35b816",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_003.png",
+   "sha256": "5b1aa67cbd74db539632c8b787fa8f4421a5aee0d378fdb15014dff1386f4271",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_004.png",
+   "sha256": "30e9358d5ab39e2ebe41c6d1072f95c9fa227a93c734b4fb866446eb0189da98",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_005.png",
+   "sha256": "5fc7012b97cbd842f7f57457c6b14e5b71f0f82585dab8373aa30b89151b111b",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_006.png",
+   "sha256": "93121b46d21e0d2dc74f9496b080b3ee4d273cce194265585d10d7ab4f9049bb",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_007.png",
+   "sha256": "f68722618bf6134182e9c3ddc39a2551511777c4955764800980a1f785afa8f4",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_008.png",
+   "sha256": "69715210b5e1aa90712d3e43bd8009eaaf5e7dc28bf2ba460b58128621de6147",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_009.png",
+   "sha256": "547b1b10587b052be85ee2a29ce08e912c61ed8311bdb15f1ffc8f1dcf3de960",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_010.png",
+   "sha256": "9108b30f325f2b4f643f0797b3cac280310e0ca2ca149da465a7ec8546582295",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_011.png",
+   "sha256": "bcc59799c76d22e7e1c61b78f9055601c8f51a4c07c7e90b2de8624d1e685387",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_012.png",
+   "sha256": "3188318da6ee408c738d28502c55498263cfba9f644dde946211d7a4cef759fe",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_013.png",
+   "sha256": "6a850d22a1616e0da27524c5e1240fbd404f3ecf5531f45d6141d43b793b3c1f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_014.png",
+   "sha256": "ac14fb805c61a7e8297bd0fbdc72513d825ededb8235336bcf388be3554a32ea",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_015.png",
+   "sha256": "a45e1138cc9b71423fbb9e6a1597d1f425643272771cfeae44168d1a37123950",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_016.png",
+   "sha256": "ff9d5c032654dfe4260bc9a3a9dfbd5e123d2d3fe992af57b6ffb4196a3502c2",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_017.png",
+   "sha256": "b0fe6a73a9d52a2342485afd8bb2e0daea0a67d96865382a677c536ecb4ed7bc",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_018.png",
+   "sha256": "b58e09fb9ff2a48c3c46fae8c33d09744c36e71696c9d01d92dd49b69452a523",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_019.png",
+   "sha256": "d8aeb6cd01d10df3aea275a399fcb1cb8dca56ec95cbbb1e9df25f8c8b93adc8",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_020.png",
+   "sha256": "5da74258b53254578ebc4a955e3c67a55fb5027a7162aa587cb29cf6d955233e",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_021.png",
+   "sha256": "4403725bdc60495a6ba6321f34cb2d3fbf6ab2c8b99da12809acafde26587b97",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_022.png",
+   "sha256": "d1c34f17a34cb29a258914bf0563ffc4be6793e62a7818aefdf84f1e94538843",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_023.png",
+   "sha256": "c12d607f2554a8a6764947f85ff3c99abd04c1658ae684775da83b5f9c8332c8",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_024.png",
+   "sha256": "6bf4dd37c572219e20deefe2dfda96e8a89bf03dbae8e5bfc769e53bd6e86a4c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_025.png",
+   "sha256": "2a0f0b3215ac67ab5e29c104bcc171bdf0892fe0d8ddb1ee956152a777ac808f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_026.png",
+   "sha256": "f6089f43e8e021e79a12b9aa1f32bb2dce82cd1ac4b0177b3fd77b32372a3f4f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_027.png",
+   "sha256": "a4763eec2cf2aeaa42b663722bd2c19c303c24dfa6510eda27537773b1ebb138",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_028.png",
+   "sha256": "40db53fed2b7bb987348954fece9d46598c5c4476c93e10874735e7563f5c2e8",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_029.png",
+   "sha256": "6c3dda72031bab6a134bf2d84a4a191c76b5c90ecd20fbca74e8f03f7900958e",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_030.png",
+   "sha256": "90f7eb11021ac788461a0de066a059ef848830b02f9667ef5869f1472d7570a2",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_031.png",
+   "sha256": "bb5e4fccb30eb3d424173bf54087467553d5e088abed45ad48cbb7df932489f1",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_032.png",
+   "sha256": "6d98770b392fc1e5a741ed8d0a27f3e709d42c41fc1800c744e4fbd848282c91",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_033.png",
+   "sha256": "38b5c1d2c7f86f9aa1f79e862abd237e96e2ede89dd46d60fb2e54f3e415ffa9",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_034.png",
+   "sha256": "99e687fa5cabf25eb031b4ef831d69c99df8484afd2a06917d32d141e9d45b22",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_035.png",
+   "sha256": "373458b2f56a0aaf8394fdd913458008918fc57ef4528c4c662cdd37a938b7f9",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_036.png",
+   "sha256": "ee2039a2864127087dd5f5890259877f82b5ab93dab999b7c32c3bd3e95111ee",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_037.png",
+   "sha256": "9bf56a9cd7d37a588e0af31b9da42de7c953eeea5469f146592e706a9a33e3da",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_038.png",
+   "sha256": "470677d108309aaa8962159c8cbbd79dc8f7fa35ae9cf9c2dd6c1c58aa0933ae",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_039.png",
+   "sha256": "edfdf6368b2dea2fa4005f39f46a8c55814a19dbbf636058279258cb7ace47fd",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_040.png",
+   "sha256": "324c4a3902368d24799b5c1bd0c71f3f64132d662c307992c776166ae540eb4b",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_041.png",
+   "sha256": "681650218998029176ad1eb7e2fd10a0bdcca2be0fc91a3a6d939e1aee2a1c10",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_042.png",
+   "sha256": "23212361833e3bda0ec4f3bd844308b906c0179a2af593d577b717b007fa44db",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_043.png",
+   "sha256": "7081ce83549833c4fd4c9058d6f7f32d65c6625cc4e492fb3d7c00bb5d4af106",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_044.png",
+   "sha256": "8c50a98925e4db300160fc244137c9b103318f7f3c1e0db30f9a58884386a403",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_045.png",
+   "sha256": "cea63e077d4b1493804492da70273fa83b0b5f2b468b932de626106b2061f16b",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_046.png",
+   "sha256": "a22690fbf40d44c68e097e225bb9b83e0da35d263faaab26c6cf8c57348819f2",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_047.png",
+   "sha256": "11399360055bb1e1c1ae5c92e916f76811d32a7b4f57abff3c81059f1aa2657f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_048.png",
+   "sha256": "1f781ee3e8cd59aef6d7fb7677dc53763f238c875acc21ec5965b62b834d1e56",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_049.png",
+   "sha256": "384b0ec1ccf09166f6e37dbc4c9b9e97072402edaf8b8f10536a62a347c241fc",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_050.png",
+   "sha256": "f96f90a4b1d563a502d1e5ff7a1332ca58e219e3e167a13701e5f3394075e0a4",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_051.png",
+   "sha256": "04d9c423e365b9cad977310f18b5c5c0e2c31fd700270bc7fccc77544013e542",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_052.png",
+   "sha256": "85d296fa1a394ad0e8c63cdb7f2f1875b4294796e29a1f04125e0c7ba871958a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_053.png",
+   "sha256": "d61308db131f4d38dcc0da9946346b7ec2004e768ae26f1b8d0e3c6adf022a86",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_054.png",
+   "sha256": "941df0e4bbaf8f3d85e139ee86866ec1d54d8c3c8d568d0f60d646d7ec940ce9",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_055.png",
+   "sha256": "ea85e4200c316b9911b29ef2f6242d4a7ca296babf6e2d89caa64896ad6fbb3d",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_056.png",
+   "sha256": "f07f69afe67bae16e3488a34e9bbe70e50a8a804996b734f530e41753add801e",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_057.png",
+   "sha256": "58ef4ab58187deeba935e45e967210c363a4c92ff1646938c285b52327fb01e5",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_058.png",
+   "sha256": "676333f1c71a232a676b5e3dc80d01fbccd234dc983429915e56f5c3c03f8a5c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_059.png",
+   "sha256": "5f6690f9ef3f63cf71441eacc61a1ef50cfe9e71841f2449961ccd30eb44407a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_060.png",
+   "sha256": "5497bb8054ad6513eb7fa8a218d69a062fd56f0c029fa9b8c19675a8ff769ef8",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_061.png",
+   "sha256": "67bc591559addb1970aaf1f3ef012f9f111ce616eda647d9243338864838611b",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_062.png",
+   "sha256": "a3b7e6e801ab4460313f8bb079ad5197223f4ab9ca092fa4787f1ceec08dfa7b",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_063.png",
+   "sha256": "1a2086af76b2974a21842357c048bda82ce6f5af8f5963df3bf9f3253b009968",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_064.png",
+   "sha256": "09b6b847f1aa35b2afb6a4427319655478660006170f14df30e3f0622d8d1499",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_065.png",
+   "sha256": "ca64906b70ea0e318c5f93f0a7d8e21d8bcf1fe95606df48905218c24793f0cf",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_066.png",
+   "sha256": "962b43679159dba8219f84a7982373464a917a42ea6edaed531cdd97e053032b",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_067.png",
+   "sha256": "fc745195862a0cb7072668ae51b077be278b2fb88d9c55ffdcf9da1318fd3934",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_068.png",
+   "sha256": "f72c00e0c400f2bfb8195322bec002d2c666b6f365689418421daa5dc552d4a0",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_069.png",
+   "sha256": "a6a2c21b59fa4ac7b65079116d707f5b614dc1b16be12833c33c43df8da84b80",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_070.png",
+   "sha256": "36acde94a73da655da96e170faad45563885db553812fa8c7e0fa0595e085302",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_071.png",
+   "sha256": "b64f92bfeb6399a68986145789d096a364c4a1bd9d34799ec77d8d3fbd2f053a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_072.png",
+   "sha256": "a3caa96a801ed8be87e8e4ff9a28c8ff89a4075c0a670e8a77edf109383e16e2",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_073.png",
+   "sha256": "250b695b38e48c785a303d343d285a0aa733861194588608e97bb06944c4ed26",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_074.png",
+   "sha256": "ed7ce842a8c3bdf9f3bc271d11fec7029b9ba985c81586ceb12d966de2052217",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_075.png",
+   "sha256": "fc033cdac4b2bfac30b9ee859a5f86c18aa547d21553b5328ca69f9bdb31f3e7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_076.png",
+   "sha256": "e51ca3f46e25f8f912fe8aea0fb03649a7a42091d934311220768b75d3aff7df",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_077.png",
+   "sha256": "8cc7e1fca79d8e024b75502c4022df2b9857bceb68acea8a8a8824b4cc6518e0",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_078.png",
+   "sha256": "7a6beba98b807ba0e15358e22d7a53ae06ca53d2aec1c3b467276689467e6aeb",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_079.png",
+   "sha256": "529de842fdbd03037cad7b5af7d2c60441bd001e0d7417570a6d8505df4e0120",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_080.png",
+   "sha256": "bf906e70b62541e843f35c82d2647567f1aec5c261d1b43e008090e5087ee77f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_081.png",
+   "sha256": "d910ea97d31c8ccada36ada1d9aa230f624b4342459b69683d5113e4e573a744",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_082.png",
+   "sha256": "c34237ac1526149d87dd54878f0bfdd813d15a6ad168393e09048a27a697bef7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_083.png",
+   "sha256": "b8298cffb8e2ce99f235e179a3b55920240ac8a29ee625242504f1da9402fe06",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_084.png",
+   "sha256": "02ce565ae6d0686240c18b41310e8429266a8e27144c8e48db29a4a8445f9ca6",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_085.png",
+   "sha256": "b6a829d7a1fbc966cd186651298a5694b4ec90d49cd1f6f6028d6bb7c1b56920",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_086.png",
+   "sha256": "377f6cb7ed5f3e981fd12af29dde2df15218ae4f5c09c20e0f5764ea62f704b1",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_087.png",
+   "sha256": "789184444dd97ea3fc9cc8bbe449715051146e87f073729d2ccf98f3dda3afaa",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_088.png",
+   "sha256": "28e2cb937627fe8db1361134963271b37d1ecf5321528f646d0eb2cc2c73aa04",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_089.png",
+   "sha256": "5dd36a87108285c186a783851e83d0d0ba427ee06ba4d57ff1858d50e75daa8f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_090.png",
+   "sha256": "5a24fec8516436a80f7e257e372aa2badc19e04ca4c902c1159d846bbb951661",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_091.png",
+   "sha256": "a6e331c4006f4221e02dfd2554b819052c925e7ef9f9c8fd9185ca04d1ae3756",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_092.png",
+   "sha256": "620a00999308d883a718f0963889cdd60c87817a6a861bb44bbf6f56db3627d8",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_093.png",
+   "sha256": "deccdf184406c4d36d2e0a850f2da862da0f7aaf73f1e0d6e19963aafe6c33ee",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_094.png",
+   "sha256": "8d9878f8359c85a2bdf122539fe7f9210b1a43934d1ca57098db2e72f108e0dc",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_095.png",
+   "sha256": "33d7a665615a2b1c9c023e4d0b2cd5370e53f3f2d6ca247133a588add7be425a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_096.png",
+   "sha256": "40131c902a7bcc95e1d712291224686a123a3f1ecf61a121a5d17b002dcadb17",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_097.png",
+   "sha256": "d68cf45a8d9bcd57b01a2f837047b12284e7bb91c49eb68503c8b20eef5d1cf2",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_098.png",
+   "sha256": "b8915b96684e3b88838a578e7c0c1ee593f977d7d804110bc431d614798b3584",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_099.png",
+   "sha256": "2400fc73245081b951ef7ba1ef721466ee5f7c99ecc20b2bde1f63100eea237b",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_100.png",
+   "sha256": "6e164ab0642ce4f40f732e1c5456a7857fba93babdf0d3b2c743225f713c5339",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_101.png",
+   "sha256": "36b707b29f00c709a3ed320c3323b99fecd0a11a89f35c9df64aaf7e989774cf",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_102.png",
+   "sha256": "a4581a8c61ebe0680981f7c87c9a09b3ed0be1165c1325b382ec57858080e78d",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_103.png",
+   "sha256": "2127724cbf9eb0a27967dd49ad1c051e4bdc57410e1a814deaa02f09ce051334",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_104.png",
+   "sha256": "8cf5c189f60ebd7eea4816af1e458c7e46159b22ec4b91b6e2b83dbbb71b6cc2",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_105.png",
+   "sha256": "78f6a99706bc78cc2aea37406e0ea737c031acc4a999e5115c916caf6ae125e0",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_106.png",
+   "sha256": "5f53a5a56b3cda38967b8f5c5d6d4b5a8dad0d92fec56aac039fcb4721ffcf15",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_107.png",
+   "sha256": "2c756c8d59b38d66db799e8d8e162e9a21d3c8da10e429f3d5e9c05e67b7c63b",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_108.png",
+   "sha256": "625b533dc31bc40d5911329882bd8e94957eb61aa52d4e27bfb27d884570ece7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_109.png",
+   "sha256": "bd8a663159012f15cec4b1f6a1c2eb0b98a3812ff024d90da6e190d547fc7bcd",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_110.png",
+   "sha256": "5bc2eeb2b963edb704736498ad8df427085e7a432e1fc747868f4518157c787c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_111.png",
+   "sha256": "aca3b741d84daae8941c1eee8665af755ee73fa2f78cf0c9dd0283678a774822",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_112.png",
+   "sha256": "8e63ab9a5a093ec24c090394bb3db2da0a58d50d00a4341938af371c8898240c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_113.png",
+   "sha256": "b855c56396dc99a181aefde4b83ce12c173022d42dab9e5840fb395f99ca5987",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_114.png",
+   "sha256": "009dec2de1748a88dd80fef029aa2c9de6b8d102b5fcd1efa10e109ba6f3db85",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_115.png",
+   "sha256": "0f3cad784766ab7a31a759164d489e4a4fe0f5dc4152978df7bbf64f5660c80c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_116.png",
+   "sha256": "a2bcec8b56c58478e427d57c884cb03452e57929590a55838eb24bfe6600aeae",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_117.png",
+   "sha256": "07fb2ffaad76d8f13d4b8ca54750029771b1352b182c35e66284880ce9ab0e02",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_118.png",
+   "sha256": "4e78a085cd15a71e996730ea4dbc08de44c6730a2c21599cde7446737879a49e",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_119.png",
+   "sha256": "847e6b871378eec2a36689c248c3a3bd3e185017b347059d9e5d284c2742fb94",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_120.png",
+   "sha256": "215d9287dd3dafe516800d4be2725fa030c34fe45945c9b58419e308b4a1c4c1",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_121.png",
+   "sha256": "88ad342793a6e4756e009609e659dc80a635310091cd5cc787ccd3c64aaad3d8",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_122.png",
+   "sha256": "ac80a7cb6ab7f51fd23654a2b7465339dfddf1dac1103e6c7e3b1ab148d7085a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_123.png",
+   "sha256": "289cc0ee9bcad4aeb2f954b150a307a6eba2c1379dc71ba669deb0a1e47d3870",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_124.png",
+   "sha256": "c1aed8e537dc9305d03dcd18d15e546180e33055053a5969a95c79f4412baaf8",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_125.png",
+   "sha256": "0dab5a821c47ed668b778d466867b230eb75139538a4ab58a167b8c8a01fe993",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_126.png",
+   "sha256": "308059586fe16fa821d8ba0f34e95f2f9d9ab3089cdbc5efb91b962348457e13",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_127.png",
+   "sha256": "ef5c6f378ee854df5bc533f77b28fa5fd8063f463a672702cabc44bf89bfc786",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_128.png",
+   "sha256": "0e0252e0a755d9226dc5e48a56d74f53ab2fbd14d5866c8c1e44b56e3fbd21a1",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_129.png",
+   "sha256": "0d5a2b0732afbffa9c5f3a76b88cdb3a3c582d4332bffff445b4be07adb27628",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_130.png",
+   "sha256": "404652836d0f287ef56652a518f5d748b2ab30dc55e2d2c076754bc9ede83912",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_131.png",
+   "sha256": "7384f27e22fcfcb7af655515ce50d3fc9de0adc5eb30cf11473e6461cdb323be",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_132.png",
+   "sha256": "c82ece12c68c95d68a3bdedb91e9faad333cce1fe9d1ab4a3664f7df50438062",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_133.png",
+   "sha256": "a66e9dd250bbfe269e5f926758c36fc73a44473b1679eb65249e1f795115f5e7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_134.png",
+   "sha256": "8349a564230237a2642ec851ab22a8be540cd0f8fd475b15c8bda64a6408fe04",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_135.png",
+   "sha256": "5665d54493befaea7243cdbe14bf867bb781d656557efd91b8d12cbcbb9266ae",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_136.png",
+   "sha256": "cab00f54bece46d91db24d7bf69fa946685cd32410e565d5ebced09761da13f0",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_137.png",
+   "sha256": "8351aead064bceabd5588a8ccc4c20874659c4610827896389902db83c36da80",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_138.png",
+   "sha256": "5359437b7408d462ba155f0726087d3a325a0048da397c2b4a7f181276931846",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_139.png",
+   "sha256": "6612c4d8e57087c50f3818c7d853ba9c3ac946d6035244fc3ca5c7abebcfc2b7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_140.png",
+   "sha256": "879cad65c66a27270179e73417a057e2742c6ec7de02feb04ba1bf3b482d6fde",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_141.png",
+   "sha256": "7f161aeff735f727256317a8e4f164e0f02501f9e0e7e4b5706666572ae84ae7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_142.png",
+   "sha256": "b03763544694570d06101a62d64f2dd9947cdd2de6bdba587fe640eb4d9ecaef",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_143.png",
+   "sha256": "8658f08d7f5232b1d9496d5d123b5ea2e49d2ebefb5d8dcaa411c10c17f9b676",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_144.png",
+   "sha256": "b5fe956e4b69c2194499f5be53ea3c5000b0e01749313d45842be6fc38c99b83",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_145.png",
+   "sha256": "388ead7819dfa939013676b5139cd9d0e906d4c7ced65bfc5677c1163b20ea6e",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_146.png",
+   "sha256": "d46969248e9e0e1c0b59ca3a791e0a7e8464f9189ec76f827b201a4bce46336a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_147.png",
+   "sha256": "61ab395f6cf7bf46b1c49242bd3660517d29e650e0d3340faf8ccbb32b22a734",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_148.png",
+   "sha256": "2f4392fb382f8cd39d22a1239e6abf0539b03f728fdc2c7e192444424e3d1d9a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_149.png",
+   "sha256": "7e57ebded6a9dbf0b321c0b94744382b548248198f1f57d4f7832d173b7e06b1",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_150.png",
+   "sha256": "cee039fda32c895bd9ebd05c467bf5fd7fca091b87ceffd542a68fc22f3e5f46",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_151.png",
+   "sha256": "15dbd534cf03f1dd2c640d756ca7febb1015c13f1c4a94ac8f1415eb929a8b7f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_152.png",
+   "sha256": "e97cdd0d45eca72ff2c90ca3d14f6f4b28c6cd07bab687773bbc02e9d30bcd54",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_153.png",
+   "sha256": "d6f8f1e978fdb27fc62e00145a4c1186c27a657ed30b177b63028252e0ec11c9",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_154.png",
+   "sha256": "718b7ae2d9e866651b05deed1a1a1208aebb363637921f157c215068a0ba95e7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_155.png",
+   "sha256": "93490b7c44c3f9c637f1efcdc136a9eacf5a69fe8fd595690a198b68cf85ac24",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_156.png",
+   "sha256": "09b24e01600f244b617399b4431308a72b90910f10f69df6120b9dc54c863481",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_157.png",
+   "sha256": "4d010ac6b7ec34cfaff321ca9ea6c042393331de55c6f89f596a31043f23183a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_158.png",
+   "sha256": "4f72304e8fd9a3eb51efbf6fbeb72a84036bf1a8492d2aa41b69380ce6aea72f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_159.png",
+   "sha256": "df0f3c306415874d792bd74d6bf709866172725cdad6f79b359f97804f2c4551",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_160.png",
+   "sha256": "fee6a5d8896532ac971d7db9aa279c20348d3dc85bf212e1b171b04cfbd20594",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_161.png",
+   "sha256": "4928dfa513af5a26f76222927644cf1770e8f1aa5f43533124cb2ab6d6ddc7e7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_162.png",
+   "sha256": "1fda5ee173f598d177de44ae87ceb240cce0e0ade6b007c6d2ce1d481be0e371",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_163.png",
+   "sha256": "98b1997d60e069d26961f68afe47923184900b5325570d307e301f2d7d1545de",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_164.png",
+   "sha256": "5226bf9506d95c53dd3dfd1cb96344de5ad84945732292aca71c502d725207b3",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_165.png",
+   "sha256": "f46ece863940d4c3828a12856e8abd691e4f40cfd4ed30fb9d25785954a00632",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_166.png",
+   "sha256": "6be3a37fa48e3c8c7a4e775702b6b554c19ee52e2e9f80b7fbd93a543be5430b",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_167.png",
+   "sha256": "aaff3e3438612986c0f6b86edabf60d1e72a082c347be1458e0f5043697492c7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_168.png",
+   "sha256": "69ae2e906c8e0ef6fd998ccb179c0643cd412151cdacefd44c8518a062b43385",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_169.png",
+   "sha256": "117682831ef48fb7788b141ca46f76352c34cf2809f2e0447c728c8e2ad85cd2",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_170.png",
+   "sha256": "2e5ab0ea565f59e4bcac003b025af97f9a4f6ecf0c011678e0a47591c8e090e5",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_171.png",
+   "sha256": "3ff9ee6f18c3fba9f23fa3cb635ae78de1af3a8639d6c59ff9f326f2c2fe9bb6",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_172.png",
+   "sha256": "a676907b51948a034753c185155b9c8db0b68807a2c86087965b88554829b58f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_173.png",
+   "sha256": "c988296fa8adf85cd6aa62191720f08b9bdd837788fbd1606bb5332d37fc6012",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_174.png",
+   "sha256": "fc9ff8ac56b157005e1e3b45ec50e088fe88477563bc5d5ad450f9bcd0adb465",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_175.png",
+   "sha256": "5a92c974f8a7261f29e26e0343ae308699c6122d33de6ab0b0a982bb6a849ace",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_176.png",
+   "sha256": "b6ef79a49c4f1f38dc63cd245563048a83fc1223ff9c455d5693e8d628430ca4",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_177.png",
+   "sha256": "f65fade47e681b5cab0f19974c398b57f9021ad1cc06f616b4d77b2ed39f8e9f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_178.png",
+   "sha256": "1304c96f5d8f1109c00a89e38c58bf1180f102a3f51d229ddaa6e98102640f8d",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_179.png",
+   "sha256": "166199e0eb993fc27951b368da54b08723864ecd5f3fde908cb69ec7e8415e17",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_180.png",
+   "sha256": "f0bdce11acc46f1305fd97fad69d0390dc5e30421682bffe3fe1df0d035ee283",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_181.png",
+   "sha256": "4f02a4b88049b09c6ede1da7967fc6e89e7244abbbe7a26afa00b20255ea54f2",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_182.png",
+   "sha256": "1b9e4a289878e6d6e74100afb261732bfd18006e0433db3212c096736242c32d",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_183.png",
+   "sha256": "cc5771fce705f7da63decd02e3a608b3d50d4f77d2e7441663f3ca918ef0a74e",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_184.png",
+   "sha256": "67d768e201063d2d44175e4eb251a76f68a89bc69c674a913a2dc9f0caca01d4",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_185.png",
+   "sha256": "3031acb0c6ad53086c891db7e46222735c383aeb65c367eb42b2cb5364eaaa03",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_186.png",
+   "sha256": "6aaffe27aac50b5057b74745a2c5fa77d6552ff4065233b56e9453c183cd4314",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_187.png",
+   "sha256": "8bb5fa065c4889911cd83906e7e17f6387ceb02f1dae56cb0c3fbeb18455618f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_188.png",
+   "sha256": "35d771071a33d9ca6a276c41e4e1b0da99bbb00f57572d800c516ab40327b32e",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_189.png",
+   "sha256": "7363bfbfad60f04c024938d0c2559dd67176c836b0fcc7aa0a2add9123bcb848",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_190.png",
+   "sha256": "f303a143935cf8fb161293a54d7bf9028d41b175c456c8a2eb3aff3147f3c4ac",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_191.png",
+   "sha256": "e33416b561b8794311cf2441611b13619a744339f4ed9f3d790c9bc4b6d6789d",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_192.png",
+   "sha256": "780bf4400a90ddb90112799a25722cc13bfde4f8f7c4d873869bcf736cd30e7a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_193.png",
+   "sha256": "f3f8c6cd9c30c5e50efef344f53c6be53b439b0be4834af2ec03fff2c283e639",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_194.png",
+   "sha256": "9a57a6682997c2e1625188d291240bebaeab8be11be95841c4549e0cb244bd89",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_195.png",
+   "sha256": "21cfdd690cc5762d385edf264204532850d5d1531d0f93a664d2d57c338ea070",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_196.png",
+   "sha256": "504eee2a7cf2718cc2a644c5e2d3a89460619be0817bd31ba8bbf128619ebebc",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/s050_197.png",
+   "sha256": "0381db7584f4402b560827f67985fc09a4df9435e630a97f1e664938a5758363",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:noise"
+  },
+  {
+   "file": "glyphs/test/s050_198.png",
+   "sha256": "3b1690c276de4f51e9460758c896204a8628722b126891bf8b29ca6ea9c7c14e",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:flat"
+  },
+  {
+   "file": "glyphs/test/s050_199.png",
+   "sha256": "12356db23c7ae4d4a31f3e3a0b6db4e24589af0ca78af5c7a859c5623988b480",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.5:bar"
+  },
+  {
+   "file": "glyphs/test/train_s075.png",
+   "sha256": "7f5fe669f744ba89c358f56404cec6d998c9deb37f033a0de5efff4ade70815c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75"
+  },
+  {
+   "file": "glyphs/test/s075_000.png",
+   "sha256": "af449a8b4b94e2c84fec63efd7cbbf1ad628baf200a2416407d51c2f22c93a02",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_001.png",
+   "sha256": "d526585cdfd480d3b239b0d3465b63c2fad439505e8cd2c4f309757b08092a01",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_002.png",
+   "sha256": "6beb0a337597e67a744528ed1396f0c8f60114910809ad4c2ff8e0a61fc37208",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_003.png",
+   "sha256": "94b907a88c15a7c386af59af1f06e423bd57d5f39fcde1e414ccb833ae91d8d6",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_004.png",
+   "sha256": "6d0ce069c360108ddb567d63626de4bf3971a421b2384f87cd50511872ba0262",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_005.png",
+   "sha256": "3b2f5f7335b531a8a3c2f24386499320f940dfe3b0ab7592e65109ca8a508b2f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_006.png",
+   "sha256": "0c6b0017bda93be2ba480d831c98ca573f64fb1c2f12463d6951739d9dc1e3f4",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_007.png",
+   "sha256": "0db2ff10d187954336dabe2804ebe7b3d88f91447ccdbc690376e26385667ed7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_008.png",
+   "sha256": "435b9dcbe740809deba2487d6b3dcd0ab598f3a255d16f02bbcb4c24913501a9",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_009.png",
+   "sha256": "c1091e4044d79e2a86db5c247152c873e4a95de96f8532b288dbccd5228185fd",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_010.png",
+   "sha256": "6201f5c80ba08d7c1c04d043131ef42923dd46a877df67dbd8bedd8a858d921b",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_011.png",
+   "sha256": "1dcb15faadb97b6e7af85b05cdb0a171e61259c6e0800d430694c49f5f0c70d7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_012.png",
+   "sha256": "b3234cb5c23743a206f43df688e6a3bbfc27479314d0c631e11542a6bb57af2c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_013.png",
+   "sha256": "f32218b248228962c200fd4c80edb3de145aee5a016c50e8e12cf5975f925cb5",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_014.png",
+   "sha256": "d4bc9a7a82a3ffaed1a157f9a77ebad591f91bb2d09b81c82523ffbe44070d2f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_015.png",
+   "sha256": "da675e3f003f82fe47d89c38ff81244b190e88b901aa708e1581077d1c036acf",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_016.png",
+   "sha256": "7393c5a69086768128904e6c9726e6701dd9b3ac952671647eed730d77f7b182",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_017.png",
+   "sha256": "9b5908f11f9230568e6da05d5d783403c454a6df217cc6ab781b7ef8e5589500",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_018.png",
+   "sha256": "c3c197794e832b6075f363319d96730a7e3afa80a3cd65edda0ddb2575872ab6",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_019.png",
+   "sha256": "66fd5eeac0386961bfd97a255480e7de7a56b29b743699df3706631ea5e694f8",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_020.png",
+   "sha256": "971ca2a4ba2cf62accbaab1ecdf2a6be3de662970ba1e967789e156c0dc026ae",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_021.png",
+   "sha256": "5027623038b5d0925e145faf9c96a1920cc07f2037bebb346c593fecc19ee8b6",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_022.png",
+   "sha256": "f38691a21dfdd4a0bcbad4fccff9f1db8591e364531144c857e9729c3e86840e",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_023.png",
+   "sha256": "1c05623228583bba31ec42e620b12529ff16f23c7d046714e8e594a286389f95",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_024.png",
+   "sha256": "17e271f722230e5ebc32aacea9b058989c59bdfec2f1e487c851ba9ca90ead37",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_025.png",
+   "sha256": "64c54dd46ea4a3e9b2fa298d246398ea203d841a1f97c93f4d66c4b2f2b69ea6",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_026.png",
+   "sha256": "b4db38351822fdfe3eec43b751ab167b189e5270c850a0403c15cd9034254be6",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_027.png",
+   "sha256": "76ab84b6adf5ba84d1a4b4517bbca47b7f7e303de1608e2652184e86ed0b9e20",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_028.png",
+   "sha256": "7675587f926c7c6822ca3fdfea3f6e590a2bab3633caab0e50e5de31367b355f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_029.png",
+   "sha256": "9823e9d77a6b3b17470ba1ab1d2d240ebef4a77cad76609ef09639c2ac1a9562",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_030.png",
+   "sha256": "f3fbe1352bb8152a86a42473c6754fe68dfa3878454a207fa6547d11f4ffb1c9",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_031.png",
+   "sha256": "f8d58143e649527b8772634723857f47d1fb0b0898f8502da6f053390acfd53e",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_032.png",
+   "sha256": "b8d7261bf27a97f7cc7b2dae77b615898154b5cf20a1d572fc758619bf545709",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_033.png",
+   "sha256": "d16e0932937e7b3a69724d4f00f2d1aec126615dcf7f0feb5b5e8c5eec2569f3",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_034.png",
+   "sha256": "52c03129b3baa01d522831459ea2c1cd360106f9ba73692d8b54f1403e219933",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_035.png",
+   "sha256": "6bfeba04f0949070985efec54f3701cbc66244e576a466ba0341acc8534a3409",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_036.png",
+   "sha256": "7f50ff12f0596ca51ee81479961bebc5f2dab71ee599e8adefe464a13ee4c553",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_037.png",
+   "sha256": "0966b9bf41312c2146b9deecb4f1754331316ee5a28fe6870fb282a37089ca99",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_038.png",
+   "sha256": "1affda28ffc1eb72880b2b330bccffd264b5bf9974024473864ada7994d82ba4",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_039.png",
+   "sha256": "e3236e3ab0df058a1c633c2ce3b95d9f20da85d73a40ccca1bfd871e746c586c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_040.png",
+   "sha256": "034e8d5863aa35070bf459b300d21e7adf56dae7d07e66b1b6eb08ab8416cd5f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_041.png",
+   "sha256": "98106db8be49f9d560d54027f2836462fc0a5a469846b00a29e5e8ab7d12773b",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_042.png",
+   "sha256": "8a6841b6b70c3a50111a1f195a8e4ba0f199f5b5f793400497b3d6b3b41b4c92",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_043.png",
+   "sha256": "2bd95c696b5efa812ae2b5808fffc86074dbb76122cf0498f18bd16196b29d08",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_044.png",
+   "sha256": "921c56f25af0f12bb63cac726bbf8e636617369fb8acace6c43b1023aa4375b7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_045.png",
+   "sha256": "5d6ba880bfb62c8f7b597e1fc978dd41db99b09ec84b9cc0f973a6550695a0f7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_046.png",
+   "sha256": "8a3f4dc2c805980db831307da3a96cb97bb54a6c63b3ef0eddff47a7f45d2928",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_047.png",
+   "sha256": "237e2b1a2d86850e7f7f5af518efbf0ddd8c59e47f04acd3537f1703c1fd1be7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_048.png",
+   "sha256": "f74a870355ee8dc63d90401353db138137cbd6fb750ed6899eca95db08d8fa01",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_049.png",
+   "sha256": "44fda13633540c1062966a8b6c354433e19d936c482f55a5c16d080070fc50fe",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_050.png",
+   "sha256": "b2fb6288c2ea4182edb0f627197e2bb2b912e05dc18e518ff202ebb847414724",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_051.png",
+   "sha256": "abb39404bdc1225e4b99e7cb13b661d3bf9fdb04eac5b7b8a0a6f94984c5b0d0",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_052.png",
+   "sha256": "44fc49ad9d7a3a13b2d63b6b79045168aefe4fb63c32ce0caea8e0b7fa031fdd",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_053.png",
+   "sha256": "3d1c3b7d13ac317e9e6870018d188859ab9c7f1e85fe360acddf60564e663c34",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_054.png",
+   "sha256": "fad8623b94f591d064e4c038121966801c84b52037b50b6f4e8c05f4f349aba7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_055.png",
+   "sha256": "06791d1e148ea0a85d0161016e39c9e2b58545949a0512d803cfdd08e345ae08",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_056.png",
+   "sha256": "51e9c88a4e48c766fed524335cee9ffade478e72c9e4a2ab09be56451f9eacc5",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_057.png",
+   "sha256": "5d7fb69646592dc531142601b1378b7b0137fb9a3121f8a2edf45d1a476a6a9f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_058.png",
+   "sha256": "022f5a5948edb83556be35c087e60a913a9b26b981558244b95d467e3693e0ed",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_059.png",
+   "sha256": "d761234a3b90cd12cbc1345fb0f4d33d1b39f1a3d5bb9ad69e27c817bfed7c6b",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_060.png",
+   "sha256": "0df15ac4f1d41e1a3e85950794d7fa293f4dca490b9dea7481882c0b9f2aae8f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_061.png",
+   "sha256": "b0f5d2b52982bf907b1ceeb709c8fb8c1fedb06ebd40f0ec95f46cc8ee029d12",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_062.png",
+   "sha256": "5fc0998078e62235742491f4f65e4566f86f9955230885c8ed74f2014fc71995",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_063.png",
+   "sha256": "cbbb1097b62457df5467d4b95c06f2d561fb84797e37f2c6b26b5b3012e0d220",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_064.png",
+   "sha256": "14cbffbd681c1608165b22f907d04f6a1707d22a613d1e9e30b73c1667f2de9d",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_065.png",
+   "sha256": "04060ecff612b3c53f04cb97089d71625895fc6ad7a299599581fb7982faccf6",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_066.png",
+   "sha256": "029112710335f348f7a490c50be681267123d6712f4a4f169a4205eab3d7521d",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_067.png",
+   "sha256": "d770351feb2bdc6aa1a24372de5f6e72995c922fb02182a8a90ed88d24d5c85c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_068.png",
+   "sha256": "bd0a6f79dac7e2ec2b06318c85146ba21492206e4e4ce9cc2759e5dc43fd5d85",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_069.png",
+   "sha256": "94c3502599f8de3ad23c08f7c0254eec1f3307b57afc95d6bcfb95f6c0881473",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_070.png",
+   "sha256": "d0798e3e6b494ece231dbdf536bca4b1f1d211120452420f49ebac1bef125c05",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_071.png",
+   "sha256": "6bd58c786041a5e6a3fc0ec18202ac0dbf2a9d6c3a1283199f100401f6a0ba54",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_072.png",
+   "sha256": "7f05c57a33daefd468667d910512b3485d745435323277d8946b67f806338370",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_073.png",
+   "sha256": "3f5b459e43ccbfb53269d24a97b9d0a0e1b5b0d90d177f0382493b91e0c1b427",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_074.png",
+   "sha256": "5fc695cea4983667f7be1bd29e0481379b83bf8d52208ba050fe1572631dacd2",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_075.png",
+   "sha256": "f0c2548da630d4ff852facd2633512bb36d845e19c1dc705ebd6408ab032edcd",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_076.png",
+   "sha256": "c6ec009ac7ba0bfa5ea6293a8c0ad1ac155feb19d5af83e4e88f39d2565232c5",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_077.png",
+   "sha256": "e414003e72d65ed73b311972582ba6d8b46c9b1a6ab663962e939eee5ab31e3c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_078.png",
+   "sha256": "d4467c68a9ca0f23b94a4851e05bef5ab9fb7b2b0fa01ecc0fddfb05a046094d",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_079.png",
+   "sha256": "178160a5e580a2eec60d227001dc70d792ef6ab681dfe0450cfcf58807d6999a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_080.png",
+   "sha256": "cdec4052aed126b9fae89768a4f552c09470679a69486c574ce2fd1493211dce",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_081.png",
+   "sha256": "64ec9e66dbaa96eb03a138dd9e40c6bf4b314a4e56d379d329e85ab08ac131f5",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_082.png",
+   "sha256": "1d0659705abe3105f5e53dfd4f2625b4a5de8c71196d517a7c34391fb05de99a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_083.png",
+   "sha256": "68d5c20a340f11270ce4b7b8fdcac53ea48d0b3cdb0b654cbc76fc575381aae6",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_084.png",
+   "sha256": "1984cdeb7a79ce783a5245ff1cd40153c6b8dcf9f8e364332a4061320651295c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_085.png",
+   "sha256": "3614716066f20722f501d07726b9bdba6e0edfd47d15d96c2831b17b63d33299",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_086.png",
+   "sha256": "f2283586a475c47d3c8b24549947e703697693eed800ca516beaee63d3ed4698",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_087.png",
+   "sha256": "9879db150a9e127468cc524cd01a752d26d68db02c6b5c34a29494db4e0d23b1",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_088.png",
+   "sha256": "019ed07f8b82648b41616d6d2ca67a3106c6f489f581488a24b77c30e1cf79dc",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_089.png",
+   "sha256": "7ed4bbaa23c679312879e818aa2d426fc668ca60bafdb9c6072e1be6426d9908",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_090.png",
+   "sha256": "0c9b73014c9f6412af221b4492da925365de11f4e70171636f16377ed403e09c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_091.png",
+   "sha256": "880aca9b9cc76d8c27b60307d293f0efb5959aa46f5bee386ef7f6321e41cf2a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_092.png",
+   "sha256": "d80aafda891f77932d3c7ac78955838407024f454f9c18759a63f4229fbfbbc0",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_093.png",
+   "sha256": "51c20c3ed74df8c9d16a71d6ef8e1d8742cfee0c312ae05af96ce05f03b8bde9",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_094.png",
+   "sha256": "caa182502e70c995c4588d369c98028db0738ba979680df62b1cfc75827d668f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_095.png",
+   "sha256": "5563a640c32c7b9efae0848604a7c233a31b5f05fd66b137cb0e5fec98cd258c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_096.png",
+   "sha256": "7436b6bc41a1edc5ab423ed5a04009ca0ade45246b95731e864951756c99f731",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_097.png",
+   "sha256": "145e627fdf3516039b918b5191b6c2a228ddaca54aa654e8443993cf2b8e45d7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_098.png",
+   "sha256": "edbe8019358e56fecdf0c15fa7dfe87ecdd5c860eb8055138ac259e212b9b1f5",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_099.png",
+   "sha256": "77b26fdd9c99e146c5c4bcd7fc7243f7d13d6b8f43f875fea2ea84e2c23a160c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_100.png",
+   "sha256": "94b712ae919ecfb417340b68d2efe2020be975bdcf1524d05e03469b8d635cd5",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_101.png",
+   "sha256": "b25670273b182404214f8f18335d67c27e3b0624809d9f78ceb8e86f75e2c115",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_102.png",
+   "sha256": "06ce3b00f62b95d74ca25e1b6bf8ce89f28c05423e7f7375884c06c38a8f567d",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_103.png",
+   "sha256": "7ecba8b5daca30e0de13d84d9a28447de9a6a9a1ab1a5252dd3b990532c8d648",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_104.png",
+   "sha256": "21c09e8ec6afb733f814e76a9b6f0515f0b2da813ad9601d0528d5be69c3ec50",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_105.png",
+   "sha256": "de2cbc18ed4677143ce377b28da17555c24a37adeb4f839b72b7b87e228c9c04",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_106.png",
+   "sha256": "4b9682136cd88bab827923bb45119b62798e7bfda4501bcb5462d1e28c661ccb",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_107.png",
+   "sha256": "912e56041ab0ae495ec575ba03c17b1eba176a1fe62edf6303b667d39cc99cec",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_108.png",
+   "sha256": "496d9864aeebd09c95ca93426997cf0d6cdf45d59c93f6b47ecc8046d7135c03",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_109.png",
+   "sha256": "e8974033fea4ca3346fe231755e239a97cffd45756362c483e6349b1faa1eac5",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_110.png",
+   "sha256": "5cd4b35051c4e081dd04adac216e55c9406858c03aa3de0e9c8a00a7f16405a0",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_111.png",
+   "sha256": "536399e28bcd783d4ed60e06ba1602a4f47e8b7e54b296bf7c87738a54c07c72",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_112.png",
+   "sha256": "6340b9a2cbdb54ae3043f3161b17c416e229023313c31cc8941443e44795b0ae",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_113.png",
+   "sha256": "f896b8b1cf824b9a87dc61813950a7343e34def8697d09c8d886f69119bb1599",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_114.png",
+   "sha256": "6fab9166496b9fa31becfa474a791c7ecf60c6f23261af93ab32e505c432541c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_115.png",
+   "sha256": "538d8b9e53395cf4a41965719674e4fa21be904da7598d5b24e4be40f4325894",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_116.png",
+   "sha256": "98cf27b9dd18466a21a5281ca5a6eb22c0518dc2d4dd5cbc7639d925c29da6df",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_117.png",
+   "sha256": "daa305722026dad7b7641ad45587e78ab50a2653d702dcc41dcc1d5ce67c443c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_118.png",
+   "sha256": "97a61aaa68897b02cf193e59d3f96c9611182bd200841cd460c812b3f2e6851f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_119.png",
+   "sha256": "89b9a22566dbb0987be5b3051dd111c6074d4d9b83c91714e569df9f85b8bb38",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_120.png",
+   "sha256": "4694b23cd90703c415c74ddc2892acdceffdf1bc449cbbe7c563f4692867925c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_121.png",
+   "sha256": "66c3ea4577fb5785b45023a2871005a26175b8279d601f20be94d74e5a94c810",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_122.png",
+   "sha256": "d16ddbefe476c5ea0a9b6daaf09c713087624bae3d8e704d0a1ef963450bd3ec",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_123.png",
+   "sha256": "086f66a8bce124907d34c0a80272dba65c136e9900a81924fce606de78fe5f4a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_124.png",
+   "sha256": "641cfd71619e4cac867426c91c67e597daf2c0c3d9aefbd0d278bf1a091e895d",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_125.png",
+   "sha256": "00bec79a45129689b9e0cb2e7481d4b9e19072af566d090bf280e97f67549255",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_126.png",
+   "sha256": "37a449b30cb59a0dc7d09b3d7dba02139d13f9e807c7a7f830a72fcad09684f7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_127.png",
+   "sha256": "ff2f390077f0ef81d26b1741d2ac91a4904e1a9a7a7d9e63770562085a92bb16",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_128.png",
+   "sha256": "95a82d7d80ded92880f536071acd5f17a6b046f849b1855253baed6985046cbf",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_129.png",
+   "sha256": "c1236fb6d3cf6e9b109a3093da4f198b22ed09c75a66cdbcd934827a00a14f56",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_130.png",
+   "sha256": "c62f432609f0511b6a23cf5ab9ade5e1ff4c5ae65826fc706012c8f813d38744",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_131.png",
+   "sha256": "8adc89cb53ff80e4a91f0f0015af47603d544374bc2ca2aa41c9beccd8137169",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_132.png",
+   "sha256": "4d63f995365786cfd887210df7a614f2fd4c1d7d952c3c88bace5b7503cf070a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_133.png",
+   "sha256": "c079107b738e0070eb0cefb2ceddd04700f2e7b55a171b0a6f4d7f9f3f15f64a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_134.png",
+   "sha256": "5bd1fccda2a8edf2d9d9245da9fdc7602d4a5b8737f0f5a42a9301fa6d3f873a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_135.png",
+   "sha256": "f311ec8298d914ee86e822747bda54db482d025a0f612548a5fabe7cbddc87f6",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_136.png",
+   "sha256": "e79d1e8bb3ad15765cbf8f4a5b42b3ed3c3eb002084862837d0087ba8d6571cc",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_137.png",
+   "sha256": "d26aa68ab40a1b492263b7506b386229f1057ca666ad7a3df372451b0c20cc24",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_138.png",
+   "sha256": "3750340d694100ef7047d89daebf242e78073f6efdc2b0f92cbcd64b719b0237",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_139.png",
+   "sha256": "0211bbde3dd3e7bc8e4be8a25fc51b9e9b885e8ff3dcd8fe9118c24c419946e7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_140.png",
+   "sha256": "d2f7ece9f5de12c376b78072e996955fb6263f3a257af74a2f876ff6639e45c7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_141.png",
+   "sha256": "be51784bfdf654bc20d5164a4d343cf0f87d08712dbd3293db07f27daf720267",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_142.png",
+   "sha256": "4d26ac96f56e29d6a164220e4628eb0c0988a00cd4a1a753ab7756e851efb9b0",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_143.png",
+   "sha256": "6c6921fa5f2cc2c6afe2e9660fdd3f157be0e4ffe04575a39c46eaac0e3cd467",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_144.png",
+   "sha256": "410c586c4e7c08150b6d36a9cb05b6a48eaccedf83d2e6a17d4f99812e600768",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_145.png",
+   "sha256": "38810e1e52d93bd1842c13ae0ba34d966d664517bda75ee0af125f3a54a5a56a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_146.png",
+   "sha256": "dfa344d4f5709e2f7b8b810eaf24e6805a259c7d8c33bcc8621cda2a25ff8b1c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_147.png",
+   "sha256": "eadeef094bf4f08470618f4915bcf4d5bf2acaa2f1539443bf45d7268855b5e2",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_148.png",
+   "sha256": "a2ab9425872365080537f1e9e7da0d340b5b15406ea505ea3b8432fcfdf50ba5",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_149.png",
+   "sha256": "9e9b83c3b9bc8ad0f056ee98c6079bb3ae6925ad3d374ebaa2d9abd91252a2a7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_150.png",
+   "sha256": "81597fb2d7b9bbf4a62e777d02b9b1c249d4b1151b02f340582ca0b461bc2ea0",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_151.png",
+   "sha256": "76ed79f94745b57661f8beb4667d7d074660475d5f0f123d7db8f6a6b5b10766",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_152.png",
+   "sha256": "b0e1c2a1bbbe622f6cd069208047b636f63cbc489d2e63d9192fc0978918d70a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_153.png",
+   "sha256": "cb9e079f7759fbb6a784da23e17edaaf6adc3977863276eb16940e4e51cff6cd",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_154.png",
+   "sha256": "8e7b9ed6c9197153a11eb2c87b36007fad7c7a69c9372e1bfdba5eb313376ca1",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_155.png",
+   "sha256": "4669d7a9b13eabbfc71dc03b75f4fae64b5842417a1b3a73e54a8c22d1b5d6c2",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_156.png",
+   "sha256": "a9b9edf9f2a6f42cba4657e42fde3e8b7b380db1867806ce711b279c8fe89311",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_157.png",
+   "sha256": "b5db336572bcd69124c8b34dfab2aa4270d42263cd35081f8c1b9148136dcf23",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_158.png",
+   "sha256": "d2b09338bbb857ac3c50e93a0725ebae428b39ec0438d573e57195b6ba225753",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_159.png",
+   "sha256": "77890223230c464ead48f3084ce39f26e727f1443234583e472a6e851d353354",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_160.png",
+   "sha256": "e8b79d697ac26b28dadfd9182745b38b17fb24ce470904fcbf9dee688ce4b79b",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_161.png",
+   "sha256": "cc59faf5e29055d7a737fc0187211c88774eae564ecc69ae57415dedaf6544a7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_162.png",
+   "sha256": "962a93acafe903d5d37531154600ed6b2dbdbad403dc69d8ba078f13a1c130c8",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_163.png",
+   "sha256": "b8a389be0f20fcec3be62ea563b790998392ab76e2128a52b2084437fe234d3b",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_164.png",
+   "sha256": "ebd303cb00656dc91bc1f5e7149896aa5a3e2bca56fb53c51308abb77d93704f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_165.png",
+   "sha256": "3907944092be82fe3dd5ab2108845efc13bb764168573ae95752891529ad5b06",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_166.png",
+   "sha256": "9000f35c882e55b310ccc85c45a10075c339bb0a835ef72b536db8c78848421d",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_167.png",
+   "sha256": "b1abb8f570d49f34585ac1a3dbba42afcca5736b04ef80eaf4b8096055936088",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_168.png",
+   "sha256": "c693acee9e6271cbfcb22bbd8734398b95422d37fd759b036445048e032e933b",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_169.png",
+   "sha256": "8395629ab232fde8642250b222e70274457d42fb023afdc8718a93a10deac299",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_170.png",
+   "sha256": "af7fb29b9e72f6ab8b05746b05bb177ae606ef10811fa71e8677273024fda825",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_171.png",
+   "sha256": "f8a02240c1c44f634fa789bd950666d286b02c7e9951ac79d8dbb3b7d332162d",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_172.png",
+   "sha256": "57a7df163d402d0fd7070b86daf5d76b6fed144fac8c18dd82f9600d4bb587a9",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_173.png",
+   "sha256": "ec0dcfe4c2aada9f67b39a9e12d3cbb4876e508cd721cea88ff7e301a89dd097",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_174.png",
+   "sha256": "1a0b6ed394c61ee5f32c0f8f398389b901532376ed88f8787f952b023d0528ef",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_175.png",
+   "sha256": "56c553ba1e7e85e37ac2d01fb8f502898cef2993c340f46a53b435e479413f1a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_176.png",
+   "sha256": "7735b705b54adef6d3d5a46f454477a05ba102bb8dbf651cd8fd97754057dfc1",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_177.png",
+   "sha256": "5eb30758402b4e204a8c188d9e53d67d554930f9add0d30861d39e9265872d28",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_178.png",
+   "sha256": "600547dbea753e95cacc3a07d2a2de7bd5a11bc56026f98ff27364a4f304220c",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_179.png",
+   "sha256": "0519d84297418833ddabafaf88749effa4486b215157a5ddf3f8771208f4e3ce",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_180.png",
+   "sha256": "6560fa3dc0a93ea8f014da68500b6f6a77b03ee25bbc50e4aefe9b8102f3b374",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_181.png",
+   "sha256": "e2d7718e03078121a823e4ca70c57f22a0f7795e7b3e7f1ab2d0807fdf0a63d7",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_182.png",
+   "sha256": "4abb5ebd5ccf71e481d38892928b459b0bd5edc8ff4eab6657a3f406261f762a",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_183.png",
+   "sha256": "2a3a8a1f1733ce06d4f6f2595bd18d24f45478de88b6c415d1457a58567fd481",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_184.png",
+   "sha256": "1e513edbae603464d13f7071d337aace4489f94685d702ee93d6165ce48d4b5d",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_185.png",
+   "sha256": "4c77c3d672b96b493a4d8c8f53ab619b0129f55733b4b10c03c2d857ddbe7c48",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_186.png",
+   "sha256": "aef56f1bb2b23505352617206bc7493e94a0f5b6937f9a5068d82f5d14fd4457",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_187.png",
+   "sha256": "d7a87b25a5c53c05e79905e9d29291a8c0d93910d200ef82ba67a7b040d085f8",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_188.png",
+   "sha256": "5b320033460914db72ecda55aa1b484b00c68b85c5623585994b6449faba878e",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_189.png",
+   "sha256": "ff07b1ad6e873a146026f68e5d86a1a6489c5af4fd85a7543a61d2ed4b78a4ac",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_190.png",
+   "sha256": "8a556056307c82bb3cf03d4dc435f55d996d6463f77fab6f7b2058072b376097",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_191.png",
+   "sha256": "af6a5573d7619d97002e773db4b501bdcaceb5c9a89114ea80819dce1c4642da",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_192.png",
+   "sha256": "1e71e535a100f079050aa33c4454da61fb38c24b04430f34faf23ee2930bebbb",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_193.png",
+   "sha256": "c62f432609f0511b6a23cf5ab9ade5e1ff4c5ae65826fc706012c8f813d38744",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_194.png",
+   "sha256": "16081b71667fdfa9d419d2599b51d0d502875e25b84dbd1d3f9dbd05e313bfe1",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_195.png",
+   "sha256": "62e68fa08921e74a0ff0f0417c5a1b1eccb79e617ee78c6f9f0bf831fd427d7f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_196.png",
+   "sha256": "dfe6be5495def45b8e17a7a06590c250969be15a31b6c2beeea4abd3291dddcd",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
+  },
+  {
+   "file": "glyphs/test/s075_197.png",
+   "sha256": "aabb594d61cbb2a6edaa8635c6c9b525ddf4442ba20ed91179f3b47e92cb1cea",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:noise"
+  },
+  {
+   "file": "glyphs/test/s075_198.png",
+   "sha256": "74478e04a57215fc87a0e35bebe2e2f1b29a56ef73ee0d098f08a678ebe6a29f",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:flat"
+  },
+  {
+   "file": "glyphs/test/s075_199.png",
+   "sha256": "74479850d26cc5ba6eb122a6bcc833a57831f18c048c7d321c7673aaa1db269e",
+   "task": "glyphs",
+   "split": "test",
+   "source": "synthetic:hershey-simplex@0.75:bar"
   }
  ]
 }

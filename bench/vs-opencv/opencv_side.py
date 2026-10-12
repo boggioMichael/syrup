@@ -173,6 +173,76 @@ def motion(a):
     return items, {}
 
 
+GLYPH_CELL = 16
+
+
+def glyph_cells(bgr):
+    """The usual OpenCV recipe for a line of light text: grey, Otsu's
+    threshold, 8-connected components (2 pixels or more), components whose
+    columns overlap grouped into one glyph, left to right, each glyph's
+    box of the binary image resized to a 16x16 cell."""
+    grey = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    _, binary = cv2.threshold(grey, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    n, _, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    boxes = sorted((int(x), int(y), int(w), int(h)) for x, y, w, h, area in stats[1:n] if area >= 2)
+    groups = []
+    for x, y, w, h in boxes:
+        if groups and x <= groups[-1][2]:
+            g = groups[-1]
+            groups[-1] = [g[0], min(g[1], y), max(g[2], x + w - 1), max(g[3], y + h - 1)]
+        else:
+            groups.append([x, y, x + w - 1, y + h - 1])
+    cells = [cv2.resize(binary[y0:y1 + 1, x0:x1 + 1], (GLYPH_CELL, GLYPH_CELL), interpolation=cv2.INTER_AREA)
+             .reshape(-1).astype(np.float32) / 255.0 for x0, y0, x1, y1 in groups]
+    return cells
+
+
+def glyphs(a):
+    directory = os.path.join(a.data, "glyphs", a.split)
+    with open(os.path.join(directory, "cases.json")) as f:
+        spec = json.load(f)
+    samples, labels, learned = [], [], []
+
+    def train():
+        knn = cv2.ml.KNearest_create()
+        for path in spec["train"].values():
+            cells = glyph_cells(cv2.imread(os.path.join(a.data, path), cv2.IMREAD_COLOR))
+            if len(cells) != len(spec["chars"]):
+                learned.append({"file": path, "error": f"{len(cells)} glyphs for {len(spec['chars'])} characters"})
+                continue
+            samples.extend(cells)
+            labels.extend(ord(c) for c in spec["chars"])
+            learned.append({"file": path, "learned": len(cells)})
+        if samples:
+            knn.train(np.array(samples, np.float32), cv2.ml.ROW_SAMPLE, np.array(labels, np.float32))
+        return knn
+
+    knn, learn_ns = timed(train)
+
+    def read(bgr):
+        cells = glyph_cells(bgr)
+        if not cells or not samples:
+            return None
+        _, result, _, _ = knn.findNearest(np.array(cells, np.float32), k=1)
+        return "".join(chr(int(v)) for v in result.ravel())
+
+    items, first_call = [], None
+    for case in spec["cases"]:
+        image = cv2.imread(os.path.join(a.data, case["image"]), cv2.IMREAD_COLOR)
+        text = None
+        for i in range(a.warmup):
+            text, t = timed(lambda: read(image))
+            if first_call is None:
+                first_call = t
+        times = []
+        for _ in range(a.calls):
+            text, t = timed(lambda: read(image))
+            times.append(t)
+        output = {"text": text} if text is not None else {"refused": "no glyphs"}
+        items.append({"input": case["image"], "times_ns": times, "output": output})
+    return items, {"load_ns": learn_ns, "first_call_ns": first_call or 0, "learned": learned}
+
+
 def binding_overhead_ns():
     """Median cost of a Python→OpenCV call that does nothing measurable."""
     tiny = np.zeros((1, 1), np.uint8)
@@ -185,7 +255,7 @@ def binding_overhead_ns():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("task", choices=["faces", "templates", "motion"])
+    ap.add_argument("task", choices=["faces", "templates", "motion", "glyphs"])
     ap.add_argument("--data", required=True)
     ap.add_argument("--split", default="dev")
     ap.add_argument("--threads", type=int, default=1)
@@ -199,7 +269,7 @@ def main():
     cv2.setUseOptimized(True)
     base_user, base_sys, base_rss = usage_now()
     started = time.perf_counter()
-    items, init = {"faces": faces, "templates": templates, "motion": motion}[a.task](a)
+    items, init = {"faces": faces, "templates": templates, "motion": motion, "glyphs": glyphs}[a.task](a)
     wall = time.perf_counter() - started
     user, system, rss = usage_now()
     init["binding_overhead_ns"] = binding_overhead_ns()

@@ -178,6 +178,68 @@ def motion(m: Manifest, args):
             m.write_png(f"motion/{split}/{stem}/{i:04d}.png", bgr, task="motion", split=split, source=source)
 
 
+GLYPH_CHARS = "0123456789/%."
+GLYPH_SCALES = (0.5, 0.75)  # cap heights of about 11 and 16 pixels
+GLYPH_CASES = {"dev": 60, "test": 200}  # per scale
+
+
+def glyph_line(text: str, scale: float, background: str, rng) -> np.ndarray:
+    """`text` in OpenCV's Hershey simplex font, white, one pixel wide and
+    not anti-aliased (a pixel font), 3 pixels from each edge, on a flat dark
+    panel, a red bar (a vertical gradient) or a noisy panel."""
+    (w, h), base = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, 1)
+    width, height = w + 6, h + base + 6
+    if background == "flat":
+        image = np.full((height, width, 3), 40, np.uint8)
+    elif background == "bar":
+        rows = np.linspace(0.0, 1.0, height)[:, None]
+        bar = (1 - rows) * np.array([30, 30, 160]) + rows * np.array([60, 60, 230])
+        image = np.repeat(bar[:, None, :], width, axis=1).round().astype(np.uint8)
+    else:
+        noise = rng.normal(0.0, 8.0, (height, width, 3))
+        image = np.clip(40 + noise, 0, 255).round().astype(np.uint8)
+    cv2.putText(image, text, (3, 3 + h), cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), 1, cv2.LINE_8)
+    return image
+
+
+def glyph_text(rng) -> str:
+    digits = lambda lo, hi: str(int(rng.integers(10 ** (lo - 1) if lo > 1 else 0, 10 ** hi)))
+    kind = int(rng.integers(0, 3))
+    if kind == 0:
+        return f"{digits(1, 5)}/{digits(1, 5)}"
+    if kind == 1:
+        return f"{digits(1, 2)}.{int(rng.integers(0, 100)):02d}%"
+    return digits(1, 6)
+
+
+def glyphs(m: Manifest, args):
+    """F5, synthetic only (see AMENDMENTS.md): the training line of every
+    character at each size, and random HUD-like strings to read."""
+    for split, seed in (("dev", SEED + 1), ("test", SEED)):
+        rng = np.random.default_rng(seed)
+        cases = []
+        for scale in GLYPH_SCALES:
+            size = f"s{int(scale * 100):03d}"
+            m.write_png(f"glyphs/{split}/train_{size}.png", glyph_line(GLYPH_CHARS, scale, "flat", rng),
+                        task="glyphs", split=split, source=f"synthetic:hershey-simplex@{scale}")
+            for i in range(GLYPH_CASES[split]):
+                text = glyph_text(rng)
+                background = ("flat", "bar", "noise")[i % 3]
+                rel = m.write_png(f"glyphs/{split}/{size}_{i:03d}.png", glyph_line(text, scale, background, rng),
+                                  task="glyphs", split=split, source=f"synthetic:hershey-simplex@{scale}:{background}")
+                cases.append({"image": rel, "text": text, "size": size, "background": background})
+        with open(os.path.join(m.out, "glyphs", split, "cases.json"), "w") as f:
+            json.dump({"chars": GLYPH_CHARS, "train": {f"s{int(s * 100):03d}": f"glyphs/{split}/train_s{int(s * 100):03d}.png" for s in GLYPH_SCALES},
+                       "cases": cases}, f, indent=1)
+        # The same, as tab-separated lines, for the Rust side.
+        with open(os.path.join(m.out, "glyphs", split, "train.tsv"), "w") as f:
+            for scale in GLYPH_SCALES:
+                f.write(f"glyphs/{split}/train_s{int(scale * 100):03d}.png\t{GLYPH_CHARS}\n")
+        with open(os.path.join(m.out, "glyphs", split, "cases.tsv"), "w") as f:
+            for c in cases:
+                f.write(f"{c['image']}\t{c['text']}\n")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
@@ -191,6 +253,7 @@ def main():
     faces(m, args)
     templates(m, args)
     motion(m, args)
+    glyphs(m, args)
     os.makedirs(os.path.dirname(args.manifest), exist_ok=True)
     with open(args.manifest, "w") as f:
         json.dump({"seed": SEED, "files": m.entries}, f, indent=1)

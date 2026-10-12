@@ -22,6 +22,7 @@ use std::time::Instant;
 
 use syrup::cascade::{Cascade, CascadeOptions};
 use syrup::geometry::Rect;
+use syrup::glyphs::{GlyphOptions, GlyphSet};
 use syrup::image::{self, GrayImage, RgbaImage};
 use syrup::motion::{self, MotionConfig};
 use syrup::template::{self, Template};
@@ -83,7 +84,7 @@ fn args() -> Args {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: vs_opencv faces|templates|motion --data DIR --split dev|test [--threads N] [--calls K] [--warmup W] [--dump DIR] [--min-deviation D] [--min-size S] [--min-neighbors N] --out FILE"
+        "usage: vs_opencv faces|templates|motion|glyphs --data DIR --split dev|test [--threads N] [--calls K] [--warmup W] [--dump DIR] [--min-deviation D] [--min-size S] [--min-neighbors N] --out FILE"
     );
     std::process::exit(2)
 }
@@ -337,6 +338,102 @@ fn motion_task(a: &Args) -> (Vec<Item>, String) {
     (items, "{}".into())
 }
 
+/// Lines of tab-separated fields.
+fn tsv(path: &Path) -> Vec<Vec<String>> {
+    std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| l.split('\t').map(str::to_string).collect())
+        .collect()
+}
+
+fn json_string(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// F5: one glyph set learns the font from each size's labelled line
+/// (default options: light text), then reads every case.
+fn glyphs_task(a: &Args) -> (Vec<Item>, String) {
+    let dir = a.data.join("glyphs").join(&a.split);
+    let mut set = GlyphSet::new(GlyphOptions::default());
+    let mut learned = Vec::new();
+    let (_, learn_ns) = time(|| {
+        for row in tsv(&dir.join("train.tsv")) {
+            let image = rgba(&a.data.join(&row[0]));
+            let whole = Rect {
+                x: 0,
+                y: 0,
+                w: image.width(),
+                h: image.height(),
+            };
+            learned.push(match set.learn(&image, whole, &row[1]) {
+                Ok(n) => format!("{{\"file\":{},\"learned\":{n}}}", json_string(&row[0])),
+                Err(e) => format!(
+                    "{{\"file\":{},\"error\":{}}}",
+                    json_string(&row[0]),
+                    json_string(&e.to_string())
+                ),
+            });
+        }
+    });
+    let mut items = Vec::new();
+    let mut first_call_ns = None;
+    for row in tsv(&dir.join("cases.tsv")) {
+        let image = rgba(&a.data.join(&row[0]));
+        let whole = Rect {
+            x: 0,
+            y: 0,
+            w: image.width(),
+            h: image.height(),
+        };
+        let mut reading = None;
+        for i in 0..a.warmup {
+            let (r, t) = time(|| set.read(&image, whole));
+            if i == 0 && first_call_ns.is_none() {
+                first_call_ns = Some(t);
+            }
+            reading = Some(r);
+        }
+        let mut times = Vec::new();
+        for _ in 0..a.calls {
+            let (r, t) = time(|| set.read(&image, whole));
+            times.push(t);
+            reading = Some(r);
+        }
+        let reading = reading.expect("at least one call");
+        let output = match &reading.value {
+            Some(text) => format!("{{\"text\":{}}}", json_string(&text.text)),
+            None => format!(
+                "{{\"refused\":{}}}",
+                json_string(reading.failure_reason.as_deref().unwrap_or(""))
+            ),
+        };
+        items.push(Item {
+            input: row[0].clone(),
+            times_ns: times,
+            extra_ns: Vec::new(),
+            output,
+        });
+    }
+    let init = format!(
+        "{{\"load_ns\":{learn_ns},\"first_call_ns\":{},\"learned\":[{}]}}",
+        first_call_ns.unwrap_or(0),
+        learned.join(",")
+    );
+    (items, init)
+}
+
 /// This process's CPU time (user, system, seconds) and peak resident set
 /// (KiB), from /proc (Linux).
 fn process_usage() -> (f64, f64, u64) {
@@ -371,6 +468,7 @@ fn main() {
         "faces" => faces(&a),
         "templates" => templates(&a),
         "motion" => motion_task(&a),
+        "glyphs" => glyphs_task(&a),
         _ => usage(),
     };
     let wall = started.elapsed().as_secs_f64();
