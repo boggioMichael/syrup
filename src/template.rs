@@ -1134,18 +1134,45 @@ fn local_maxima(
             }
         }
     }
+    if limit == 0 {
+        return Vec::new();
+    }
+    if limit == 1 {
+        // What the sort below would put first — the strongest peak, and of
+        // equally strong ones the first in scan order (the sort is stable) —
+        // in one pass instead of a sort.
+        let best = peaks.into_iter().reduce(|best, peak| {
+            if peak.2.total_cmp(&best.2).is_gt() {
+                peak
+            } else {
+                best
+            }
+        });
+        return best.into_iter().collect();
+    }
     // Along a straight edge every position ties, and each counts as a
     // peak; keep one per neighbourhood so ties cannot use up the budget.
     peaks.sort_by(|a, b| b.2.total_cmp(&a.2));
+    // A kept peak marks its position, and a peak is crowded out when a
+    // position within `PEAK_SPACING` of it is marked: a fixed number of
+    // look-ups per peak. (Comparing each peak with every kept one was
+    // quadratic, and a textured search has a peak every few positions: a
+    // 16-pixel template over a 1366x768 frame spent seconds there.)
+    let mut marked = vec![false; columns * rows];
     let mut kept: Vec<(usize, usize, f32)> = Vec::new();
     for peak in peaks {
         if kept.len() >= limit {
             break;
         }
-        let crowded = kept.iter().any(|&(x, y, _)| {
-            x.abs_diff(peak.0) <= PEAK_SPACING && y.abs_diff(peak.1) <= PEAK_SPACING
-        });
+        let (x, y) = (peak.0, peak.1);
+        let (x0, x1) = (
+            x.saturating_sub(PEAK_SPACING),
+            (x + PEAK_SPACING).min(columns - 1),
+        );
+        let crowded = (y.saturating_sub(PEAK_SPACING)..=(y + PEAK_SPACING).min(rows - 1))
+            .any(|ny| marked[ny * columns + x0..=ny * columns + x1].contains(&true));
         if !crowded {
+            marked[y * columns + x] = true;
             kept.push(peak);
         }
     }
@@ -1325,10 +1352,14 @@ fn candidates(
     // The coarsest ranking is the least reliable, so it passes on the most
     // candidates; refining them one level down still costs less than the
     // search that ranked them.
-    let first_cut = if coarsest == 0 {
-        keep_at(0)
-    } else {
+    let first_cut = if coarsest > 0 {
         MAX_CANDIDATES
+    } else if min_score.is_none() {
+        // Without a pyramid every score is exact: when only the best match
+        // is asked for, it is the strongest peak, and only it is kept below.
+        1
+    } else {
+        keep_at(0)
     };
     let mut candidates = local_maxima(&scores, columns, rows, floor_at(coarsest), first_cut);
     for finer in (0..coarsest).rev() {
@@ -2081,5 +2112,122 @@ mod tests {
             }
         }
         assert!(misses.is_empty(), "{} misses: {misses:?}", misses.len());
+    }
+
+    /// `local_maxima` as it was before peaks were checked against a grid of
+    /// kept positions: every peak compared with every kept one.
+    fn local_maxima_reference(
+        scores: &[f32],
+        columns: usize,
+        rows: usize,
+        floor: f32,
+        limit: usize,
+    ) -> Vec<(usize, usize, f32)> {
+        let at = |x: isize, y: isize| {
+            if x < 0 || y < 0 || x >= columns as isize || y >= rows as isize {
+                f32::NEG_INFINITY
+            } else {
+                scores[y as usize * columns + x as usize]
+            }
+        };
+        let mut peaks = Vec::new();
+        for y in 0..rows as isize {
+            for x in 0..columns as isize {
+                let score = at(x, y);
+                let neighbours = (-1..=1).flat_map(|dy| (-1..=1).map(move |dx| (dx, dy)));
+                if score >= floor
+                    && neighbours
+                        .into_iter()
+                        .all(|(dx, dy)| score >= at(x + dx, y + dy))
+                {
+                    peaks.push((x as usize, y as usize, score));
+                }
+            }
+        }
+        peaks.sort_by(|a, b| b.2.total_cmp(&a.2));
+        let mut kept: Vec<(usize, usize, f32)> = Vec::new();
+        for peak in peaks {
+            if kept.len() >= limit {
+                break;
+            }
+            let crowded = kept.iter().any(|&(x, y, _)| {
+                x.abs_diff(peak.0) <= PEAK_SPACING && y.abs_diff(peak.1) <= PEAK_SPACING
+            });
+            if !crowded {
+                kept.push(peak);
+            }
+        }
+        kept
+    }
+
+    #[test]
+    fn local_maxima_keep_what_the_quadratic_check_kept() {
+        let mut state = 0x9e37_79b9u32;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+        for trial in 0..300 {
+            let columns = 1 + (next() % 40) as usize;
+            let rows = 1 + (next() % 30) as usize;
+            // Few distinct levels, so plateaus and ties are everywhere; some
+            // maps signed zeros, which order apart under `total_cmp`.
+            let levels = 1 + next() % 6;
+            let scores: Vec<f32> = (0..columns * rows)
+                .map(|_| {
+                    let v = (next() % levels) as f32 / levels as f32 - 0.5;
+                    if trial % 7 == 0 && v == 0.0 && next() % 2 == 0 {
+                        -0.0
+                    } else {
+                        v
+                    }
+                })
+                .collect();
+            for floor in [f32::NEG_INFINITY, 0.0, 0.3] {
+                for limit in [0, 1, 2, 5, 32, usize::MAX] {
+                    let got = local_maxima(&scores, columns, rows, floor, limit);
+                    let want = local_maxima_reference(&scores, columns, rows, floor, limit);
+                    assert_eq!(
+                        got.iter()
+                            .map(|p| (p.0, p.1, p.2.to_bits()))
+                            .collect::<Vec<_>>(),
+                        want.iter()
+                            .map(|p| (p.0, p.1, p.2.to_bits()))
+                            .collect::<Vec<_>>(),
+                        "trial {trial}, {columns}x{rows}, floor {floor}, limit {limit}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Searches scored exhaustively (no pyramid) only keep the strongest
+    /// peak when the best is asked for: it must be the first of all the
+    /// matches.
+    #[test]
+    fn the_best_of_an_exhaustive_search_is_the_first_of_all_matches() {
+        for trial in 0..24u32 {
+            let frame = if trial % 2 == 0 {
+                scene(240, 160, 77 + trial)
+            } else {
+                ui_scene(240, 160, 77 + trial)
+            };
+            let size = 8 + trial % 12;
+            let region = Rect {
+                x: (trial * 37) % (240 - size),
+                y: (trial * 23) % (160 - size),
+                w: size,
+                h: size,
+            };
+            let Some(template) = Template::new(&frame, region, Channel::Luma) else {
+                continue;
+            };
+            let best = find_best(&frame, whole(&frame), &template).unwrap();
+            let all = run_with(&frame, whole(&frame), &template, Some(-1.0), false);
+            assert_eq!(Some(&best), all.first(), "trial {trial}");
+            assert_eq!(best.score, 1.0, "trial {trial}: the cut-out scores 1");
+        }
     }
 }
