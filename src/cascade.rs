@@ -24,6 +24,7 @@
 //! ```
 
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use image::{GrayImage, RgbaImage};
 
@@ -445,11 +446,52 @@ impl Cascade {
     /// Every window of `gray`, at every scale, that passes the whole
     /// cascade — before neighbouring windows are merged.
     pub fn raw_windows(&self, gray: &GrayImage, options: &CascadeOptions) -> Vec<Rect> {
-        let (ww, wh) = self.window;
-        let (width, height) = gray.dimensions();
-        let mut windows = Vec::new();
-        if width < ww || height < wh {
+        let scales = self.scales(gray.dimensions(), options);
+        let threads = options.threads.max(1).min(scales.len());
+        if threads <= 1 {
+            let mut windows = Vec::new();
+            for scale in &scales {
+                self.scan_scale(gray, scale, options, &mut windows);
+            }
             return windows;
+        }
+        // Whole scales go to the threads, the costliest first, each thread
+        // taking the next scale left when it is done: the resizing and the
+        // integral images run in parallel too, not only the scan, and only
+        // as many scales as threads are in memory at once. Each scale's
+        // windows go to its own slot and are joined in scale order, so the
+        // output is the same whatever the thread count.
+        let mut order: Vec<usize> = (0..scales.len()).collect();
+        order.sort_by_key(|&i| std::cmp::Reverse(scales[i].windows(self.window)));
+        let next = AtomicUsize::new(0);
+        let found: Vec<OnceLock<Vec<Rect>>> = scales.iter().map(|_| OnceLock::new()).collect();
+        let work = || {
+            while let Some(&i) = order.get(next.fetch_add(1, Ordering::Relaxed)) {
+                let mut out = Vec::new();
+                self.scan_scale(gray, &scales[i], options, &mut out);
+                let _ = found[i].set(out);
+            }
+        };
+        std::thread::scope(|scope| {
+            for _ in 1..threads {
+                scope.spawn(work);
+            }
+            work();
+        });
+        found
+            .into_iter()
+            .flat_map(|slot| slot.into_inner().unwrap_or_default())
+            .collect()
+    }
+
+    /// The scales a scan visits, smallest window first: from the cascade's
+    /// window (or `min_size`) up by `scale_factor` while the window fits
+    /// the image and `max_size`.
+    fn scales(&self, (width, height): (u32, u32), options: &CascadeOptions) -> Vec<Scale> {
+        let (ww, wh) = self.window;
+        let mut scales = Vec::new();
+        if width < ww || height < wh {
+            return scales;
         }
         let factor = options.scale_factor.max(1.01);
         let min_side = options.min_size.max(ww.min(wh)) as f32;
@@ -466,66 +508,53 @@ impl Cascade {
             if scaled_w < ww || scaled_h < wh {
                 break;
             }
-            let level = if (scaled_w, scaled_h) == (width, height) {
-                std::borrow::Cow::Borrowed(gray)
-            } else {
-                // Byte for byte the `image` crate's triangle filter, which
-                // this used before (`resample` says why it is its own).
-                std::borrow::Cow::Owned(crate::resample::resize_triangle(gray, scaled_w, scaled_h))
-            };
-            let integral = Integral::new(&level);
-            let mut offsets = self.level(integral.stride);
-            offsets.flat_limit = options.min_deviation.map(|d| 1.0 / f64::from(d));
-            // The reference implementation slides two pixels at a time until
-            // the window has doubled, then one.
-            let step = if scale > 2.0 { 1 } else { 2 };
-            let rows: Vec<u32> = (0..=(scaled_h - wh)).step_by(step as usize).collect();
-            let scan_rows = |rows: &[u32], out: &mut Vec<Rect>| {
-                for &y in rows {
-                    let mut x = 0;
-                    while x + ww <= scaled_w {
-                        let base = y as usize * integral.stride + x as usize;
-                        if self.stages_passed(&integral, &offsets, base) == self.stages.len() {
-                            out.push(Rect {
-                                x: (x as f32 * scale).round() as u32,
-                                y: (y as f32 * scale).round() as u32,
-                                w: window_w,
-                                h: window_h,
-                            });
-                        }
-                        x += step;
-                    }
-                }
-            };
-            // Bands of rows go to threads; a level with few rows is not
-            // worth the hand-off. Results keep band order, so the output
-            // is the same whatever the thread count.
-            let threads = options.threads.max(1).min(rows.len().max(1) / 8 + 1);
-            if threads <= 1 {
-                scan_rows(&rows, &mut windows);
-            } else {
-                let band = rows.len().div_ceil(threads);
-                let found: Vec<Vec<Rect>> = std::thread::scope(|scope| {
-                    let handles: Vec<_> = rows
-                        .chunks(band)
-                        .map(|chunk| {
-                            scope.spawn(|| {
-                                let mut out = Vec::new();
-                                scan_rows(chunk, &mut out);
-                                out
-                            })
-                        })
-                        .collect();
-                    handles
-                        .into_iter()
-                        .map(|h| h.join().expect("a scan thread panicked"))
-                        .collect()
-                });
-                windows.extend(found.into_iter().flatten());
-            }
+            scales.push(Scale {
+                scale,
+                window: (window_w, window_h),
+                scaled: (scaled_w, scaled_h),
+            });
             scale *= factor;
         }
-        windows
+        scales
+    }
+
+    /// Every window of one scale that passes the whole cascade, in scan
+    /// order, appended to `out`.
+    fn scan_scale(
+        &self,
+        gray: &GrayImage,
+        s: &Scale,
+        options: &CascadeOptions,
+        out: &mut Vec<Rect>,
+    ) {
+        let (ww, wh) = self.window;
+        let (scaled_w, scaled_h) = s.scaled;
+        let level = if s.scaled == gray.dimensions() {
+            std::borrow::Cow::Borrowed(gray)
+        } else {
+            // Byte for byte the `image` crate's triangle filter, which this
+            // used before (`resample` says why it is its own).
+            std::borrow::Cow::Owned(crate::resample::resize_triangle(gray, scaled_w, scaled_h))
+        };
+        let integral = Integral::new(&level);
+        let mut offsets = self.level(integral.stride);
+        offsets.flat_limit = options.min_deviation.map(|d| 1.0 / f64::from(d));
+        let step = s.step();
+        for y in (0..=(scaled_h - wh)).step_by(step as usize) {
+            let mut x = 0;
+            while x + ww <= scaled_w {
+                let base = y as usize * integral.stride + x as usize;
+                if self.stages_passed(&integral, &offsets, base) == self.stages.len() {
+                    out.push(Rect {
+                        x: (x as f32 * s.scale).round() as u32,
+                        y: (y as f32 * s.scale).round() as u32,
+                        w: s.window.0,
+                        h: s.window.1,
+                    });
+                }
+                x += step;
+            }
+        }
     }
 
     /// Detect objects in a grey image: the raw windows, clustered, with
@@ -601,6 +630,31 @@ pub struct CascadeMatch {
     pub bounds: Rect,
     /// How many overlapping windows agreed; the classic confidence proxy.
     pub neighbors: u32,
+}
+
+/// One scale of a scan: the window's size in the image, and the image's
+/// size shrunk so the cascade's own window covers that much of it.
+#[derive(Debug, Clone, Copy)]
+struct Scale {
+    scale: f32,
+    window: (u32, u32),
+    scaled: (u32, u32),
+}
+
+impl Scale {
+    /// The reference implementation slides two pixels at a time until the
+    /// window has doubled, then one.
+    fn step(&self) -> u32 {
+        if self.scale > 2.0 { 1 } else { 2 }
+    }
+
+    /// How many windows the scan evaluates at this scale.
+    fn windows(&self, (ww, wh): (u32, u32)) -> u64 {
+        let step = u64::from(self.step());
+        let across = u64::from(self.scaled.0 - ww) / step + 1;
+        let down = u64::from(self.scaled.1 - wh) / step + 1;
+        across * down
+    }
 }
 
 /// Integral image with sums of squares, over a grey image, with a zero
@@ -961,6 +1015,61 @@ mod tests {
             ..plain
         };
         assert_eq!(Cascade::frontal_face().detect(&faint, &zero).len(), 1);
+    }
+
+    /// Scales go to threads in order of cost and come back in scale order:
+    /// the raw windows, and so the detections, do not depend on how many
+    /// threads scan.
+    #[test]
+    fn the_thread_count_changes_nothing() {
+        let image = astronaut();
+        let gray = channel_image(
+            &image,
+            Rect {
+                x: 0,
+                y: 0,
+                w: 320,
+                h: 320,
+            },
+            Channel::Luma,
+        );
+        // A wider frame of the astronaut beside a flipped copy, for more
+        // scales than threads and several faces.
+        let wide = GrayImage::from_fn(560, 300, |x, y| {
+            let (sx, sy) = (x % 280 + 20, y + 10);
+            let sx = if x >= 280 { 319 - sx } else { sx };
+            *gray.get_pixel(sx.min(319), sy.min(319))
+        });
+        for frame in [&gray, &wide] {
+            let one = CascadeOptions {
+                threads: 1,
+                ..CascadeOptions::default()
+            };
+            let windows = Cascade::frontal_face().raw_windows(frame, &one);
+            assert!(!windows.is_empty());
+            for threads in [2, 3, 8, 64] {
+                let many = CascadeOptions { threads, ..one };
+                assert_eq!(
+                    Cascade::frontal_face().raw_windows(frame, &many),
+                    windows,
+                    "{threads} threads"
+                );
+                let gated = CascadeOptions {
+                    min_deviation: Some(10.0),
+                    ..many
+                };
+                assert_eq!(
+                    Cascade::frontal_face().detect(frame, &gated),
+                    Cascade::frontal_face().detect(
+                        frame,
+                        &CascadeOptions {
+                            threads: 1,
+                            ..gated
+                        }
+                    ),
+                );
+            }
+        }
     }
 
     #[test]
