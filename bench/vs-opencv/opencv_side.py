@@ -243,6 +243,32 @@ def glyphs(a):
     return items, {"load_ns": learn_ns, "first_call_ns": first_call or 0, "learned": learned}
 
 
+def yunet(a):
+    """F2: OpenCV's FaceDetectorYN on the prepared 640-pixel images, with the
+    ONNX file Syrup bundles (score 0.6, NMS 0.3)."""
+    directory = os.path.join(a.data, "faces640", a.split)
+    model = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "crates", "syrup-runtime", "models",
+                         "face_detection_yunet_2023mar.onnx")
+    detector, load_ns = timed(lambda: cv2.FaceDetectorYN.create(model, "", (640, 640), 0.6, 0.3, 5000))
+    items, first_call = [], None
+    for p in sorted_pngs(directory):
+        image = cv2.imread(p, cv2.IMREAD_COLOR)
+        detector.setInputSize((image.shape[1], image.shape[0]))
+        faces = None
+        for i in range(a.warmup):
+            (_, faces), t = timed(lambda: detector.detect(image))
+            if first_call is None:
+                first_call = t
+        times = []
+        for _ in range(a.calls):
+            (_, faces), t = timed(lambda: detector.detect(image))
+            times.append(t)
+        boxes = [] if faces is None else [[round(float(v), 2) for v in f[:4]] + [round(float(f[14]), 4)] +
+                                           [round(float(v), 2) for v in f[4:14]] for f in faces]
+        items.append({"input": os.path.relpath(p, a.data), "times_ns": times, "output": {"boxes": boxes}})
+    return items, {"load_ns": load_ns, "first_call_ns": first_call or 0}
+
+
 def binding_overhead_ns():
     """Median cost of a Python→OpenCV call that does nothing measurable."""
     tiny = np.zeros((1, 1), np.uint8)
@@ -255,7 +281,7 @@ def binding_overhead_ns():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("task", choices=["faces", "templates", "motion", "glyphs"])
+    ap.add_argument("task", choices=["faces", "templates", "motion", "glyphs", "yunet"])
     ap.add_argument("--data", required=True)
     ap.add_argument("--split", default="dev")
     ap.add_argument("--threads", type=int, default=1)
@@ -269,7 +295,7 @@ def main():
     cv2.setUseOptimized(True)
     base_user, base_sys, base_rss = usage_now()
     started = time.perf_counter()
-    items, init = {"faces": faces, "templates": templates, "motion": motion, "glyphs": glyphs}[a.task](a)
+    items, init = {"faces": faces, "templates": templates, "motion": motion, "glyphs": glyphs, "yunet": yunet}[a.task](a)
     wall = time.perf_counter() - started
     user, system, rss = usage_now()
     init["binding_overhead_ns"] = binding_overhead_ns()

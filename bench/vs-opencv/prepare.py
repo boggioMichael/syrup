@@ -89,11 +89,18 @@ def frames_of(video: str, start: int, count: int, step: int = 1, size=None):
 
 
 def face_image(m: Manifest, split: str, stem: str, bgr: np.ndarray, source: str):
-    """The colour image (for YuNet) and its grey (for the cascades: both
-    libraries get these same bytes, OpenCV's Rec. 601 conversion)."""
+    """The colour image, its grey (for the cascades: both libraries get
+    these same bytes, OpenCV's Rec. 601 conversion), and for YuNet (F2) the
+    colour image resized so its longer side is 640 pixels — the canvas
+    Syrup's YuNet provider runs at — with OpenCV's area filter."""
     m.write_png(f"faces/{split}/{stem}.png", bgr, task="faces", split=split, source=source)
     grey = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
     m.write_png(f"faces/{split}/{stem}.grey.png", grey, task="faces", split=split, source=source + " (grey)")
+    h, w = bgr.shape[:2]
+    scale = 640 / max(w, h)
+    size = (max(1, round(w * scale)), max(1, round(h * scale)))
+    canvas = cv2.resize(bgr, size, interpolation=cv2.INTER_AREA)
+    m.write_png(f"faces640/{split}/{stem}.png", canvas, task="yunet", split=split, source=source + " (640)")
 
 
 def faces(m: Manifest, args):
