@@ -1,0 +1,354 @@
+{
+ "fixtures": {
+  "five_faces": {
+   "opencv": {
+    "ms_per_frame": [
+     82.4717,
+     83.9338,
+     83.2309
+    ],
+    "median": 83.2309,
+    "range": [
+     82.4717,
+     83.9338
+    ],
+    "detect_s_median": 4.336783409118652,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 1.0
+   },
+   "syrup-after": {
+    "ms_per_frame": [
+     93.8145,
+     94.0218,
+     92.114
+    ],
+    "median": 93.8145,
+    "range": [
+     92.114,
+     94.0218
+    ],
+    "detect_s_median": 4.978022336959839,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 1.1271595044628857
+   },
+   "syrup-before": {
+    "ms_per_frame": [
+     176.1028,
+     174.9329,
+     165.5215
+    ],
+    "median": 174.9329,
+    "range": [
+     165.5215,
+     176.1028
+    ],
+    "detect_s_median": 10.962701797485352,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 2.101778305893604
+   }
+  },
+  "low_res": {
+   "opencv": {
+    "ms_per_frame": [
+     17.7632,
+     18.2844,
+     20.952
+    ],
+    "median": 18.2844,
+    "range": [
+     17.7632,
+     20.952
+    ],
+    "detect_s_median": 0.4047210216522217,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": false,
+    "over_opencv": 1.0
+   },
+   "syrup-after": {
+    "ms_per_frame": [
+     23.8638,
+     25.7905,
+     22.7366
+    ],
+    "median": 23.8638,
+    "range": [
+     22.7366,
+     25.7905
+    ],
+    "detect_s_median": 0.8451683521270752,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 1.305145369823456
+   },
+   "syrup-before": {
+    "ms_per_frame": [
+     40.3449,
+     39.2937,
+     41.5386
+    ],
+    "median": 40.3449,
+    "range": [
+     39.2937,
+     41.5386
+    ],
+    "detect_s_median": 1.9495155811309814,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 2.2065203123974535
+   }
+  },
+  "muted": {
+   "opencv": {
+    "ms_per_frame": [
+     18.0869,
+     17.8431,
+     19.481
+    ],
+    "median": 18.0869,
+    "range": [
+     17.8431,
+     19.481
+    ],
+    "detect_s_median": 0.6938939094543457,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 1.0
+   },
+   "syrup-after": {
+    "ms_per_frame": [
+     34.1406,
+     35.1113,
+     30.6168
+    ],
+    "median": 34.1406,
+    "range": [
+     30.6168,
+     35.1113
+    ],
+    "detect_s_median": 1.8394312858581543,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 1.8875871487098397
+   },
+   "syrup-before": {
+    "ms_per_frame": [
+     60.5379,
+     65.5316,
+     67.1437
+    ],
+    "median": 65.5316,
+    "range": [
+     60.5379,
+     67.1437
+    ],
+    "detect_s_median": 4.142437934875488,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 3.623152668505935
+   }
+  },
+  "one_speaker": {
+   "opencv": {
+    "ms_per_frame": [
+     16.2077,
+     16.7074,
+     17.142
+    ],
+    "median": 16.7074,
+    "range": [
+     16.2077,
+     17.142
+    ],
+    "detect_s_median": 0.6421773433685303,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 1.0
+   },
+   "syrup-after": {
+    "ms_per_frame": [
+     33.7965,
+     35.8475,
+     31.0196
+    ],
+    "median": 33.7965,
+    "range": [
+     31.0196,
+     35.8475
+    ],
+    "detect_s_median": 1.7761046886444092,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 2.0228461639752444
+   },
+   "syrup-before": {
+    "ms_per_frame": [
+     64.1973,
+     70.1131,
+     64.6336
+    ],
+    "median": 64.6336,
+    "range": [
+     64.1973,
+     70.1131
+    ],
+    "detect_s_median": 4.02047324180603,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 3.868561236338389
+   }
+  },
+  "rapid_cuts": {
+   "opencv": {
+    "ms_per_frame": [
+     18.0612,
+     18.3318,
+     17.952
+    ],
+    "median": 18.0612,
+    "range": [
+     17.952,
+     18.3318
+    ],
+    "detect_s_median": 1.2421879768371582,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": false,
+    "over_opencv": 1.0
+   },
+   "syrup-after": {
+    "ms_per_frame": [
+     30.8873,
+     32.2421,
+     32.2024
+    ],
+    "median": 32.2024,
+    "range": [
+     30.8873,
+     32.2421
+    ],
+    "detect_s_median": 3.0333759784698486,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 1.7829601576860894
+   },
+   "syrup-before": {
+    "ms_per_frame": [
+     60.5665,
+     61.5638,
+     61.9053
+    ],
+    "median": 61.5638,
+    "range": [
+     60.5665,
+     61.9053
+    ],
+    "detect_s_median": 6.5449488162994385,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 3.408621797001307
+   }
+  },
+  "two_alternating": {
+   "opencv": {
+    "ms_per_frame": [
+     25.7781,
+     26.8965,
+     26.5061
+    ],
+    "median": 26.5061,
+    "range": [
+     25.7781,
+     26.8965
+    ],
+    "detect_s_median": 2.6906425952911377,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": false,
+    "over_opencv": 1.0
+   },
+   "syrup-after": {
+    "ms_per_frame": [
+     40.0523,
+     39.8646,
+     36.819
+    ],
+    "median": 39.8646,
+    "range": [
+     36.819,
+     40.0523
+    ],
+    "detect_s_median": 4.592720031738281,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 1.503978329516602
+   },
+   "syrup-before": {
+    "ms_per_frame": [
+     76.993,
+     76.6971,
+     74.9824
+    ],
+    "median": 76.6971,
+    "range": [
+     74.9824,
+     76.993
+    ],
+    "detect_s_median": 10.102668762207031,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 2.8935641229754663
+   }
+  },
+  "two_simultaneous": {
+   "opencv": {
+    "ms_per_frame": [
+     31.263,
+     33.1941,
+     30.6399
+    ],
+    "median": 31.263,
+    "range": [
+     30.6399,
+     33.1941
+    ],
+    "detect_s_median": 1.3052895069122314,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 1.0
+   },
+   "syrup-after": {
+    "ms_per_frame": [
+     40.8979,
+     44.7751,
+     44.4867
+    ],
+    "median": 44.4867,
+    "range": [
+     40.8979,
+     44.7751
+    ],
+    "detect_s_median": 2.215191602706909,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 1.4229824393052488
+   },
+   "syrup-before": {
+    "ms_per_frame": [
+     83.9279,
+     85.8552,
+     81.6828
+    ],
+    "median": 83.9279,
+    "range": [
+     81.6828,
+     85.8552
+    ],
+    "detect_s_median": 5.159204483032227,
+    "quality_same_every_run": true,
+    "quality_same_as_syrup_before": true,
+    "over_opencv": 2.6845760163771866
+   }
+  }
+ }
+}

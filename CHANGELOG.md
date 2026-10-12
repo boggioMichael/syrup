@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Measured against OpenCV (`bench/vs-opencv`)
+- A shared harness runs Syrup and OpenCV 5.0 over the same held-out
+  inputs (Haar faces, YuNet, template matching, motion regions, glyph
+  reading), with a pre-registration, amendments, raw data and
+  `bench/vs-opencv/reproduce.sh`; results in `bench/vs-opencv/RESULTS.md`.
+- `template`: peaks are picked in linear time (a kept peak marks its
+  cell) and the best match without a sort — the crowding check was
+  quadratic and took seconds for a 16-pixel template over a full frame;
+  scoring every position takes two template pixels per 16-bit
+  multiply-add on AVX2 (`kernels::correlate_everywhere`); the exhaustive
+  best match is found while scoring. Same matches.
+- `cascade`: the scale pyramid is resized by `resample::resize_triangle`,
+  byte for byte the `image` crate's triangle filter in a sixth of the
+  work; one bounds check per window; threads take whole scales,
+  costliest first, the output the same whatever the thread count. Same
+  detections.
+- `cascade::CascadeOptions::min_deviation` (default `None`): reject
+  windows whose deviation is at most the given value before the first
+  stage — `Some(10.0)` is what OpenCV's `CascadeClassifier` does. Faster
+  on flat backgrounds; misses faces whose window varies by 10 grey levels
+  or less, which the default scan finds.
+- `motion::regions`: the changed regions of two frames from the fused
+  scan, for callers that keep their own frames.
+
 ### The vision engine of MapleSyrup
 - `capture`: on Windows, frames come through Windows.Graphics.Capture —
   the compositor's own picture of the window, kept on the GPU, the client

@@ -460,7 +460,25 @@ on a GitHub `ubuntu-latest` runner):
 The lipreader pipeline's measured speed and accuracy (per fixture, both
 face detectors, stage timings) are in
 [`example/docs/benchmarks.md`](example/docs/benchmarks.md); the cascade is
-the cost there, and it is the library's next performance item.
+the cost there.
+
+**Against OpenCV.** [`bench/vs-opencv`](bench/vs-opencv/RESULTS.md) runs
+Syrup and OpenCV 5.0 over the same held-out inputs, with a pre-registered
+protocol, raw data and one command to reproduce. On one 2-core x86 VM, one
+thread, on 2026-10-12:
+
+- **Motion regions:** the same mask, 3.2× faster at the median.
+- **Haar faces with OpenCV's flat-window rule (`min_deviation`):** 1.19×
+  faster, with the same boxes.
+- **Template matching:** 1.5× faster, but 98.8% of searches correct
+  against OpenCV's 100%.
+- **Haar faces with the default scan:** 0.87× OpenCV's speed.
+- **YuNet:** 5× slower.
+- **Synthetic glyph lines:** behind.
+
+The figures in the table above predate that day's cascade and template
+changes. Those changes made Haar faces 31% and template matching 88%
+faster at the 95th percentile, with the same outputs.
 
 ## Limitations
 

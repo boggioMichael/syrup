@@ -72,3 +72,5 @@ for r in 0 1 2; do
     done
 done
 python3 "$here/lipreader_summary.py" "$lip"
+python3 "$here/report.py" "$results" > "$results/tables.md"
+echo "tables: $results/tables.md (compare with RESULTS.md)"
