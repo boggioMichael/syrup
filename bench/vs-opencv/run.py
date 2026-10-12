@@ -36,11 +36,14 @@ RNG_SEED = 20261012
 # ---------------------------------------------------------------- measure
 
 def command(impl: str, binary: str | None, task: str, a, out: str, extra=()):
-    common = [task, "--data", a.data, "--split", a.split, "--threads", str(a.threads),
-              "--calls", str(a.calls), "--warmup", str(a.warmup), "--out", out, *extra]
+    flags = ["--data", a.data, "--split", a.split, "--threads", str(a.threads),
+             "--calls", str(a.calls), "--warmup", str(a.warmup), "--out", out, *extra]
     if impl == "opencv":
-        return [sys.executable, os.path.join(HERE, "opencv_side.py"), *common, "--cascades", a.cascades]
-    return [binary, *common]
+        return [sys.executable, os.path.join(HERE, "opencv_side.py"), task, *flags, "--cascades", a.cascades]
+    args = dict(spec.split("=", 1) for spec in a.args or [])
+    if task == "yunet":  # its own binary, one task
+        return [binary, *flags]
+    return [binary, task, *flags, *args.get(impl, "").split()]
 
 
 def environment(a, impls):
@@ -85,8 +88,19 @@ def measure(a):
         impls.append((name, os.path.abspath(binary) if binary else None))
     raw = os.path.join(a.out, "raw")
     os.makedirs(raw, exist_ok=True)
-    with open(os.path.join(a.out, "environment.json"), "w") as f:
-        json.dump(environment(a, impls), f, indent=1)
+    env_path = os.path.join(a.out, "environment.json")
+    env = environment(a, impls)
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            before = json.load(f)
+        before.setdefault("commands", [before.get("command")]).append(sys.argv)
+        before["impls"].update(env["impls"])
+        before["binaries_sha256"].update(env["binaries_sha256"])
+        env = before
+    else:
+        env["commands"] = [sys.argv]
+    with open(env_path, "w") as f:
+        json.dump(env, f, indent=1)
     tasks = a.tasks.split(",")
     for r in range(a.rounds):
         order = impls[r % len(impls):] + impls[:r % len(impls)]
@@ -181,6 +195,15 @@ def source_of(task, item_input, sources, cases):
         elif dataset == "ms":
             dataset += ":still"
         return dataset, case["image"].replace(".perturbed", "")
+    if task == "glyphs":
+        case = cases[item_input]
+        return f"{case['size']}/{case['background']}", item_input
+    if task == "yunet":
+        src = sources.get(item_input, "?")
+        dataset = src.split(":")[0]
+        if dataset == "grid":
+            return src.split(" ")[0], src.split(" ")[0]
+        return dataset, item_input
     video, pair = item_input.split("/")
     return video, f"{video}/{int(pair) // BLOCK}"
 
@@ -214,13 +237,18 @@ def summarise(a):
     with open(os.path.join(a.out, "environment.json")) as f:
         env = json.load(f)
     split = env["split"]
-    cases = None
-    tpl_cases = os.path.join(a.data, "templates", split, "cases.json")
-    if os.path.exists(tpl_cases):
-        with open(tpl_cases) as f:
-            cases = json.load(f)
+    def task_cases(task):
+        path = os.path.join(a.data, task, split, "cases.json")
+        if not os.path.exists(path):
+            return None
+        with open(path) as f:
+            data = json.load(f)
+        if task == "glyphs":
+            return {c["image"]: c for c in data["cases"]}
+        return data
     tasks = sorted({t for t, _ in runs})
     for task in tasks:
+        cases = task_cases(task)
         impls = sorted(i for t, i in runs if t == task)
         per = {}  # impl -> source -> {"times": [], "clusters": {key: []}, "rounds": [[...] per round]}
         for impl in impls:
@@ -320,19 +348,60 @@ def quality(task, runs, masks, impls, a, cases, sources, split):
                     k: dict(zip(("precision", "recall", "f1"), prf(v[0], v[1], v[2])),
                             mean_iou=float(np.mean(v[3])) if v[3] else None, found=v[1], reference=v[2])
                     for k, v in per_src.items()}
-        if "syrup-before" in impls and "syrup-after" in impls:
+        for after in (i for i in impls if i.startswith("syrup-after")):
+            if "syrup-before" not in impls:
+                break
             tp = found = ref = 0
             identical = 0
-            for name, o in first["syrup-after"].items():
+            for name, o in first[after].items():
                 b = first["syrup-before"][name]["boxes"]
                 t, _ = match_boxes(o["boxes"], b)
                 tp += t
                 found += len(o["boxes"])
                 ref += len(b)
                 identical += o["boxes"] == b
-            q["after_vs_before"] = dict(zip(("precision", "recall", "f1"), prf(tp, found, ref)),
-                                        identical_inputs=identical, inputs=len(first["syrup-after"]),
-                                        box_count_change=(found - ref) / ref if ref else 0.0)
+            q[f"{after}_vs_before"] = dict(zip(("precision", "recall", "f1"), prf(tp, found, ref)),
+                                           identical_inputs=identical, inputs=len(first[after]),
+                                           box_count_change=(found - ref) / ref if ref else 0.0)
+    if task == "glyphs":
+        for impl in impls:
+            per = defaultdict(lambda: {"correct": 0, "wrong": 0, "refused": 0, "cases": 0})
+            for name, o in first[impl].items():
+                c = cases[name]
+                outcome = "refused" if "refused" in o else (
+                    "correct" if "".join(o["text"].split()) == c["text"] else "wrong")
+                for key in ("all", c["size"], c["background"]):
+                    per[key][outcome] += 1
+                    per[key]["cases"] += 1
+            q.setdefault("readings", {})[impl] = {k: {**v, "accuracy": v["correct"] / v["cases"],
+                                                      "wrong_rate": v["wrong"] / v["cases"],
+                                                      "refusal_rate": v["refused"] / v["cases"]}
+                                                  for k, v in per.items()}
+            q.setdefault("learned", {})[impl] = runs[(task, impl)][0]["init"].get("learned")
+    if task == "yunet" and "opencv" in impls:
+        for impl in impls:
+            if impl == "opencv":
+                continue
+            tp = nf = nr = 0
+            ious, landmark, score = [], [], []
+            for name, o in first[impl].items():
+                ref = first["opencv"][name]["boxes"]
+                t, iv = match_boxes(o["boxes"], ref)
+                tp += t
+                nf += len(o["boxes"])
+                nr += len(ref)
+                ious += iv
+                for f in o["boxes"]:
+                    best = max(ref, key=lambda r: iou(f, r), default=None)
+                    if best is not None and iou(f, best) >= 0.5:
+                        pts = np.array(f[5:15]).reshape(5, 2) - np.array(best[5:15]).reshape(5, 2)
+                        landmark.append(float(np.linalg.norm(pts, axis=1).mean()))
+                        score.append(abs(f[4] - best[4]))
+            q[f"{impl}_vs_opencv"] = dict(zip(("precision", "recall", "f1"), prf(tp, nf, nr)),
+                                          mean_iou=float(np.mean(ious)) if ious else None,
+                                          mean_landmark_error_px=float(np.mean(landmark)) if landmark else None,
+                                          max_score_abs_diff=float(np.max(score)) if score else None,
+                                          found=nf, reference=nr)
     if task == "templates":
         for impl in impls:
             per = defaultdict(lambda: [0, 0, 0])
@@ -444,7 +513,8 @@ def main():
     m.add_argument("--calls", type=int, default=5)
     m.add_argument("--warmup", type=int, default=3)
     m.add_argument("--rounds", type=int, default=5)
-    m.add_argument("--impl", action="append", required=True)
+    m.add_argument("--impl", action="append", required=True, help="name=binary (opencv: no binary)")
+    m.add_argument("--args", action="append", help="name=extra arguments for that implementation")
     m.add_argument("--tasks", default="faces,templates,motion")
     m.add_argument("--cascades", required=True)
     m.add_argument("--out", required=True)
