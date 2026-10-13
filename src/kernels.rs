@@ -1018,9 +1018,135 @@ fn correlate_everywhere_rows(
     }
 }
 
+/// BGRA pixels (as Windows hands them over) into RGBA ones, opaque: blue
+/// and red exchanged and alpha 255, `dst` as long as `src`, four bytes a
+/// pixel. A byte shuffle on 512- or 256-bit vectors where the CPU has one;
+/// the same bytes as [`bgra_to_rgba_word`] a pixel at a time.
+// The capture of Windows frames is what takes them.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn bgra_to_rgba(src: &[u8], dst: &mut [u8]) {
+    assert_eq!(src.len(), dst.len());
+    assert!(src.len().is_multiple_of(4));
+    let mut done = 0;
+    #[cfg(target_arch = "x86_64")]
+    if backend() == Backend::Avx2 {
+        // SAFETY: AVX-512 BW where `vnni()` reported 512-bit vectors, else
+        // AVX2 (`backend()`); both slices hold `src.len()` bytes.
+        done = unsafe {
+            if vnni() == Some(Vnni::Zmm) {
+                x86::bgra_to_rgba_zmm(src.as_ptr(), dst.as_mut_ptr(), src.len())
+            } else {
+                x86::bgra_to_rgba_avx2(src.as_ptr(), dst.as_mut_ptr(), src.len())
+            }
+        };
+    }
+    for (s, d) in src[done..]
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(dst[done..].as_chunks_mut::<4>().0)
+    {
+        *d = bgra_to_rgba_word(*s);
+    }
+}
+
+/// [`bgra_to_rgba`] in place.
+// The capture of Windows frames is what takes them.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn bgra_to_rgba_in_place(pixels: &mut [u8]) {
+    assert!(pixels.len().is_multiple_of(4));
+    let mut done = 0;
+    #[cfg(target_arch = "x86_64")]
+    if backend() == Backend::Avx2 {
+        let at = pixels.as_mut_ptr();
+        // SAFETY: as in `bgra_to_rgba`; each vector is read before the same
+        // bytes are written.
+        done = unsafe {
+            if vnni() == Some(Vnni::Zmm) {
+                x86::bgra_to_rgba_zmm(at, at, pixels.len())
+            } else {
+                x86::bgra_to_rgba_avx2(at, at, pixels.len())
+            }
+        };
+    }
+    for pixel in pixels[done..].as_chunks_mut::<4>().0 {
+        *pixel = bgra_to_rgba_word(*pixel);
+    }
+}
+
+/// One BGRA pixel as RGBA, opaque: shifts and masks on a 32-bit word.
+// The capture of Windows frames is what takes them.
+#[cfg_attr(not(windows), allow(dead_code))]
+#[inline(always)]
+pub(crate) fn bgra_to_rgba_word(bgra: [u8; 4]) -> [u8; 4] {
+    let x = u32::from_le_bytes(bgra);
+    (((x & 0x0000_00ff) << 16) | (x & 0x0000_ff00) | ((x >> 16) & 0x0000_00ff) | 0xff00_0000)
+        .to_le_bytes()
+}
+
 #[cfg(target_arch = "x86_64")]
 mod x86 {
     use std::arch::x86_64::*;
+
+    /// `bgra_to_rgba` 32 bytes a step: a byte shuffle putting each pixel's
+    /// red, green and blue in order with a zero for alpha, then alpha set.
+    /// Returns how many bytes it did (a whole number of steps); `dst` may
+    /// be `src`.
+    ///
+    /// # Safety
+    ///
+    /// AVX2; `src` and `dst` hold `len` bytes.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn bgra_to_rgba_avx2(src: *const u8, dst: *mut u8, len: usize) -> usize {
+        let order = _mm256_setr_epi8(
+            2, 1, 0, -128, 6, 5, 4, -128, 10, 9, 8, -128, 14, 13, 12, -128, //
+            2, 1, 0, -128, 6, 5, 4, -128, 10, 9, 8, -128, 14, 13, 12, -128,
+        );
+        let alpha = _mm256_set1_epi32(0xff00_0000_u32 as i32);
+        let mut i = 0;
+        while i + 32 <= len {
+            // SAFETY: 32 bytes from `i` within both.
+            unsafe {
+                let v = _mm256_loadu_si256(src.add(i).cast());
+                let v = _mm256_or_si256(_mm256_shuffle_epi8(v, order), alpha);
+                _mm256_storeu_si256(dst.add(i).cast(), v);
+            }
+            i += 32;
+        }
+        i
+    }
+
+    /// `bgra_to_rgba_avx2` 64 bytes a step.
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F and BW; `src` and `dst` hold `len` bytes.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    #[target_feature(enable = "avx512f,avx512bw")]
+    pub(super) unsafe fn bgra_to_rgba_zmm(src: *const u8, dst: *mut u8, len: usize) -> usize {
+        let lane = [
+            2i8, 1, 0, -128, 6, 5, 4, -128, 10, 9, 8, -128, 14, 13, 12, -128,
+        ];
+        let mut bytes = [0i8; 64];
+        for (k, b) in bytes.iter_mut().enumerate() {
+            *b = lane[k % 16];
+        }
+        // SAFETY: `bytes` is 64 bytes.
+        let order = unsafe { _mm512_loadu_si512(bytes.as_ptr().cast()) };
+        let alpha = _mm512_set1_epi32(0xff00_0000_u32 as i32);
+        let mut i = 0;
+        while i + 64 <= len {
+            // SAFETY: 64 bytes from `i` within both.
+            unsafe {
+                let v = _mm512_loadu_si512(src.add(i).cast());
+                let v = _mm512_or_si512(_mm512_shuffle_epi8(v, order), alpha);
+                _mm512_storeu_si512(dst.add(i).cast(), v);
+            }
+            i += 64;
+        }
+        i
+    }
 
     /// 32 pixels a step: the pixel sum through the byte-sum instruction
     /// (`sad` against zero), and each half widened to 16-bit lanes for
@@ -4197,6 +4323,47 @@ mod x86 {
 mod tests {
     use super::*;
 
+    #[test]
+    fn bgra_becomes_opaque_rgba_on_every_path() {
+        for len in [
+            0usize, 1, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 100, 1000, 3840,
+        ] {
+            let src = noise(4 * len, len as u32 + 1);
+            let expected: Vec<u8> = src
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .flat_map(|&p| [p[2], p[1], p[0], 255])
+                .collect();
+            let mut out = vec![7u8; src.len()];
+            bgra_to_rgba(&src, &mut out);
+            assert_eq!(out, expected, "{len} pixels");
+            let mut in_place = src.clone();
+            bgra_to_rgba_in_place(&mut in_place);
+            assert_eq!(in_place, expected, "{len} pixels in place");
+            #[cfg(target_arch = "x86_64")]
+            {
+                if is_x86_feature_detected!("avx2") {
+                    let mut out = expected.clone();
+                    // SAFETY: the CPU reported AVX2; both hold `src.len()`.
+                    let done = unsafe {
+                        x86::bgra_to_rgba_avx2(src.as_ptr(), out.as_mut_ptr(), src.len())
+                    };
+                    assert_eq!(done, src.len() - src.len() % 32);
+                    assert_eq!(out, expected, "{len} pixels on avx2");
+                }
+                if is_x86_feature_detected!("avx512bw") {
+                    let mut out = expected.clone();
+                    // SAFETY: the CPU reported AVX-512 BW; both hold `src.len()`.
+                    let done =
+                        unsafe { x86::bgra_to_rgba_zmm(src.as_ptr(), out.as_mut_ptr(), src.len()) };
+                    assert_eq!(done, src.len() - src.len() % 64);
+                    assert_eq!(out, expected, "{len} pixels on avx-512");
+                }
+            }
+        }
+    }
+
     /// A deterministic plane of "random" bytes.
     fn noise(len: usize, seed: u32) -> Vec<u8> {
         let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
@@ -5002,8 +5169,10 @@ mod tests {
         if is_x86_feature_detected!("avx2") {
             for len in [0usize, 1, 7, 8, 9, 15, 16, 17, 100, 3840] {
                 let values: Vec<u32> = noise(4 * len, len as u32)
-                    .chunks_exact(4)
-                    .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|&b| u32::from_le_bytes(b))
                     .collect();
                 let mut expected = vec![0u32; len + 1];
                 for i in 0..len {
@@ -5226,8 +5395,10 @@ mod tests {
     fn every_path_combines_rows_down_the_same() {
         let wide = |seed: u32, n: usize| -> Vec<u16> {
             noise(2 * n, seed)
-                .chunks_exact(2)
-                .map(|p| u16::from_le_bytes([p[0], p[1]]) % 2041)
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|&p| u16::from_le_bytes(p) % 2041)
                 .collect()
         };
         for n in [0usize, 1, 15, 16, 31, 32, 33, 64, 100, 683] {

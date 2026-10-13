@@ -345,34 +345,17 @@ impl Window {
     }
 }
 
-/// BGRA in place to RGBA, opaque.
+/// BGRA in place to RGBA, opaque (`kernels::bgra_to_rgba_in_place`: a
+/// byte shuffle on the widest vectors the CPU has).
 fn swizzle(pixels: &mut [u8]) {
-    for pixel in pixels.as_chunks_mut::<4>().0 {
-        *pixel = rgba(*pixel);
-    }
-}
-
-/// One BGRA pixel as RGBA, opaque: shifts and masks on a 32-bit word,
-/// which the compiler vectorises at the x86-64 baseline (a byte shuffle
-/// would need SSSE3).
-#[inline(always)]
-fn rgba(bgra: [u8; 4]) -> [u8; 4] {
-    let x = u32::from_le_bytes(bgra);
-    (((x & 0x0000_00ff) << 16) | (x & 0x0000_ff00) | ((x >> 16) & 0x0000_00ff) | 0xff00_0000)
-        .to_le_bytes()
+    crate::kernels::bgra_to_rgba_in_place(pixels);
 }
 
 /// A row of BGRA pixels into a row of RGBA ones, opaque: the copy out of
-/// the mapped texture and the conversion in one pass.
+/// the mapped texture and the conversion in one pass
+/// (`kernels::bgra_to_rgba`).
 fn swizzle_row(bgra: &[u8], rgba_out: &mut [u8]) {
-    for (src, dst) in bgra
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .zip(rgba_out.as_chunks_mut::<4>().0)
-    {
-        *dst = rgba(*src);
-    }
+    crate::kernels::bgra_to_rgba(bgra, rgba_out);
 }
 
 /// Windows.Graphics.Capture of one window: the Direct3D device, the frame
@@ -836,6 +819,7 @@ mod tests {
 
     #[test]
     fn bgra_becomes_opaque_rgba_whole_rows_at_a_time() {
+        let rgba = crate::kernels::bgra_to_rgba_word;
         assert_eq!(rgba([1, 2, 3, 0]), [3, 2, 1, 255]);
         assert_eq!(rgba([0xff, 0x80, 0x00, 0x7f]), [0x00, 0x80, 0xff, 0xff]);
         let bgra = [10u8, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120];
