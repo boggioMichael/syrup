@@ -891,6 +891,9 @@ struct TemplateLevel {
     pairs: Vec<u32>,
     /// `inner`'s pixels widened to 16 bits, for `kernels::window_stats_wide`.
     wide: Vec<i16>,
+    /// `inner`'s pixels in fours, and `128 Σt`, for the dot-product path of
+    /// `kernels::block_stats`.
+    quads: (Vec<u32>, u32),
 }
 
 impl TemplateLevel {
@@ -912,6 +915,7 @@ impl TemplateLevel {
         }
         let pairs = crate::kernels::weight_pairs(&inner.pixels, inner.width, inner.height);
         let wide = inner.pixels.iter().map(|&v| i16::from(v)).collect();
+        let quads = crate::kernels::weight_quads(&inner.pixels, inner.width, inner.height);
         Some(Self {
             plane,
             inner,
@@ -920,6 +924,7 @@ impl TemplateLevel {
             spread,
             pairs,
             wide,
+            quads,
         })
     }
 
@@ -1280,6 +1285,7 @@ fn refine(
         (bwide, bh),
         &template.inner.pixels,
         &template.pairs,
+        (&template.quads.0, template.quads.1),
         (w, h),
         &mut window,
     );

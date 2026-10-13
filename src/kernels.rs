@@ -129,6 +129,14 @@ fn vnni_support() -> (bool, bool) {
     (false, false)
 }
 
+/// Whether a refinement's products run on AVX-VNNI's 256-bit dot products
+/// (8 positions a vector, as the AVX2 path has them): when dot products are
+/// in use at all and the CPU has that form of them. Decided once.
+fn block_vnni() -> bool {
+    static CHOSEN: OnceLock<bool> = OnceLock::new();
+    *CHOSEN.get_or_init(|| vnni().is_some() && vnni_support().1)
+}
+
 /// Whether the scores are computed on 512-bit vectors too: with AVX-512
 /// in use for the dot products, and its double-word and 64-bit integer
 /// conversions (DQ) and 256-bit forms (VL) there as well. Decided once.
@@ -251,6 +259,7 @@ pub(crate) fn block_stats(
     (bw, bh): (usize, usize),
     weights: &[u8],
     pairs: &[u32],
+    quads: (&[u32], u32),
     (w, h): (usize, usize),
     out: &mut Vec<(u64, u64, u64)>,
 ) {
@@ -261,12 +270,24 @@ pub(crate) fn block_stats(
     assert!(w > 0 && h > 0 && x0 + bw - 1 + w <= stride);
     assert!(pixels.len() >= (y0 + bh - 1 + h - 1) * stride + x0 + bw - 1 + w);
     assert!(weights.len() >= w * h && pairs.len() >= w.div_ceil(2) * h);
+    assert!(quads.0.len() >= w.div_ceil(4) * h);
     match backend() {
         #[cfg(target_arch = "x86_64")]
-        // SAFETY: `backend()` reported AVX2 on this CPU; the sizes are
-        // checked above.
+        // SAFETY: `backend()` reported AVX2 on this CPU (and
+        // `block_vnni()` AVX-VNNI when it is used); the sizes are checked
+        // above.
         Backend::Avx2 if w <= MAX_AREA_32 => unsafe {
-            x86::block_stats_avx2(pixels, stride, (x0, y0), (bw, bh), pairs, (w, h), out)
+            let quads = (block_vnni() && w * h <= MAX_AREA_32).then_some(quads);
+            x86::block_stats_avx2(
+                pixels,
+                stride,
+                (x0, y0),
+                (bw, bh),
+                pairs,
+                quads,
+                (w, h),
+                out,
+            )
         },
         _ => {
             for y in y0..y0 + bh {
@@ -621,7 +642,7 @@ pub(crate) fn at_least(values: &[f32], floor: f32, out: &mut Vec<usize>) {
 /// Template pixels in fours, row by row, as the dot-product instructions
 /// take them: `t[4k] | t[4k+1] << 8 | t[4k+2] << 16 | t[4k+3] << 24`,
 /// `w.div_ceil(4)` to a row, zero past its end; and `128 Σ t`, wrapping.
-fn weight_quads(weights: &[u8], w: usize, h: usize) -> (Vec<u32>, u32) {
+pub(crate) fn weight_quads(weights: &[u8], w: usize, h: usize) -> (Vec<u32>, u32) {
     let quads = w.div_ceil(4);
     let mut out = Vec::with_capacity(quads * h);
     let mut sum = 0u32;
@@ -1120,12 +1141,14 @@ mod x86 {
     /// neighbouring pairs, with up to 8 position rows at once so that each
     /// load of a pixel pair serves every position row it reaches.
     #[target_feature(enable = "avx2")]
+    #[allow(clippy::too_many_arguments)]
     pub(super) unsafe fn block_stats_avx2(
         pixels: &[u8],
         stride: usize,
         (x0, y0): (usize, usize),
         (bw, bh): (usize, usize),
         pairs: &[u32],
+        quads: Option<(&[u32], u32)>,
         (w, h): (usize, usize),
         out: &mut Vec<(u64, u64, u64)>,
     ) {
@@ -1181,6 +1204,24 @@ mod x86 {
                 }
             }
 
+            if let Some((tq, bias)) = quads {
+                // SAFETY: AVX-VNNI, as `block_stats` checked; the block
+                // fits, as checked above.
+                unsafe {
+                    block_products_vnni(
+                        pixels,
+                        stride,
+                        (x0, y0),
+                        (bw, bh),
+                        tq,
+                        bias,
+                        (w, h),
+                        &mut scratch.pairs,
+                        out,
+                    )
+                };
+                return;
+            }
             // Products, a strip of 8 position columns at a time. Every pair
             // of the strip's rows is written before it is read, so the
             // buffer is only grown, never cleared.
@@ -1233,6 +1274,117 @@ mod x86 {
                 }
             }
         });
+    }
+
+    /// The products of a block on AVX-VNNI, into `out`'s third sums: the
+    /// block's pixels, less 128, in fours (`quad_up`), 8 positions a
+    /// vector, and for each of the template's quads one broadcast and, for
+    /// each position row, a load and a dot product of four pixels at once
+    /// (`Σ t (p - 128)`, to which `128 Σ t` is added back; the lanes wrap,
+    /// and the true sums fit 32 bits). `scratch` holds the block's quads.
+    #[allow(clippy::too_many_arguments)]
+    #[target_feature(enable = "avx2,avxvnni")]
+    unsafe fn block_products_vnni(
+        pixels: &[u8],
+        stride: usize,
+        (x0, y0): (usize, usize),
+        (bw, bh): (usize, usize),
+        tq: &[u32],
+        bias: u32,
+        (w, h): (usize, usize),
+        scratch: &mut Vec<u32>,
+        out: &mut [(u64, u64, u64)],
+    ) {
+        let rows = bh - 1 + h;
+        let per_row = w.div_ceil(4);
+        assert!(tq.len() >= per_row * h && out.len() >= bw * bh && w * h <= super::MAX_AREA_32);
+        let cols = 8 + 4 * per_row;
+        if scratch.len() < rows * cols {
+            scratch.resize(rows * cols, 0);
+        }
+        let block = &mut scratch[..rows * cols];
+        for strip in (0..bw).step_by(8) {
+            let lanes = (bw - strip).min(8);
+            for r in 0..rows {
+                // The whole plane row (less of the last if the slice ends
+                // early): quads reaching past it hold zeros, which meet only
+                // zero weights or positions outside the block.
+                let start = (y0 + r) * stride;
+                let line = &pixels[start..(start + stride).min(pixels.len())];
+                quad_up(
+                    &line[(x0 + strip).min(line.len())..],
+                    &mut block[r * cols..(r + 1) * cols],
+                );
+            }
+            let mut j0 = 0;
+            while j0 < bh {
+                let n = (bh - j0).min(8);
+                let mut lanes_of = [[0u32; 8]; 8];
+                // SAFETY: AVX-VNNI; rows `j0 + j + v < rows`, and every
+                // load ends within a row of `block` (`4 (per_row - 1) + 8 <=
+                // cols`).
+                unsafe {
+                    match n {
+                        1 => quad_rows::<1>(block, cols, j0, tq, per_row, h, bias, &mut lanes_of),
+                        2 => quad_rows::<2>(block, cols, j0, tq, per_row, h, bias, &mut lanes_of),
+                        3 => quad_rows::<3>(block, cols, j0, tq, per_row, h, bias, &mut lanes_of),
+                        4 => quad_rows::<4>(block, cols, j0, tq, per_row, h, bias, &mut lanes_of),
+                        5 => quad_rows::<5>(block, cols, j0, tq, per_row, h, bias, &mut lanes_of),
+                        6 => quad_rows::<6>(block, cols, j0, tq, per_row, h, bias, &mut lanes_of),
+                        7 => quad_rows::<7>(block, cols, j0, tq, per_row, h, bias, &mut lanes_of),
+                        _ => quad_rows::<8>(block, cols, j0, tq, per_row, h, bias, &mut lanes_of),
+                    }
+                }
+                for (j, lane) in lanes_of.iter().enumerate().take(n) {
+                    let at = (j0 + j) * bw + strip;
+                    for (o, &p) in out[at..at + lanes].iter_mut().zip(lane) {
+                        o.2 = u64::from(p);
+                    }
+                }
+                j0 += n;
+            }
+        }
+    }
+
+    /// `ROWS` position rows of a block's products from its quads, every
+    /// template row and quad, the accumulators in registers throughout.
+    ///
+    /// # Safety
+    ///
+    /// AVX-VNNI, and `block` holds rows `j0 + ROWS - 1 + h - 1` of `cols >=
+    /// 4 (per_row - 1) + 8` quads.
+    #[allow(clippy::too_many_arguments)]
+    #[inline]
+    #[target_feature(enable = "avx2,avxvnni")]
+    unsafe fn quad_rows<const ROWS: usize>(
+        block: &[u32],
+        cols: usize,
+        j0: usize,
+        tq: &[u32],
+        per_row: usize,
+        h: usize,
+        bias: u32,
+        out: &mut [[u32; 8]; 8],
+    ) {
+        debug_assert!(block.len() >= (j0 + ROWS - 1 + h) * cols);
+        let mut acc = [_mm256_setzero_si256(); ROWS];
+        let base = block.as_ptr();
+        for v in 0..h {
+            for (k, &quad) in tq[v * per_row..(v + 1) * per_row].iter().enumerate() {
+                let t = _mm256_set1_epi32(quad as i32);
+                for (j, sum) in acc.iter_mut().enumerate() {
+                    // SAFETY: by the caller's guarantee.
+                    let p =
+                        unsafe { _mm256_loadu_si256(base.add((j0 + j + v) * cols + 4 * k).cast()) };
+                    *sum = _mm256_dpbusd_avx_epi32(*sum, t, p);
+                }
+            }
+        }
+        let bias = _mm256_set1_epi32(bias as i32);
+        for (lane, sum) in out.iter_mut().zip(acc) {
+            // SAFETY: a lane array is 32 bytes, and the store unaligned.
+            unsafe { _mm256_storeu_si256(lane.as_mut_ptr().cast(), _mm256_add_epi32(sum, bias)) };
+        }
     }
 
     /// The sum of `line`'s pixels and of their squares: 32 a step, a line
@@ -2344,6 +2496,7 @@ mod tests {
                     }
                 }
                 let mut got = Vec::new();
+                let quads = weight_quads(&weights, w, h);
                 block_stats(
                     pixels,
                     stride,
@@ -2351,6 +2504,7 @@ mod tests {
                     (bw, bh),
                     &weights,
                     &pairs,
+                    (&quads.0, quads.1),
                     (w, h),
                     &mut got,
                 );
@@ -2371,11 +2525,32 @@ mod tests {
                             (x0, y0),
                             (bw, bh),
                             &pairs,
+                            None,
                             (w, h),
                             &mut avx2,
                         )
                     };
                     assert_eq!(avx2, expected, "{name} {w}x{h}, block {bw}x{bh} on avx2");
+                    if is_x86_feature_detected!("avxvnni") && w * h <= MAX_AREA_32 {
+                        let mut vnni = Vec::new();
+                        // SAFETY: the CPU reported AVX-VNNI; the block fits.
+                        unsafe {
+                            x86::block_stats_avx2(
+                                pixels,
+                                stride,
+                                (x0, y0),
+                                (bw, bh),
+                                &pairs,
+                                Some((&quads.0, quads.1)),
+                                (w, h),
+                                &mut vnni,
+                            )
+                        };
+                        assert_eq!(
+                            vnni, expected,
+                            "{name} {w}x{h}, block {bw}x{bh} on avx-vnni"
+                        );
+                    }
                 }
                 // And from the top left, where the pairs start at column 0.
                 let mut expected = Vec::new();
@@ -2391,6 +2566,7 @@ mod tests {
                     (bw, bh),
                     &weights,
                     &pairs,
+                    (&quads.0, quads.1),
                     (w, h),
                     &mut got,
                 );
