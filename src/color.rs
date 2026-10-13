@@ -18,6 +18,49 @@ pub fn saturation_and_value(r: u8, g: u8, b: u8) -> (f32, f32) {
     (parts.saturation(), parts.value())
 }
 
+/// [`saturation_and_value`]'s two numbers tested against least values —
+/// `saturation >= min_saturation && value >= min_value` — from a table:
+/// both depend on a pixel's brightest and darkest channels alone (dividing
+/// by 255 keeps the channels' order), so a bit for each such pair answers
+/// for every colour exactly, without the divisions.
+pub struct SaturationValueTest {
+    /// Bit `darkest` of row `brightest`, 4 words a row.
+    bits: Vec<u64>,
+}
+
+impl SaturationValueTest {
+    /// The test for these least values: made the first time they are asked
+    /// for, and kept.
+    pub fn get(min_saturation: f32, min_value: f32) -> &'static SaturationValueTest {
+        type Made = Vec<((u32, u32), &'static SaturationValueTest)>;
+        static MADE: std::sync::Mutex<Made> = std::sync::Mutex::new(Vec::new());
+        let key = (min_saturation.to_bits(), min_value.to_bits());
+        let mut made = MADE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((_, test)) = made.iter().find(|(k, _)| *k == key) {
+            return test;
+        }
+        let mut bits = vec![0u64; 256 * 4];
+        for brightest in 0..256usize {
+            for darkest in 0..=brightest {
+                let (s, v) = saturation_and_value(brightest as u8, darkest as u8, darkest as u8);
+                if s >= min_saturation && v >= min_value {
+                    bits[brightest * 4 + darkest / 64] |= 1 << (darkest % 64);
+                }
+            }
+        }
+        let test: &'static SaturationValueTest = Box::leak(Box::new(SaturationValueTest { bits }));
+        made.push((key, test));
+        test
+    }
+
+    /// Whether the colour passes.
+    #[inline]
+    pub fn passes(&self, r: u8, g: u8, b: u8) -> bool {
+        let (brightest, darkest) = (r.max(g).max(b) as usize, r.min(g).min(b) as usize);
+        (self.bits[brightest * 4 + darkest / 64] >> (darkest % 64)) & 1 != 0
+    }
+}
+
 /// The intermediate values of an RGB→HSV conversion, so predicates can test
 /// value and saturation — cheap — and compute the hue, which needs a
 /// division and branches, only for the few pixels that pass both. On a
@@ -297,6 +340,37 @@ mod tests {
                     let (_, s, v) = hsv_from_rgb(r, g, b);
                     let (s2, v2) = saturation_and_value(r, g, b);
                     assert_eq!((s.to_bits(), v.to_bits()), (s2.to_bits(), v2.to_bits()));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_saturation_and_value_test_from_a_table_answers_for_every_colour() {
+        // Every colour in a release build; every third level of each
+        // channel (and both ends) where the build is slow.
+        let levels: Vec<u8> = if cfg!(debug_assertions) {
+            (0..=255u16)
+                .step_by(3)
+                .map(|v| v as u8)
+                .chain([255])
+                .collect()
+        } else {
+            (0..=255).collect()
+        };
+        for (min_s, min_v) in [(0.35f32, 0.45f32), (0.0, 0.0), (1.0, 1.0), (0.5, 0.2)] {
+            let test = SaturationValueTest::get(min_s, min_v);
+            assert!(std::ptr::eq(test, SaturationValueTest::get(min_s, min_v)));
+            for &r in &levels {
+                for &g in &levels {
+                    for &b in &levels {
+                        let (s, v) = saturation_and_value(r, g, b);
+                        assert_eq!(
+                            test.passes(r, g, b),
+                            s >= min_s && v >= min_v,
+                            "{r} {g} {b} at {min_s} {min_v}"
+                        );
+                    }
                 }
             }
         }

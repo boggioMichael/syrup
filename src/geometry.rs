@@ -463,40 +463,80 @@ const TEXT_BLOCK_PADDING: u32 = 2;
 pub fn find_text_block(image: &RgbaImage, region: Rect) -> Option<Rect> {
     let x_end = region.x.saturating_add(region.w).min(image.width());
     let y_end = region.y.saturating_add(region.h).min(image.height());
-
-    let mut bounds: Option<(u32, u32, u32, u32)> = None;
-    let mut count = 0u32;
-    if region.x >= x_end {
+    if region.x >= x_end || region.y >= y_end {
         return None;
     }
 
     // `is_text_pixel` from tables (`color::TextTables`): the same answers.
+    // The block is the bounds of every text pixel, and the region must hold
+    // a few: what is looked for is where they reach, not every one of them.
+    // The first and last rows holding one, from the top and from the
+    // bottom; then, along the rows between, only the pixels beyond the
+    // furthest found so far either way. When fewer than `MIN_TEXT_PIXELS`
+    // turn up on the way, the pixels within those bounds are counted until
+    // there are enough.
     let tables = crate::color::TextTables::get();
     let width = image.width() as usize;
-    for y in region.y..y_end {
+    let row_of = |y: u32| {
         let at = (y as usize * width + region.x as usize) * 4;
-        let row = image.as_raw()[at..at + 4 * (x_end - region.x) as usize]
+        image.as_raw()[at..at + 4 * (x_end - region.x) as usize]
             .as_chunks::<4>()
-            .0;
-        for (i, pixel) in row.iter().enumerate() {
-            if !tables.matches(pixel) {
-                continue;
+            .0
+    };
+    let first_in = |y: u32| row_of(y).iter().position(|p| tables.matches(p));
+    let last_in = |y: u32| row_of(y).iter().rposition(|p| tables.matches(p));
+    let mut found = 0u32;
+    // The top row with a text pixel, and where its first and last are.
+    let (mut min_x, mut max_x, min_y) = (region.y..y_end).find_map(|y| {
+        let first = first_in(y)?;
+        let last = last_in(y).expect("the row holds one");
+        found += 1 + u32::from(last > first);
+        Some((first, last, y))
+    })?;
+    // The bottom one (perhaps the same).
+    let max_y = (min_y..y_end)
+        .rev()
+        .find(|&y| {
+            if y == min_y {
+                return true;
             }
-            let x = region.x + i as u32;
-            count += 1;
-            bounds = Some(match bounds {
-                None => (x, x, y, y),
-                Some((min_x, max_x, min_y, max_y)) => {
-                    (min_x.min(x), max_x.max(x), min_y.min(y), max_y.max(y))
-                }
-            });
+            let Some(first) = first_in(y) else {
+                return false;
+            };
+            let last = last_in(y).expect("the row holds one");
+            found += 1 + u32::from(last > first);
+            min_x = min_x.min(first);
+            max_x = max_x.max(last);
+            true
+        })
+        .expect("the top row holds one");
+    // The rows between: only beyond the furthest found either way.
+    for y in min_y + 1..max_y {
+        let row = row_of(y);
+        if let Some(first) = row[..min_x].iter().position(|p| tables.matches(p)) {
+            min_x = first;
+            found += 1;
+        }
+        if let Some(last) = row[max_x + 1..].iter().rposition(|p| tables.matches(p)) {
+            max_x += 1 + last;
+            found += 1;
         }
     }
-
-    let (min_x, max_x, min_y, max_y) = bounds?;
-    if count < MIN_TEXT_PIXELS {
-        return None;
+    // Every pixel counted above is a different text pixel; when they are
+    // too few to decide, the bounds are counted again, up to enough.
+    if found < MIN_TEXT_PIXELS {
+        let mut count = 0;
+        let enough = (min_y..=max_y).any(|y| {
+            row_of(y)[min_x..=max_x].iter().any(|p| {
+                count += u32::from(tables.matches(p));
+                count >= MIN_TEXT_PIXELS
+            })
+        });
+        if !enough {
+            return None;
+        }
     }
+    let (min_x, max_x) = (region.x + min_x as u32, region.x + max_x as u32);
 
     let padding = TEXT_BLOCK_PADDING;
     Some(Rect {
@@ -2169,6 +2209,78 @@ mod tests {
                     group_segments(rows.clone(), min_height, max_gap),
                     group_segments_one_by_one(rows.clone(), min_height, max_gap),
                     "trial {trial}, {min_height}, {max_gap}"
+                );
+            }
+        }
+    }
+
+    /// [`find_text_block`] looking at every pixel, as it did.
+    fn text_block_pixel_by_pixel(image: &RgbaImage, region: Rect) -> Option<Rect> {
+        let x_end = region.x.saturating_add(region.w).min(image.width());
+        let y_end = region.y.saturating_add(region.h).min(image.height());
+        let mut bounds: Option<(u32, u32, u32, u32)> = None;
+        let mut count = 0u32;
+        for y in region.y..y_end {
+            for x in region.x..x_end {
+                if !crate::color::is_text_pixel(image.get_pixel(x, y)) {
+                    continue;
+                }
+                count += 1;
+                bounds = Some(match bounds {
+                    None => (x, x, y, y),
+                    Some((a, b, c, d)) => (a.min(x), b.max(x), c.min(y), d.max(y)),
+                });
+            }
+        }
+        let (min_x, max_x, min_y, max_y) = bounds?;
+        if count < MIN_TEXT_PIXELS {
+            return None;
+        }
+        let padding = TEXT_BLOCK_PADDING;
+        Some(Rect {
+            x: min_x.saturating_sub(padding),
+            y: min_y.saturating_sub(padding),
+            w: max_x - min_x + 1 + 2 * padding,
+            h: max_y - min_y + 1 + 2 * padding,
+        })
+    }
+
+    #[test]
+    fn a_text_block_from_its_extremes_is_the_one_found_pixel_by_pixel() {
+        let mut state = 41u32;
+        let mut next = move |n: u32| {
+            state = state.wrapping_mul(1_103_515_245).wrapping_add(12345);
+            (state >> 8) % n
+        };
+        for trial in 0..400 {
+            let (w, h) = (1 + next(70), 1 + next(50));
+            // A dark field with a few to many text-like pixels, and some
+            // near misses (too dark, too saturated, translucent).
+            let pixels = [0, 1, 2, 3, 5, 6, 7, 10, 40, 400][trial % 10];
+            let mut image = RgbaImage::from_pixel(w, h, Rgba([20, 30, 40, 255]));
+            for _ in 0..pixels {
+                let (x, y) = (next(w), next(h));
+                let p = match next(5) {
+                    0 => Rgba([80, 80, 80, 255]),
+                    1 => Rgba([250, 40, 40, 255]),
+                    2 => Rgba([230, 230, 230, 60]),
+                    _ => Rgba([200 + next(56) as u8, 200, 190, 255]),
+                };
+                image.put_pixel(x, y, p);
+            }
+            for region in [
+                Rect { x: 0, y: 0, w, h },
+                Rect {
+                    x: next(w),
+                    y: next(h),
+                    w: next(w + 5),
+                    h: next(h + 5),
+                },
+            ] {
+                assert_eq!(
+                    find_text_block(&image, region),
+                    text_block_pixel_by_pixel(&image, region),
+                    "trial {trial}, {region:?}"
                 );
             }
         }
