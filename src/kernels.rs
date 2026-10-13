@@ -788,6 +788,51 @@ pub(crate) fn color_mask(
     }
 }
 
+/// How a colour test takes a pixel's hue: within a range (`min > max`
+/// wraps past 360, as [`crate::color::is_color_pixel`] has it), or at most
+/// a distance round the circle from a hue ([`crate::bars::hue_distance`]).
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum HueTest {
+    Within(f32, f32),
+    Near(f32, f32),
+}
+
+/// A bar's fill test ([`crate::bars::BarModel`]'s) for each pixel of
+/// `pixels` (RGBA, 4 bytes a pixel), as bits as [`color_mask`] sets them:
+/// saturation at least `min_saturation`, value at least `min_value` and
+/// hue within `tolerance` of `centre`, round the circle. On AVX-512 16 at
+/// a time (for a centre in `[0, 360)`), with the very arithmetic of the
+/// pixel-at-a-time test.
+pub(crate) fn fill_mask(
+    pixels: &[u8],
+    (centre, tolerance): (f32, f32),
+    (min_saturation, min_value): (f32, f32),
+    out: &mut Vec<u64>,
+) {
+    let count = pixels.len() / 4;
+    out.clear();
+    out.resize(count.div_ceil(64), 0);
+    let mut from = 0;
+    #[cfg(target_arch = "x86_64")]
+    if zmm_scores() && (0.0..360.0).contains(&centre) {
+        // SAFETY: `zmm_scores()` reported AVX-512 F, BW, DQ and VL.
+        from = unsafe {
+            x86::colour_test_zmm(
+                pixels,
+                HueTest::Near(centre, tolerance),
+                false,
+                (min_saturation, min_value),
+                out,
+            )
+        };
+    }
+    for (i, p) in pixels.as_chunks::<4>().0.iter().enumerate().skip(from) {
+        if crate::bars::is_fill_pixel(p, (centre, tolerance), (min_saturation, min_value)) {
+            out[i / 64] |= 1 << (i % 64);
+        }
+    }
+}
+
 /// The positions of `values` that are at least `floor`, in order, into
 /// `out` (replacing what it held): 8 compared at once on AVX2.
 pub(crate) fn at_least(values: &[f32], floor: f32, out: &mut Vec<usize>) {
@@ -3190,9 +3235,32 @@ mod x86 {
     #[target_feature(enable = "avx512f,avx512bw,avx512dq,avx512vl")]
     pub(super) unsafe fn color_mask_zmm(
         pixels: &[u8],
-        (hue_min, hue_max): (f32, f32),
+        hue_range: (f32, f32),
         min_saturation: f32,
         min_value: f32,
+        out: &mut [u64],
+    ) -> usize {
+        // SAFETY: as this function's.
+        unsafe {
+            colour_test_zmm(
+                pixels,
+                super::HueTest::Within(hue_range.0, hue_range.1),
+                true,
+                (min_saturation, min_value),
+                out,
+            )
+        }
+    }
+
+    /// `color_mask_zmm` with the hue tested as `hue_test` says, and the
+    /// alpha only when `opaque` (at least 128, as `is_color_pixel` asks; a
+    /// bar's fill test asks nothing of it).
+    #[target_feature(enable = "avx512f,avx512bw,avx512dq,avx512vl")]
+    pub(super) unsafe fn colour_test_zmm(
+        pixels: &[u8],
+        hue_test: super::HueTest,
+        opaque: bool,
+        (min_saturation, min_value): (f32, f32),
         out: &mut [u64],
     ) -> usize {
         let count = pixels.len() / 4;
@@ -3223,7 +3291,12 @@ mod x86 {
         };
         let zero = _mm512_setzero_ps();
         let saturation_v = _mm512_set1_ps(min_saturation);
-        let (lo, hi) = (_mm512_set1_ps(hue_min), _mm512_set1_ps(hue_max));
+        let (lo, hi) = match hue_test {
+            super::HueTest::Within(min, max) => (_mm512_set1_ps(min), _mm512_set1_ps(max)),
+            super::HueTest::Near(centre, tolerance) => {
+                (_mm512_set1_ps(centre), _mm512_set1_ps(tolerance))
+            }
+        };
         let (sixty, two, four, full) = (
             _mm512_set1_ps(60.0),
             _mm512_set1_ps(2.0),
@@ -3238,9 +3311,11 @@ mod x86 {
             let g = _mm512_and_si512(_mm512_srli_epi32::<8>(px), byte);
             let b = _mm512_and_si512(_mm512_srli_epi32::<16>(px), byte);
             let high = _mm512_max_epu32(_mm512_max_epu32(r, g), b);
-            // Alpha at least 128 is `alpha / 255 >= 0.5`.
-            let mut left = _mm512_cmpge_epu32_mask(_mm512_srli_epi32::<24>(px), half_alpha)
-                & _mm512_cmpge_epu32_mask(high, least);
+            let mut left = _mm512_cmpge_epu32_mask(high, least);
+            if opaque {
+                // Alpha at least 128 is `alpha / 255 >= 0.5`.
+                left &= _mm512_cmpge_epu32_mask(_mm512_srli_epi32::<24>(px), half_alpha);
+            }
             if left != 0 {
                 let low = _mm512_min_epu32(_mm512_min_epu32(r, g), b);
                 let (max, min) = (quotient(high), quotient(low));
@@ -3271,12 +3346,34 @@ mod x86 {
                 hue = _mm512_maskz_mov_ps(_mm512_cmpneq_ps_mask(delta, zero), hue);
                 hue =
                     _mm512_mask_add_ps(hue, _mm512_cmp_ps_mask::<_CMP_LT_OQ>(hue, zero), hue, full);
-                let above = _mm512_cmp_ps_mask::<_CMP_GE_OQ>(hue, lo);
-                let below = _mm512_cmp_ps_mask::<_CMP_LE_OQ>(hue, hi);
-                left &= if hue_min <= hue_max {
-                    above & below
-                } else {
-                    above | below
+                left &= match hue_test {
+                    super::HueTest::Within(min, max) => {
+                        let above = _mm512_cmp_ps_mask::<_CMP_GE_OQ>(hue, lo);
+                        let below = _mm512_cmp_ps_mask::<_CMP_LE_OQ>(hue, hi);
+                        if min <= max {
+                            above & below
+                        } else {
+                            above | below
+                        }
+                    }
+                    super::HueTest::Near(..) => {
+                        // `bars::hue_distance`: the difference taken round
+                        // the circle (`rem_euclid` of a difference within
+                        // ±360: itself, 0 at ±360, or 360 more when
+                        // negative), then the shorter way.
+                        let (centre, tolerance) = (lo, hi);
+                        let x = _mm512_sub_ps(hue, centre);
+                        let whole = _mm512_cmp_ps_mask::<_CMP_EQ_OQ>(_mm512_abs_ps(x), full);
+                        let r = _mm512_mask_mov_ps(x, whole, zero);
+                        let d = _mm512_mask_add_ps(
+                            r,
+                            _mm512_cmp_ps_mask::<_CMP_LT_OQ>(r, zero),
+                            r,
+                            full,
+                        );
+                        let distance = _mm512_min_ps(d, _mm512_sub_ps(full, d));
+                        _mm512_cmp_ps_mask::<_CMP_LE_OQ>(distance, tolerance)
+                    }
                 };
             }
             out[i / 64] |= u64::from(left) << (i % 64);
@@ -4448,6 +4545,66 @@ mod tests {
     fn a_channel_over_255_by_a_double_product_is_the_quotient() {
         for c in 0..=255u32 {
             assert_eq!(((c as f64) * (1.0 / 255.0)) as f32, c as f32 / 255.0, "{c}");
+        }
+    }
+
+    /// The bar fill test on vectors against the one at a time, over a grid
+    /// through every colour (every colour in the ignored test), for hues
+    /// at and around the wrap, tolerances, and least saturations and values.
+    #[test]
+    fn the_fill_test_in_vectors_answers_as_one_at_a_time() {
+        fill_masks_agree(17);
+    }
+
+    #[test]
+    #[ignore = "every colour: a few seconds"]
+    fn the_fill_test_in_vectors_answers_as_one_at_a_time_everywhere() {
+        fill_masks_agree(1);
+    }
+
+    fn fill_masks_agree(step: usize) {
+        let mut pixels = Vec::new();
+        for r in (0..256).step_by(step).chain([254, 255]) {
+            for g in (0..256).step_by(step).chain([1, 255]) {
+                for b in (0..256).step_by(step).chain([0, 128, 255]) {
+                    // Alpha plays no part in this test: vary it anyway.
+                    pixels.extend_from_slice(&[r as u8, g as u8, b as u8, (r ^ b) as u8]);
+                }
+            }
+        }
+        pixels.extend_from_slice(&[255, 0, 0, 255, 0, 255, 0, 255, 9, 9, 9, 255]);
+        for (centre, tolerance) in [
+            (0.0, 16.0),
+            (359.9, 16.0),
+            (180.0, 16.0),
+            (48.0, 0.0),
+            (5.0, 400.0),
+            (300.5, 12.5),
+        ] {
+            for least in [(0.35, 0.28), (0.0, 0.0), (0.21, 0.6)] {
+                let expected: Vec<bool> = pixels
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|p| crate::bars::is_fill_pixel(p, (centre, tolerance), least))
+                    .collect();
+                let mut got = vec![u64::MAX; 2];
+                fill_mask(&pixels, (centre, tolerance), least, &mut got);
+                assert_eq!(got.len(), expected.len().div_ceil(64));
+                for (i, &e) in expected.iter().enumerate() {
+                    assert_eq!(
+                        got[i / 64] & (1 << (i % 64)) != 0,
+                        e,
+                        "{centre} {tolerance} {least:?} at {i}: {:?}",
+                        &pixels[4 * i..4 * i + 4]
+                    );
+                }
+                let tail = expected.len() % 64;
+                assert!(
+                    tail == 0 || got[got.len() - 1] >> tail == 0,
+                    "bits past the end"
+                );
+            }
         }
     }
 

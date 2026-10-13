@@ -69,6 +69,19 @@ pub const EXPECTED_WITHIN: f32 = 25.0;
 /// Readings kept for the fit.
 const MAX_READINGS: usize = 12;
 
+/// A bar's fill test of a pixel (RGBA): saturation and value at least
+/// `least`'s, and hue within the tolerance of the centre, round the circle.
+#[inline]
+pub(crate) fn is_fill_pixel(
+    p: &[u8; 4],
+    (centre, tolerance): (f32, f32),
+    least: (f32, f32),
+) -> bool {
+    let (h, s, v) = hsv_from_rgb(p[0], p[1], p[2]);
+    let (min_s, min_v) = least;
+    s >= min_s && v >= min_v && hue_distance(h, centre) <= tolerance
+}
+
 /// The shorter way round the hue circle between two hues, in degrees.
 pub fn hue_distance(a: f32, b: f32) -> f32 {
     let d = (a - b).rem_euclid(360.0);
@@ -94,11 +107,12 @@ impl BarModel {
 
     #[inline]
     fn is_fill(&self, p: &image::Rgba<u8>) -> bool {
-        let (h, s, v) = hsv_from_rgb(p.0[0], p.0[1], p.0[2]);
-        let (min_s, min_v) = self.least();
-        s >= min_s
-            && v >= min_v
-            && hue_distance(h, self.hue) <= self.hue_tolerance.min(HUE_TOLERANCE)
+        is_fill_pixel(&p.0, self.hue_test(), self.least())
+    }
+
+    /// The fill's hue and how far from it a fill pixel's may be.
+    fn hue_test(&self) -> (f32, f32) {
+        (self.hue, self.hue_tolerance.min(HUE_TOLERANCE))
     }
 
     /// Learn a bar from `approx` (roughly where it is). `expected_hue`: the
@@ -276,6 +290,62 @@ impl BarModel {
         to: u32,
         slack: u32,
         gap: u32,
+        mask: &mut Vec<u64>,
+    ) -> Option<u32> {
+        // The row's pixels tested together (`kernels::fill_mask`), then
+        // the walk below done on the bits: the first fill pixel, which must
+        // come by `x0 + slack + 1` (a pixel past `x0 + slack` that is not
+        // fill, before any is, ends the row), then each next one while the
+        // gap before it is at most `gap`.
+        let start = x0.saturating_sub(slack);
+        if start >= to || y >= frame.height() || to > frame.width() {
+            return self.row_end_one_by_one(frame, y, x0, to, slack, gap);
+        }
+        let width = frame.width() as usize;
+        let at = (y as usize * width + start as usize) * 4;
+        let row = &frame.as_raw()[at..at + (to - start) as usize * 4];
+        crate::kernels::fill_mask(row, self.hue_test(), self.least(), mask);
+        let count = (to - start) as usize;
+        // The first set bit at or after `i`.
+        let next = |i: usize| -> Option<usize> {
+            let mut i = i;
+            while i < count {
+                let word = mask[i / 64] >> (i % 64);
+                if word != 0 {
+                    let found = i + word.trailing_zeros() as usize;
+                    return (found < count).then_some(found);
+                }
+                i = (i / 64 + 1) * 64;
+            }
+            None
+        };
+        let first = next(0)?;
+        let x = start + first as u32;
+        if x > x0 + slack + 1 {
+            return None;
+        }
+        let mut end = x + 1;
+        let mut i = first + 1;
+        while let Some(j) = next(i) {
+            let x = start + j as u32;
+            if x - end > gap {
+                break;
+            }
+            end = x + 1;
+            i = j + 1;
+        }
+        Some(end)
+    }
+
+    /// [`BarModel::row_end`] a pixel at a time.
+    fn row_end_one_by_one(
+        &self,
+        frame: &RgbaImage,
+        y: u32,
+        x0: u32,
+        to: u32,
+        slack: u32,
+        gap: u32,
     ) -> Option<u32> {
         let mut end: Option<u32> = None;
         for x in x0.saturating_sub(slack)..to {
@@ -314,8 +384,9 @@ impl BarModel {
         // bridge hundreds of pixels of nothing to the next thing of its
         // colour, and read 60% when it was at 19%.
         let gap = (w / 8).min(3 * h).max(3);
+        let mut mask = Vec::new();
         let mut ends: Vec<u32> = (y0..(y0 + h).min(fh))
-            .filter_map(|y| self.row_end(frame, y, x0, to, slack, gap))
+            .filter_map(|y| self.row_end(frame, y, x0, to, slack, gap, &mut mask))
             .collect();
         if ends.is_empty() || ends.len() * 10 < h as usize * 4 {
             return None;
@@ -472,6 +543,71 @@ pub const BAR_ROWS: u32 = 3;
 pub(crate) mod tests {
     use super::*;
     use image::Rgba;
+
+    /// A row's fill end from the row's bits is the end the pixel-at-a-time
+    /// walk finds: rows of fill with gaps of every width, noise, a start
+    /// before and after the slack, at the frame's edges.
+    #[test]
+    fn a_rows_fill_end_from_bits_is_the_one_found_a_pixel_at_a_time() {
+        let mut state = 21u32;
+        let mut next = move |n: u32| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state % n
+        };
+        let (fw, fh) = (700u32, 30u32);
+        for trial in 0..200 {
+            let hue = [0.0f32, 120.0, 230.0, 355.0][trial % 4];
+            let fill = match trial % 4 {
+                0 => [230u8, 30, 30, 255],
+                1 => [40, 220, 60, 255],
+                2 => [40, 90, 230, 255],
+                _ => [230, 20, 50, 255],
+            };
+            let mut frame = RgbaImage::from_pixel(fw, fh, Rgba([20, 20, 24, 255]));
+            for y in 0..fh {
+                let mut x = next(40);
+                while x < fw {
+                    let run = 1 + next(120);
+                    for xx in x..(x + run).min(fw) {
+                        let pixel = if next(17) == 0 {
+                            [next(256) as u8, next(256) as u8, next(256) as u8, 255]
+                        } else {
+                            fill
+                        };
+                        frame.put_pixel(xx, y, Rgba(pixel));
+                    }
+                    x += run + next(30);
+                }
+            }
+            let model = BarModel {
+                band: NormRect::from_pixels(0, 0, fw, fh, fw, fh),
+                hue,
+                hue_tolerance: [16.0, 10.0, 30.0][trial % 3],
+                min_saturation: [0.0, 0.3][trial % 2],
+                min_value: [0.0, 0.5][(trial / 2) % 2],
+                readings: Vec::new(),
+            };
+            let (mut mask, mut found) = (Vec::new(), 0);
+            for y in 0..fh {
+                let x0 = next(fw - 1);
+                let to = (x0 + 1 + next(fw)).min(fw);
+                let (slack, gap) = (next(12), 1 + next(25));
+                let want = model.row_end_one_by_one(&frame, y, x0, to, slack, gap);
+                let got = model.row_end(&frame, y, x0, to, slack, gap, &mut mask);
+                found += usize::from(want.is_some());
+                assert_eq!(
+                    got, want,
+                    "trial {trial}, row {y}, {x0}..{to}, slack {slack}, gap {gap}"
+                );
+            }
+            assert!(
+                found > 0 || trial % 4 == 3,
+                "trial {trial}: no row ever ended"
+            );
+        }
+    }
 
     /// A status bar: dark background, a red bar and a blue bar with white
     /// text over them and a gradient on each, and a thin yellow-green bar
