@@ -797,14 +797,17 @@ pub fn find_color_bar(
     // `color_runs`), grouped into regions: the largest is the bar.
     let min_width = (region.w / 20).max(8);
     let mut rows = Vec::new();
-    let mut mask = Vec::new();
-    for y in region.y..region.y.saturating_add(region.h).min(image.height()) {
-        let x1 = region.x.saturating_add(region.w).saturating_sub(1);
-        let colour = (hue_range, min_saturation, min_value);
-        for (x0, x1) in color_runs(image, y, (region.x, x1), min_width, colour, &mut mask) {
-            rows.push((y, x0, x1));
-        }
-    }
+    let x1 = region.x.saturating_add(region.w).saturating_sub(1);
+    let colour = (hue_range, min_saturation, min_value);
+    let y1 = region.y.saturating_add(region.h).min(image.height());
+    color_runs_rows(
+        image,
+        (region.y, y1),
+        (region.x, x1),
+        min_width,
+        colour,
+        &mut rows,
+    );
     group_segments(rows, 2, 2)
         .into_iter()
         .max_by_key(|rect| rect.area())
@@ -901,6 +904,109 @@ fn color_runs(
         }
         hits
     });
+    let colour = (hue_range, min_saturation, min_value);
+    follow_runs(row, (x0, count), step, colour, hits, mask, |a, b| {
+        result.push((a, b))
+    });
+    result
+}
+
+/// [`color_runs`] of rows `y0 .. y1`, into `out` as `(y, first, last)` in
+/// row order: the same runs, with the samples of every row tested together
+/// (rows whose samples all miss are done with then).
+fn color_runs_rows(
+    image: &RgbaImage,
+    (y0, y1): (u32, u32),
+    (x0, x1): (u32, u32),
+    min_width: u32,
+    colour: ((f32, f32), f32, f32),
+    out: &mut Vec<(u32, u32, u32)>,
+) {
+    let mut mask = Vec::new();
+    let y1 = y1.min(image.height());
+    let step = min_width as usize;
+    if image.width() == 0 || y0 >= y1 || step <= 2 || x0 > x1.min(image.width() - 1) {
+        for y in y0..y1 {
+            for (a, b) in color_runs(image, y, (x0, x1), min_width, colour, &mut mask) {
+                out.push((y, a, b));
+            }
+        }
+        return;
+    }
+    let x1 = x1.min(image.width() - 1);
+    let width = image.width() as usize;
+    let count = (x1 - x0 + 1) as usize;
+    let row_of = |y: u32| {
+        let start = (y as usize * width + x0 as usize) * 4;
+        &image.as_raw()[start..start + 4 * count]
+    };
+    // Every row's samples, row after row, `per_row` each.
+    let per_row = count / step;
+    let found: Vec<u64> = SAMPLES.with_borrow_mut(|samples| {
+        samples.clear();
+        for y in y0..y1 {
+            let row = row_of(y);
+            for i in (step - 1..count).step_by(step) {
+                samples.extend_from_slice(&row[4 * i..4 * i + 4]);
+            }
+        }
+        let ((low, high), saturation, value) = colour;
+        crate::kernels::color_mask(samples, (low, high), saturation, value, &mut mask);
+        std::mem::take(&mut mask)
+    });
+    for (r, y) in (y0..y1).enumerate() {
+        let (from, to) = (r * per_row, (r + 1) * per_row);
+        let mut hits = Vec::new();
+        let mut i = from;
+        while i < to {
+            let word = found[i / 64] >> (i % 64);
+            if word == 0 {
+                i = (i / 64 + 1) * 64;
+                continue;
+            }
+            let k = i + word.trailing_zeros() as usize;
+            if k >= to {
+                break;
+            }
+            hits.push((k - from) * step + step - 1);
+            i = k + 1;
+        }
+        if !hits.is_empty() {
+            follow_runs(
+                row_of(y),
+                (x0, count),
+                step,
+                colour,
+                hits,
+                &mut mask,
+                |a, b| out.push((y, a, b)),
+            );
+        }
+    }
+}
+
+/// The rest of [`color_runs`]: each sample that matched (`hits`, pixel
+/// indexes along `row` in increasing order) followed out to both ends of
+/// its run, and each run at least `step` long given to `push` as its
+/// first and last column (from `x0`).
+fn follow_runs(
+    row: &[u8],
+    (x0, count): (u32, usize),
+    step: usize,
+    (hue_range, min_saturation, min_value): ((f32, f32), f32, f32),
+    hits: Vec<usize>,
+    mask: &mut Vec<u64>,
+    mut push: impl FnMut(u32, u32),
+) {
+    let test = |from: usize, to: usize, mask: &mut Vec<u64>| {
+        crate::kernels::color_mask(
+            &row[4 * from..4 * to],
+            hue_range,
+            min_saturation,
+            min_value,
+            mask,
+        );
+    };
     // Where the run of matching pixels through `at` ends, to the right (one
     // past its last) and to the left (its first): stretches of 64 pixels
     // tested together, then twice as many each time while the run goes on.
@@ -960,11 +1066,10 @@ fn color_runs(
         }
         let end = run_right(at, mask);
         if end - begin >= step {
-            result.push((x0 + begin as u32, x0 + end as u32 - 1));
+            push(x0 + begin as u32, x0 + end as u32 - 1);
         }
         done = end;
     }
-    result
 }
 
 pub fn find_color_regions(
@@ -975,14 +1080,10 @@ pub fn find_color_regions(
     min_value: f32,
 ) -> Vec<Rect> {
     let mut rows = Vec::new();
-    let mut mask = Vec::new();
-    for y in region.y..region.y.saturating_add(region.h).min(image.height()) {
-        let x1 = region.x.saturating_add(region.w).saturating_sub(1);
-        let colour = (hue_range, min_saturation, min_value);
-        for (x0, x1) in color_runs(image, y, (region.x, x1), 20, colour, &mut mask) {
-            rows.push((y, x0, x1));
-        }
-    }
+    let x1 = region.x.saturating_add(region.w).saturating_sub(1);
+    let colour = (hue_range, min_saturation, min_value);
+    let y1 = region.y.saturating_add(region.h).min(image.height());
+    color_runs_rows(image, (region.y, y1), (region.x, x1), 20, colour, &mut rows);
     group_segments(rows, 4, 2)
         .into_iter()
         .filter(|rect| rect.w >= 20 && rect.h >= 4)
@@ -1164,6 +1265,28 @@ mod tests {
                             &mut mask,
                         );
                         assert_eq!(got, expected, "row {y}, {x0}..={x1}, at least {min_width}");
+                    }
+                }
+            }
+            // Many rows at once: the same runs, row after row.
+            for (y0, y1) in [(0, 40), (3, 17), (39, 40), (5, 5), (30, 90)] {
+                for (x0, x1) in [(0, 299), (5, 70), (250, 400), (10, 9)] {
+                    for min_width in [1, 3, 7, 8, 20, 23, 64, 144] {
+                        let colour = (hue, saturation, value);
+                        let mut expected = Vec::new();
+                        for y in y0..y1.min(40) {
+                            for (a, b) in
+                                color_runs(&image, y, (x0, x1), min_width, colour, &mut mask)
+                            {
+                                expected.push((y, a, b));
+                            }
+                        }
+                        let mut got = Vec::new();
+                        color_runs_rows(&image, (y0, y1), (x0, x1), min_width, colour, &mut got);
+                        assert_eq!(
+                            got, expected,
+                            "rows {y0}..{y1}, {x0}..={x1}, at least {min_width}"
+                        );
                     }
                 }
             }
