@@ -11,6 +11,13 @@ pub fn hsv_from_rgb(r: u8, g: u8, b: u8) -> Hsv {
     (parts.hue(), parts.saturation(), parts.value())
 }
 
+/// The saturation and value of [`hsv_from_rgb`], without the hue (which
+/// needs a division and branches): the same two numbers.
+pub fn saturation_and_value(r: u8, g: u8, b: u8) -> (f32, f32) {
+    let parts = HsvParts::new(r, g, b);
+    (parts.saturation(), parts.value())
+}
+
 /// The intermediate values of an RGB→HSV conversion, so predicates can test
 /// value and saturation — cheap — and compute the hue, which needs a
 /// division and branches, only for the few pixels that pass both. On a
@@ -277,6 +284,19 @@ mod tests {
                             "{pixel:?}"
                         );
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn saturation_and_value_are_the_conversions() {
+        for r in (0..=255u8).step_by(3) {
+            for g in (0..=255u8).step_by(5) {
+                for b in (0..=255u8).step_by(7) {
+                    let (_, s, v) = hsv_from_rgb(r, g, b);
+                    let (s2, v2) = saturation_and_value(r, g, b);
+                    assert_eq!((s.to_bits(), v.to_bits()), (s2.to_bits(), v2.to_bits()));
                 }
             }
         }
