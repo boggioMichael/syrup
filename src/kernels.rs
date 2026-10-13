@@ -1099,8 +1099,298 @@ pub(crate) fn bgra_to_rgba_word(bgra: [u8; 4]) -> [u8; 4] {
 }
 
 #[cfg(target_arch = "x86_64")]
+/// The colour bucket of every pixel of the `w`×`h` region of an RGBA image
+/// whose top left is `(x0, y0)` (`stride` bytes a row), counted into
+/// `counts`: bucket `(r / step · per_channel + g / step) · per_channel +
+/// b / step` when the pixel's alpha is at least 200, else bucket
+/// `per_channel³` (the last of each histogram), where `per_channel` is
+/// `255 / step + 1`. `counts` holds `ways` histograms of `per_channel³ + 1`
+/// counters one after another, a power of two of them, and a pixel is
+/// counted in one of them (which is immaterial: the caller adds them up;
+/// several keep a run of pixels in one bucket from waiting on one counter).
+///
+/// On AVX2 and AVX-512 the buckets of 8 or 16 pixels are taken at once
+/// (`v / step` as `(v · ⌈65536 / step⌉) >> 16`, which is exact for every
+/// byte when the step is at least 2), and a row's pixels are counted a run
+/// of one bucket at a time, with one addition. Returns whether it counted
+/// them: false on other CPUs, and for a step under 2, leaving `counts` as
+/// it was.
+#[cfg_attr(not(target_arch = "x86_64"), allow(unused_variables))]
+pub(crate) fn bucket_counts(
+    raw: &[u8],
+    stride: usize,
+    (x0, y0): (usize, usize),
+    (w, h): (usize, usize),
+    step: u8,
+    ways: usize,
+    counts: &mut [u32],
+) -> bool {
+    if step < 2 || w == 0 || h == 0 {
+        return false;
+    }
+    let per_channel = 255 / step as usize + 1;
+    let size = per_channel.pow(3);
+    assert!(ways.is_power_of_two() && counts.len() == ways * (size + 1));
+    assert!((x0 + w) * 4 <= stride && raw.len() >= (y0 + h - 1) * stride + (x0 + w) * 4);
+    #[cfg(target_arch = "x86_64")]
+    if backend() == Backend::Avx2 {
+        let magic = 65536_u32.div_ceil(u32::from(step));
+        // A row's runs: the bucket of each and where it starts, with room
+        // for a whole vector stored past the last and the row's end.
+        let mut buckets = vec![0u32; w + 17];
+        let mut starts = vec![0u32; w + 17];
+        let zmm = vnni() == Some(Vnni::Zmm);
+        for y in y0..y0 + h {
+            let row = &raw[y * stride + x0 * 4..][..w * 4];
+            // SAFETY: AVX-512 F and BW where `vnni()` reported 512-bit
+            // vectors, else AVX2 (`backend()`); the row holds `w` pixels and
+            // the buffers `w + 17` entries.
+            let runs = unsafe {
+                let args = (
+                    row.as_ptr(),
+                    w,
+                    (magic, per_channel as u32, size as u32),
+                    buckets.as_mut_ptr(),
+                    starts.as_mut_ptr(),
+                );
+                if zmm {
+                    x86::bucket_runs_zmm(args.0, args.1, args.2, args.3, args.4)
+                } else {
+                    x86::bucket_runs_avx2(args.0, args.1, args.2, args.3, args.4)
+                }
+            };
+            count_runs(&buckets[..runs], &starts[..runs + 1], size + 1, counts);
+        }
+        return true;
+    }
+    false
+}
+
+/// Each run of `buckets` (the pixels from `starts[k]` to `starts[k + 1]`)
+/// added to its bucket's counter, the runs in turn into each of the
+/// histograms of `counts` (`histogram` counters each): four at a time when
+/// there are four.
+#[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
+fn count_runs(buckets: &[u32], starts: &[u32], histogram: usize, counts: &mut [u32]) {
+    assert_eq!(starts.len(), buckets.len() + 1);
+    let length = |k: usize| starts[k + 1] - starts[k];
+    if counts.len() == 4 * histogram {
+        let (first, rest) = counts.split_at_mut(histogram);
+        let (second, rest) = rest.split_at_mut(histogram);
+        let (third, fourth) = rest.split_at_mut(histogram);
+        let fours = buckets.len() / 4 * 4;
+        for k in (0..fours).step_by(4) {
+            first[buckets[k] as usize] += length(k);
+            second[buckets[k + 1] as usize] += length(k + 1);
+            third[buckets[k + 2] as usize] += length(k + 2);
+            fourth[buckets[k + 3] as usize] += length(k + 3);
+        }
+        for k in fours..buckets.len() {
+            first[buckets[k] as usize] += length(k);
+        }
+        return;
+    }
+    let ways = counts.len() / histogram;
+    for (k, &bucket) in buckets.iter().enumerate() {
+        counts[(k & (ways - 1)) * histogram + bucket as usize] += length(k);
+    }
+}
+
 mod x86 {
     use std::arch::x86_64::*;
+
+    /// The runs of one bucket along a row of `w` RGBA pixels (as
+    /// [`super::bucket_counts`] buckets them, `(magic, per_channel, trash)`
+    /// its division magic, buckets a channel and bucket of the
+    /// translucent), 16 pixels a step: each run's bucket into `buckets` and
+    /// its first pixel into `starts`, in order, and `w` after the last
+    /// start. Returns how many runs.
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F and BW; `row` holds `w` pixels, and `buckets` and `starts`
+    /// `w + 17` entries.
+    #[target_feature(enable = "avx512f,avx512bw")]
+    pub(super) unsafe fn bucket_runs_zmm(
+        row: *const u8,
+        w: usize,
+        (magic, per_channel, trash): (u32, u32, u32),
+        buckets: *mut u32,
+        starts: *mut u32,
+    ) -> usize {
+        let byte = _mm512_set1_epi32(0xff);
+        let (magic, per_channel) = (
+            _mm512_set1_epi32(magic as i32),
+            _mm512_set1_epi32(per_channel as i32),
+        );
+        // Alpha at least 200: the lane, unsigned, at least 200 << 24.
+        let (trash, opaque) = (
+            _mm512_set1_epi32(trash as i32),
+            _mm512_set1_epi32((200u32 << 24) as i32),
+        );
+        let lanes_up = _mm512_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+        // A channel's bucket: `(v · magic) >> 16`.
+        let quotient = |v: __m512i| {
+            _mm512_srli_epi32::<16>(_mm512_mullo_epi32(_mm512_and_si512(v, byte), magic))
+        };
+        // The bucket before the row's first pixel: none (no bucket is -1).
+        let mut last = _mm512_set1_epi32(-1);
+        let mut runs = 0usize;
+        let mut x = 0;
+        while x < w {
+            let lanes: __mmask16 = if w - x >= 16 {
+                0xffff
+            } else {
+                (1 << (w - x)) - 1
+            };
+            // SAFETY: the mask keeps the load within the row.
+            let v = unsafe { _mm512_maskz_loadu_epi32(lanes, row.add(4 * x).cast()) };
+            let shown = _mm512_cmpge_epu32_mask(v, opaque);
+            let bucket = _mm512_add_epi32(
+                _mm512_mullo_epi32(
+                    _mm512_add_epi32(
+                        _mm512_mullo_epi32(quotient(v), per_channel),
+                        quotient(_mm512_srli_epi32::<8>(v)),
+                    ),
+                    per_channel,
+                ),
+                quotient(_mm512_srli_epi32::<16>(v)),
+            );
+            let bucket = _mm512_mask_mov_epi32(trash, shown, bucket);
+            // Each lane's left neighbour: the lane before, or the last of
+            // the previous step.
+            let before = _mm512_alignr_epi32::<15>(bucket, last);
+            let new = _mm512_mask_cmpneq_epu32_mask(lanes, bucket, before);
+            // SAFETY: `runs` is at most `x`, so 16 entries from it lie
+            // within the buffers' `w + 17`.
+            unsafe {
+                _mm512_storeu_si512(
+                    buckets.add(runs).cast(),
+                    _mm512_maskz_compress_epi32(new, bucket),
+                );
+                _mm512_storeu_si512(
+                    starts.add(runs).cast(),
+                    _mm512_maskz_compress_epi32(
+                        new,
+                        _mm512_add_epi32(lanes_up, _mm512_set1_epi32(x as i32)),
+                    ),
+                );
+            }
+            runs += new.count_ones() as usize;
+            last = bucket;
+            x += 16;
+        }
+        // SAFETY: `runs` is at most `w`.
+        unsafe { *starts.add(runs) = w as u32 };
+        runs
+    }
+
+    /// For each set of lanes of 8 (bit `i` lane `i`), the lanes in order,
+    /// then lane 0: the permutation that gathers the set lanes at the front.
+    static GATHER_LANES: [[u32; 8]; 256] = {
+        let mut table = [[0u32; 8]; 256];
+        let mut set = 0;
+        while set < 256 {
+            let (mut lane, mut to) = (0, 0);
+            while lane < 8 {
+                if set & (1 << lane) != 0 {
+                    table[set][to] = lane as u32;
+                    to += 1;
+                }
+                lane += 1;
+            }
+            set += 1;
+        }
+        table
+    };
+
+    /// [`bucket_runs_zmm`] 8 pixels a step, on AVX2.
+    ///
+    /// # Safety
+    ///
+    /// AVX2; `row` holds `w` pixels, and `buckets` and `starts` `w + 17`
+    /// entries.
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn bucket_runs_avx2(
+        row: *const u8,
+        w: usize,
+        (magic, per_channel, trash): (u32, u32, u32),
+        buckets: *mut u32,
+        starts: *mut u32,
+    ) -> usize {
+        let byte = _mm256_set1_epi32(0xff);
+        let (magic, per_channel) = (
+            _mm256_set1_epi32(magic as i32),
+            _mm256_set1_epi32(per_channel as i32),
+        );
+        let quotient = |v: __m256i| {
+            _mm256_srli_epi32::<16>(_mm256_mullo_epi32(_mm256_and_si256(v, byte), magic))
+        };
+        let (trash, translucent) = (_mm256_set1_epi32(trash as i32), _mm256_set1_epi32(199));
+        let lanes_up = _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7);
+        let (rotate, seventh) = (
+            _mm256_setr_epi32(7, 0, 1, 2, 3, 4, 5, 6),
+            _mm256_set1_epi32(7),
+        );
+        let mut last = _mm256_set1_epi32(-1);
+        let mut runs = 0usize;
+        let mut x = 0;
+        while x < w {
+            let count = (w - x).min(8);
+            // SAFETY: a whole step lies within the row; a shorter one is
+            // loaded with its lanes past the row masked off.
+            let v = unsafe {
+                if count == 8 {
+                    _mm256_loadu_si256(row.add(4 * x).cast())
+                } else {
+                    let within = _mm256_cmpgt_epi32(_mm256_set1_epi32(count as i32), lanes_up);
+                    _mm256_maskload_epi32(row.add(4 * x).cast(), within)
+                }
+            };
+            // Alpha at least 200 (less than 256, so a signed comparison).
+            let shown = _mm256_cmpgt_epi32(_mm256_srli_epi32::<24>(v), translucent);
+            let bucket = _mm256_add_epi32(
+                _mm256_mullo_epi32(
+                    _mm256_add_epi32(
+                        _mm256_mullo_epi32(quotient(v), per_channel),
+                        quotient(_mm256_srli_epi32::<8>(v)),
+                    ),
+                    per_channel,
+                ),
+                quotient(_mm256_srli_epi32::<16>(v)),
+            );
+            let bucket = _mm256_blendv_epi8(trash, bucket, shown);
+            let before = _mm256_blend_epi32::<1>(
+                _mm256_permutevar8x32_epi32(bucket, rotate),
+                _mm256_permutevar8x32_epi32(last, seventh),
+            );
+            let same = _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(bucket, before)));
+            let new = !(same as u32) & ((1 << count) - 1);
+            // SAFETY: the table has an entry for every set of 8 lanes; and
+            // `runs` is at most `x`, so 8 entries from it lie within the
+            // buffers' `w + 17`.
+            unsafe {
+                let gather = _mm256_loadu_si256(GATHER_LANES[new as usize].as_ptr().cast());
+                _mm256_storeu_si256(
+                    buckets.add(runs).cast(),
+                    _mm256_permutevar8x32_epi32(bucket, gather),
+                );
+                _mm256_storeu_si256(
+                    starts.add(runs).cast(),
+                    _mm256_permutevar8x32_epi32(
+                        _mm256_add_epi32(lanes_up, _mm256_set1_epi32(x as i32)),
+                        gather,
+                    ),
+                );
+            }
+            runs += new.count_ones() as usize;
+            last = bucket;
+            x += 8;
+        }
+        // SAFETY: `runs` is at most `w`.
+        unsafe { *starts.add(runs) = w as u32 };
+        runs
+    }
 
     /// `bgra_to_rgba` 32 bytes a step: a byte shuffle putting each pixel's
     /// red, green and blue in order with a zero for alpha, then alpha set.
@@ -4373,6 +4663,118 @@ mod tests {
                         unsafe { x86::bgra_to_rgba_zmm(src.as_ptr(), out.as_mut_ptr(), src.len()) };
                     assert_eq!(done, src.len() - src.len() % 64);
                     assert_eq!(out, expected, "{len} pixels on avx-512");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn buckets_counted_a_run_at_a_time_are_the_pixels_counted_one_by_one() {
+        // Rows of runs of a few colours, noise and translucent pixels, of
+        // every width up to a few vectors and some longer.
+        let widths: Vec<usize> = (1..=70).chain([255, 1000]).collect();
+        for (n, &w) in widths.iter().enumerate() {
+            let bytes = noise(4 * w, n as u32 + 7);
+            let palette = [
+                [10u8, 200, 30, 255],
+                [11, 201, 31, 255],
+                [250, 250, 250, 210],
+            ];
+            let row: Vec<u8> = (0..w)
+                .flat_map(|x| {
+                    let r = &bytes[4 * x..4 * x + 4];
+                    let mut p = if r[0].is_multiple_of(5) {
+                        [r[1], r[2], r[3], 255]
+                    } else {
+                        palette[(x / (1 + r[1] as usize % 9)) % 3]
+                    };
+                    if r[2].is_multiple_of(13) {
+                        p[3] = r[3] % 200;
+                    }
+                    p
+                })
+                .collect();
+            for step in [2u8, 3, 7, 10, 12, 16, 33, 128, 255] {
+                let per_channel = 255 / step as usize + 1;
+                let size = per_channel.pow(3);
+                let one_by_one: Vec<u32> = row
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|p| {
+                        if p[3] < 200 {
+                            return size as u32;
+                        }
+                        let q = |v: u8| (v / step) as usize;
+                        ((q(p[0]) * per_channel + q(p[1])) * per_channel + q(p[2])) as u32
+                    })
+                    .collect();
+                // Through the public path, with every pixel in its bucket.
+                for ways in [1usize, 4] {
+                    let mut counts = vec![0u32; ways * (size + 1)];
+                    let image_rows = 3;
+                    let raw: Vec<u8> = (0..image_rows)
+                        .flat_map(|_| [0u8; 8].into_iter().chain(row.iter().copied()))
+                        .collect();
+                    let stride = 4 * w + 8;
+                    if bucket_counts(&raw, stride, (2, 1), (w, 2), step, ways, &mut counts) {
+                        let mut total = vec![0u32; size + 1];
+                        for histogram in counts.chunks_exact(size + 1) {
+                            for (t, &c) in total.iter_mut().zip(histogram) {
+                                *t += c;
+                            }
+                        }
+                        let mut expected = vec![0u32; size + 1];
+                        for &b in &one_by_one {
+                            expected[b as usize] += 2;
+                        }
+                        assert_eq!(total, expected, "width {w}, step {step}, {ways} ways");
+                    }
+                }
+                // Each vector path's runs, as pixels.
+                #[cfg(target_arch = "x86_64")]
+                {
+                    let magic = 65536_u32.div_ceil(u32::from(step));
+                    let mut paths: Vec<&str> = Vec::new();
+                    if is_x86_feature_detected!("avx2") {
+                        paths.push("avx2");
+                    }
+                    if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512bw") {
+                        paths.push("avx-512");
+                    }
+                    for path in paths {
+                        let mut buckets = vec![u32::MAX; w + 17];
+                        let mut starts = vec![u32::MAX; w + 17];
+                        let args = (
+                            row.as_ptr(),
+                            w,
+                            (magic, per_channel as u32, size as u32),
+                            buckets.as_mut_ptr(),
+                            starts.as_mut_ptr(),
+                        );
+                        // SAFETY: the CPU reported the path's instructions;
+                        // the row holds `w` pixels, the buffers `w + 17`.
+                        let runs = unsafe {
+                            if path == "avx2" {
+                                x86::bucket_runs_avx2(args.0, args.1, args.2, args.3, args.4)
+                            } else {
+                                x86::bucket_runs_zmm(args.0, args.1, args.2, args.3, args.4)
+                            }
+                        };
+                        let mut pixels = Vec::new();
+                        for k in 0..runs {
+                            assert!(starts[k] < starts[k + 1], "{path}: runs in order");
+                            if k > 0 {
+                                assert_ne!(buckets[k], buckets[k - 1], "{path}: runs differ");
+                            }
+                            for _ in starts[k]..starts[k + 1] {
+                                pixels.push(buckets[k]);
+                            }
+                        }
+                        assert_eq!(starts[0], 0, "{path}");
+                        assert_eq!(starts[runs], w as u32, "{path}");
+                        assert_eq!(pixels, one_by_one, "width {w}, step {step} on {path}");
+                    }
                 }
             }
         }

@@ -1184,42 +1184,55 @@ pub fn dominant_color_bucket(image: &RgbaImage, region: Rect, step: u8) -> Optio
 
     if per_channel.pow(3) <= DENSE_HISTOGRAM_LIMIT {
         let size = per_channel.pow(3);
-        // Each channel's share of the index from a table (a division a
-        // channel a pixel otherwise), and, while the histogram is small,
-        // the pixels counted into four histograms in turn and summed after:
-        // a panel of one colour then does not wait on one counter. The same
-        // counts.
-        let weights = [(per_channel * per_channel) as u32, per_channel as u32, 1];
-        let tables = weights.map(|weight| {
-            std::array::from_fn::<u32, 256, _>(|v| (v as u32 / u32::from(step)) * weight)
-        });
+        // While the histogram is small, the pixels are counted into four
+        // histograms in turn and summed after: a panel of one colour then
+        // does not wait on one counter. Each histogram has a last counter
+        // for the translucent pixels, which are not counted. On AVX2 the
+        // buckets are taken several pixels at a time and counted a run at a
+        // time (`kernels::bucket_counts`); otherwise each channel's share of
+        // the index comes from a table (a division a channel a pixel
+        // otherwise). The same counts.
         let ways = if size <= 1 << 16 { 4 } else { 1 };
-        let mut counts = vec![0u32; ways * size];
-        let mut any = false;
+        let mut counts = vec![0u32; ways * (size + 1)];
         let width = image.width() as usize;
-        for y in region.y..y_end {
-            let at = (y as usize * width + region.x as usize) * 4;
-            let row = &image.as_raw()[at..at + 4 * (x_end - region.x) as usize];
-            let mut turn = 0usize;
-            for p in row.as_chunks::<4>().0 {
-                if p[3] >= 200 {
-                    let i = (tables[0][p[0] as usize]
-                        + tables[1][p[1] as usize]
-                        + tables[2][p[2] as usize]) as usize;
-                    counts[(turn % ways) * size + i] += 1;
-                    turn += 1;
+        let counted = crate::kernels::bucket_counts(
+            image.as_raw(),
+            width * 4,
+            (region.x as usize, region.y as usize),
+            ((x_end - region.x) as usize, (y_end - region.y) as usize),
+            step,
+            ways,
+            &mut counts,
+        );
+        if !counted {
+            let weights = [(per_channel * per_channel) as u32, per_channel as u32, 1];
+            let tables = weights.map(|weight| {
+                std::array::from_fn::<u32, 256, _>(|v| (v as u32 / u32::from(step)) * weight)
+            });
+            for y in region.y..y_end {
+                let at = (y as usize * width + region.x as usize) * 4;
+                let row = &image.as_raw()[at..at + 4 * (x_end - region.x) as usize];
+                let mut turn = 0usize;
+                for p in row.as_chunks::<4>().0 {
+                    if p[3] >= 200 {
+                        let i = (tables[0][p[0] as usize]
+                            + tables[1][p[1] as usize]
+                            + tables[2][p[2] as usize]) as usize;
+                        counts[(turn % ways) * (size + 1) + i] += 1;
+                        turn += 1;
+                    }
                 }
             }
-            any |= turn > 0;
         }
-        if !any {
-            return None;
-        }
-        let (counts, others) = counts.split_at_mut(size);
-        for other in others.chunks_exact(size) {
+        let (counts, others) = counts.split_at_mut(size + 1);
+        for other in others.chunks_exact(size + 1) {
             for (count, &more) in counts.iter_mut().zip(other) {
                 *count += more;
             }
+        }
+        let counts = &counts[..size];
+        if counts.iter().all(|&count| count == 0) {
+            return None;
         }
         // First maximum in index order, i.e. the lowest bucket on ties.
         let (best, _) =
