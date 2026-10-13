@@ -7,7 +7,7 @@
 
 use image::{Pixel, Rgba, RgbaImage};
 
-use crate::color::{is_color_pixel, is_text_pixel};
+use crate::color::is_text_pixel;
 
 /// Pixels `x0..=x1` of row `y`, with their x coordinate, read straight from
 /// the image buffer.
@@ -363,34 +363,6 @@ pub fn group_segments(rows: Vec<(u32, u32, u32)>, min_height: u32, max_gap: u32)
     completed
 }
 
-fn find_horizontal_region<F>(
-    image: &RgbaImage,
-    region: Rect,
-    min_width: u32,
-    min_height: u32,
-    predicate: F,
-) -> Option<Rect>
-where
-    F: Fn(&Rgba<u8>) -> bool,
-{
-    let mut rows = Vec::new();
-    for y in region.y..region.y.saturating_add(region.h).min(image.height()) {
-        let segments = segment_row(
-            image,
-            y,
-            region.x,
-            region.x.saturating_add(region.w).saturating_sub(1),
-            min_width,
-            &predicate,
-        );
-        for (x0, x1) in segments {
-            rows.push((y, x0, x1));
-        }
-    }
-    let candidates = group_segments(rows, min_height, 2);
-    candidates.into_iter().max_by_key(|rect| rect.area())
-}
-
 /// Fewer text pixels than this in a region is noise, not a line of text.
 const MIN_TEXT_PIXELS: u32 = 6;
 
@@ -743,9 +715,79 @@ pub fn find_color_bar(
     min_saturation: f32,
     min_value: f32,
 ) -> Option<Rect> {
-    find_horizontal_region(image, region, (region.w / 20).max(8), 2, |pixel| {
-        is_color_pixel(pixel, hue_range, min_saturation, min_value)
-    })
+    // Runs of the colour on each row (each row's pixels tested together,
+    // `color_runs`), grouped into regions: the largest is the bar.
+    let min_width = (region.w / 20).max(8);
+    let mut rows = Vec::new();
+    let mut mask = Vec::new();
+    for y in region.y..region.y.saturating_add(region.h).min(image.height()) {
+        let x1 = region.x.saturating_add(region.w).saturating_sub(1);
+        let colour = (hue_range, min_saturation, min_value);
+        for (x0, x1) in color_runs(image, y, (region.x, x1), min_width, colour, &mut mask) {
+            rows.push((y, x0, x1));
+        }
+    }
+    group_segments(rows, 2, 2)
+        .into_iter()
+        .max_by_key(|rect| rect.area())
+}
+
+/// [`segment_row`] with [`crate::color::is_color_pixel`] as the test: the
+/// same runs, from the row's pixels tested together into bits
+/// (`kernels::color_mask`, in `mask`) and the runs of set bits found a
+/// word at a time.
+fn color_runs(
+    image: &RgbaImage,
+    y: u32,
+    (x0, x1): (u32, u32),
+    min_width: u32,
+    (hue_range, min_saturation, min_value): ((f32, f32), f32, f32),
+    mask: &mut Vec<u64>,
+) -> Vec<(u32, u32)> {
+    let mut result = Vec::new();
+    if y >= image.height() || image.width() == 0 {
+        return result;
+    }
+    let x1 = x1.min(image.width() - 1);
+    if x0 > x1 {
+        return result;
+    }
+    let width = image.width() as usize;
+    let start = (y as usize * width + x0 as usize) * 4;
+    let end = (y as usize * width + x1 as usize + 1) * 4;
+    crate::kernels::color_mask(
+        &image.as_raw()[start..end],
+        hue_range,
+        min_saturation,
+        min_value,
+        mask,
+    );
+    let count = (x1 - x0 + 1) as usize;
+    // From bit `i`, where the run of ones (or of zeros) it starts ends.
+    let run_end = |i: usize, ones: bool| -> usize {
+        let mut i = i;
+        while i < count {
+            let word = (if ones { !mask[i / 64] } else { mask[i / 64] }) >> (i % 64);
+            if word != 0 {
+                return (i + word.trailing_zeros() as usize).min(count);
+            }
+            i = (i / 64 + 1) * 64;
+        }
+        count
+    };
+    let mut i = 0;
+    while i < count {
+        let begin = run_end(i, false);
+        if begin >= count {
+            break;
+        }
+        let end = run_end(begin, true);
+        if (end - begin) as u32 >= min_width {
+            result.push((x0 + begin as u32, x0 + end as u32 - 1));
+        }
+        i = end;
+    }
+    result
 }
 
 pub fn find_color_regions(
@@ -756,15 +798,11 @@ pub fn find_color_regions(
     min_value: f32,
 ) -> Vec<Rect> {
     let mut rows = Vec::new();
+    let mut mask = Vec::new();
     for y in region.y..region.y.saturating_add(region.h).min(image.height()) {
-        for (x0, x1) in segment_row(
-            image,
-            y,
-            region.x,
-            region.x.saturating_add(region.w).saturating_sub(1),
-            20,
-            |pixel| is_color_pixel(pixel, hue_range, min_saturation, min_value),
-        ) {
+        let x1 = region.x.saturating_add(region.w).saturating_sub(1);
+        let colour = (hue_range, min_saturation, min_value);
+        for (x0, x1) in color_runs(image, y, (region.x, x1), 20, colour, &mut mask) {
             rows.push((y, x0, x1));
         }
     }
@@ -893,6 +931,56 @@ pub fn find_uniform_color_panel(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::is_color_pixel;
+
+    /// The colour's runs found from bits are `segment_row`'s with the
+    /// colour test, on rows of every length, with runs touching both ends.
+    #[test]
+    fn colour_runs_are_the_runs_segment_row_finds() {
+        let mut state = 7u32;
+        let image = RgbaImage::from_fn(300, 40, |x, y| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            // Long stretches of red, of blue, and of noise.
+            match (x / 23 + y) % 4 {
+                0 => Rgba([220, 20, 30, 255]),
+                1 => Rgba([20, 40, 230, 255]),
+                2 => Rgba(state.to_le_bytes()),
+                _ => Rgba([(state & 0xff) as u8 | 0xc0, 10, 10, 255]),
+            }
+        });
+        let mut mask = Vec::new();
+        for (hue, saturation, value) in [((340.0, 30.0), 0.35, 0.30), ((190.0, 250.0), 0.30, 0.30)]
+        {
+            for y in 0..40 {
+                for (x0, x1) in [
+                    (0, 299),
+                    (0, 63),
+                    (5, 70),
+                    (64, 191),
+                    (250, 400),
+                    (299, 299),
+                    (10, 9),
+                ] {
+                    for min_width in [1, 2, 8, 20, 64] {
+                        let expected = segment_row(&image, y, x0, x1, min_width, |p| {
+                            is_color_pixel(p, hue, saturation, value)
+                        });
+                        let got = color_runs(
+                            &image,
+                            y,
+                            (x0, x1),
+                            min_width,
+                            (hue, saturation, value),
+                            &mut mask,
+                        );
+                        assert_eq!(got, expected, "row {y}, {x0}..={x1}, at least {min_width}");
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn horizontal_edges_are_where_one_shade_meets_another() {

@@ -1118,6 +1118,32 @@ fn local_maxima(
     floor: f32,
     limit: usize,
 ) -> Vec<(usize, usize, f32)> {
+    let mut peaks = Vec::new();
+    if floor > f32::NEG_INFINITY {
+        // Only a score at or above the floor can be a peak, and on most
+        // searches few are: find those a vector at a time
+        // (`kernels::at_least`), and compare each with its neighbours. The
+        // same peaks as the pass below, which compares every position.
+        let mut hits = Vec::new();
+        for y in 0..rows {
+            let row = &scores[y * columns..(y + 1) * columns];
+            crate::kernels::at_least(row, floor, &mut hits);
+            let (y0, y1) = (y.saturating_sub(1), (y + 1).min(rows - 1));
+            for &x in &hits {
+                let score = row[x];
+                let (x0, x1) = (x.saturating_sub(1), (x + 1).min(columns - 1));
+                let highest = (y0..=y1).all(|ny| {
+                    scores[ny * columns + x0..=ny * columns + x1]
+                        .iter()
+                        .all(|&n| score >= n)
+                });
+                if highest {
+                    peaks.push((x, y, score));
+                }
+            }
+        }
+        return strongest_peaks(peaks, columns, rows, limit);
+    }
     // The largest of each score and its left and right neighbours, so that
     // a peak is a score no lower than the row maxima above, at and below.
     let mut across = vec![f32::NEG_INFINITY; scores.len()];
@@ -1138,7 +1164,6 @@ fn local_maxima(
             }
         }
     }
-    let mut peaks = Vec::new();
     for y in 0..rows {
         let row = &scores[y * columns..(y + 1) * columns];
         let neighbours = |dy: isize| {
@@ -1162,6 +1187,17 @@ fn local_maxima(
             }
         }
     }
+    strongest_peaks(peaks, columns, rows, limit)
+}
+
+/// Of `peaks` (in scan order), the strongest `limit`, one per
+/// neighbourhood: what [`local_maxima`] returns of the peaks it found.
+fn strongest_peaks(
+    mut peaks: Vec<(usize, usize, f32)>,
+    columns: usize,
+    rows: usize,
+    limit: usize,
+) -> Vec<(usize, usize, f32)> {
     if limit == 0 {
         return Vec::new();
     }

@@ -444,6 +444,64 @@ pub(crate) fn scores_everywhere(
     assert!(products.len() >= columns * rows);
     out.clear();
     out.reserve(columns * rows);
+    #[cfg(target_arch = "x86_64")]
+    if backend() == Backend::Avx2 {
+        // SAFETY: `backend()` reported AVX2 on this CPU; sizes checked.
+        unsafe {
+            x86::scores_everywhere_avx2(
+                plane,
+                width,
+                height,
+                (w, h),
+                products,
+                (t_sum, t_spread),
+                out,
+            )
+        };
+        return;
+    }
+    scores_everywhere_body(
+        plane,
+        width,
+        (w, h),
+        products,
+        (t_sum, t_spread),
+        out,
+        |row, sums, squares, out| {
+            out.extend(
+                row.iter().zip(sums).zip(squares).map(|((&p, &s), &q)| {
+                    ncc(n as i64, t_sum, t_spread, p.into(), s.into(), q.into())
+                }),
+            )
+        },
+        |values, totals| {
+            let mut total = 0u32;
+            for (t, &v) in totals[1..].iter_mut().zip(values) {
+                total = total.wrapping_add(v);
+                *t = total;
+            }
+        },
+    );
+}
+
+/// The loop of [`scores_everywhere`], with its two steps given: scoring a
+/// row of positions from their products and sums (`score_row`), and
+/// running totals (`running`: `totals[i + 1] = totals[i] + values[i]`,
+/// wrapping, `totals[0]` left at 0).
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+fn scores_everywhere_body(
+    plane: &[u8],
+    width: usize,
+    (w, h): (usize, usize),
+    products: &[u32],
+    _template: (i64, i64),
+    out: &mut Vec<f32>,
+    mut score_row: impl FnMut(&[u32], &[u32], &[u32], &mut Vec<f32>),
+    mut running: impl FnMut(&[u32], &mut [u32]),
+) {
+    let height = plane.len() / width;
+    let (columns, rows) = (width - w + 1, height - h + 1);
     let (mut sums, mut squares) = (vec![0u32; width], vec![0u32; width]);
     for line in plane[..width * h].chunks_exact(width) {
         for ((s, q), &p) in sums.iter_mut().zip(squares.iter_mut()).zip(line) {
@@ -472,40 +530,73 @@ pub(crate) fn scores_everywhere(
                 *q = *q + new * new - old * old;
             }
         }
-        let (mut s, mut q) = (0u32, 0u32);
-        for (x, (&cs, &cq)) in sums.iter().zip(&squares).enumerate() {
-            s = s.wrapping_add(cs);
-            q = q.wrapping_add(cq);
-            run_sums[x + 1] = s;
-            run_squares[x + 1] = q;
-        }
-        for (x, (ws, wq)) in window_sums
-            .iter_mut()
-            .zip(window_squares.iter_mut())
-            .enumerate()
+        running(&sums, &mut run_sums);
+        running(&squares, &mut run_squares);
+        for ((ws, wq), ((s0, s1), (q0, q1))) in
+            window_sums.iter_mut().zip(window_squares.iter_mut()).zip(
+                run_sums
+                    .iter()
+                    .zip(&run_sums[w..])
+                    .zip(run_squares.iter().zip(&run_squares[w..])),
+            )
         {
-            *ws = run_sums[x + w].wrapping_sub(run_sums[x]);
-            *wq = run_squares[x + w].wrapping_sub(run_squares[x]);
+            *ws = s1.wrapping_sub(*s0);
+            *wq = q1.wrapping_sub(*q0);
         }
-        let row = &products[y * columns..(y + 1) * columns];
-        match backend() {
-            #[cfg(target_arch = "x86_64")]
-            // SAFETY: `backend()` reported AVX2 on this CPU; the slices
-            // hold a row of positions each.
-            Backend::Avx2 => unsafe {
-                x86::scores_row_avx2(
-                    row,
-                    &window_sums,
-                    &window_squares,
-                    (n as i64, t_sum, t_spread),
-                    out,
-                )
-            },
-            _ => out.extend(row.iter().zip(&window_sums).zip(&window_squares).map(
-                |((&p, &s), &q)| ncc(n as i64, t_sum, t_spread, p.into(), s.into(), q.into()),
-            )),
+        score_row(
+            &products[y * columns..(y + 1) * columns],
+            &window_sums,
+            &window_squares,
+            out,
+        );
+    }
+}
+
+/// [`crate::color::is_color_pixel`] for each pixel of `pixels` (RGBA, 4
+/// bytes a pixel), as bits: bit `i % 64` of `out[i / 64]` (the words
+/// replace what `out` held). On AVX2, 8 pixels at a time with the very same
+/// single-precision arithmetic, so the same answers.
+pub(crate) fn color_mask(
+    pixels: &[u8],
+    hue_range: (f32, f32),
+    min_saturation: f32,
+    min_value: f32,
+    out: &mut Vec<u64>,
+) {
+    let count = pixels.len() / 4;
+    out.clear();
+    out.resize(count.div_ceil(64), 0);
+    let mut from = 0;
+    #[cfg(target_arch = "x86_64")]
+    if backend() == Backend::Avx2 {
+        // SAFETY: `backend()` reported AVX2 on this CPU.
+        from = unsafe { x86::color_mask_avx2(pixels, hue_range, min_saturation, min_value, out) };
+    }
+    for (i, p) in pixels.as_chunks::<4>().0.iter().enumerate().skip(from) {
+        if crate::color::is_color_pixel(&image::Rgba(*p), hue_range, min_saturation, min_value) {
+            out[i / 64] |= 1 << (i % 64);
         }
     }
+}
+
+/// The positions of `values` that are at least `floor`, in order, into
+/// `out` (replacing what it held): 8 compared at once on AVX2.
+pub(crate) fn at_least(values: &[f32], floor: f32, out: &mut Vec<usize>) {
+    out.clear();
+    let mut from = 0;
+    #[cfg(target_arch = "x86_64")]
+    if backend() == Backend::Avx2 {
+        // SAFETY: `backend()` reported AVX2 on this CPU.
+        from = unsafe { x86::at_least_avx2(values, floor, out) };
+    }
+    out.extend(
+        values
+            .iter()
+            .enumerate()
+            .skip(from)
+            .filter(|&(_, &v)| v >= floor)
+            .map(|(i, _)| i),
+    );
 }
 
 /// Template pixels in fours, row by row, as the dot-product instructions
@@ -1367,6 +1458,70 @@ mod x86 {
         unsafe { out.set_len(start + n) };
     }
 
+    /// `scores_everywhere` compiled for AVX2: the column totals 8 at a time,
+    /// the running totals by a scan within vectors, and each row scored by
+    /// `scores_row_avx2`.
+    #[allow(clippy::too_many_arguments)]
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn scores_everywhere_avx2(
+        plane: &[u8],
+        width: usize,
+        height: usize,
+        (w, h): (usize, usize),
+        products: &[u32],
+        (t_sum, t_spread): (i64, i64),
+        out: &mut Vec<f32>,
+    ) {
+        let n = (w * h) as i64;
+        super::scores_everywhere_body(
+            &plane[..width * height],
+            width,
+            (w, h),
+            products,
+            (t_sum, t_spread),
+            out,
+            // SAFETY: AVX2, here; the rows are as long as each other.
+            |row, sums, squares, out| unsafe {
+                scores_row_avx2(row, sums, squares, (n, t_sum, t_spread), out)
+            },
+            |values, totals| running_totals(values, totals),
+        );
+    }
+
+    /// `totals[i + 1] = totals[i] + values[i]` (wrapping) from
+    /// `totals[0] = 0`: 8 at a time, each vector's prefix taken within it in
+    /// three shifted additions (the halves joined by a fourth) and the total
+    /// so far added to all of it.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    pub(super) fn running_totals(values: &[u32], totals: &mut [u32]) {
+        assert!(totals.len() > values.len());
+        totals[0] = 0;
+        let mut carry = _mm256_setzero_si256();
+        let last = _mm256_set1_epi32(7);
+        let mut i = 0;
+        while i + 8 <= values.len() {
+            // SAFETY: 8 values from `i`; 8 totals from `i + 1`.
+            unsafe {
+                let mut x = _mm256_loadu_si256(values.as_ptr().add(i).cast());
+                x = _mm256_add_epi32(x, _mm256_slli_si256::<4>(x));
+                x = _mm256_add_epi32(x, _mm256_slli_si256::<8>(x));
+                // The low half's total into every lane of the high half.
+                let low_total = _mm256_shuffle_epi32::<0xff>(x);
+                x = _mm256_add_epi32(x, _mm256_permute2x128_si256::<0x08>(low_total, low_total));
+                x = _mm256_add_epi32(x, carry);
+                _mm256_storeu_si256(totals.as_mut_ptr().add(i + 1).cast(), x);
+                carry = _mm256_permutevar8x32_epi32(x, last);
+            }
+            i += 8;
+        }
+        let mut total = totals[i];
+        for (t, &v) in totals[i + 1..].iter_mut().zip(&values[i..]) {
+            total = total.wrapping_add(v);
+            *t = total;
+        }
+    }
+
     /// `ncc` for a row of positions, 4 at a time: the integer terms in
     /// 64-bit lanes (32-bit operands multiplied whole), converted to float
     /// exactly through doubles (an integer below 2^51 added into the
@@ -1451,6 +1606,112 @@ mod x86 {
         }
         // SAFETY: all `len` scores past `start` were written above.
         unsafe { out.set_len(start + len) };
+    }
+
+    /// 8 pixels a step: the channels out of each 32-bit pixel by shifts and
+    /// masks, then `HsvParts` in vectors — each quotient, maximum and
+    /// difference the one the scalar code computes — and the hue's three
+    /// cases all computed and the right one kept. (The scalar code's
+    /// `% 6.0` leaves its operand, which lies in [-1, 1], unchanged.) Sets
+    /// the bits of the whole steps in `out` (zeroed, a word per 64 pixels)
+    /// and returns how many pixels it did.
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn color_mask_avx2(
+        pixels: &[u8],
+        (hue_min, hue_max): (f32, f32),
+        min_saturation: f32,
+        min_value: f32,
+        out: &mut [u64],
+    ) -> usize {
+        let count = pixels.len() / 4;
+        assert!(out.len() >= count.div_ceil(64));
+        let byte = _mm256_set1_epi32(0xff);
+        let scale = _mm256_set1_ps(255.0);
+        let zero = _mm256_setzero_ps();
+        let (sixty, two, four, full) = (
+            _mm256_set1_ps(60.0),
+            _mm256_set1_ps(2.0),
+            _mm256_set1_ps(4.0),
+            _mm256_set1_ps(360.0),
+        );
+        let (value_v, saturation_v) = (_mm256_set1_ps(min_value), _mm256_set1_ps(min_saturation));
+        let (lo, hi) = (_mm256_set1_ps(hue_min), _mm256_set1_ps(hue_max));
+        let half_alpha = _mm256_set1_epi32(127);
+        let mut i = 0;
+        while i + 8 <= count {
+            // SAFETY: 8 pixels from `i` within `pixels`.
+            let px = unsafe { _mm256_loadu_si256(pixels.as_ptr().add(4 * i).cast()) };
+            let channel = |shift: i32| -> __m256 {
+                let v = match shift {
+                    0 => px,
+                    8 => _mm256_srli_epi32::<8>(px),
+                    _ => _mm256_srli_epi32::<16>(px),
+                };
+                _mm256_div_ps(_mm256_cvtepi32_ps(_mm256_and_si256(v, byte)), scale)
+            };
+            let (rf, gf, bf) = (channel(0), channel(8), channel(16));
+            // Alpha at least 128 is `alpha / 255 >= 0.5`.
+            let opaque =
+                _mm256_castsi256_ps(_mm256_cmpgt_epi32(_mm256_srli_epi32::<24>(px), half_alpha));
+            let max = _mm256_max_ps(_mm256_max_ps(rf, gf), bf);
+            let min = _mm256_min_ps(_mm256_min_ps(rf, gf), bf);
+            let delta = _mm256_sub_ps(max, min);
+            let bright = _mm256_cmp_ps::<_CMP_GE_OQ>(max, value_v);
+            let black = _mm256_cmp_ps::<_CMP_EQ_OQ>(max, zero);
+            let saturation = _mm256_blendv_ps(_mm256_div_ps(delta, max), zero, black);
+            let saturated = _mm256_cmp_ps::<_CMP_GE_OQ>(saturation, saturation_v);
+            let red = _mm256_mul_ps(sixty, _mm256_div_ps(_mm256_sub_ps(gf, bf), delta));
+            let green = _mm256_mul_ps(
+                sixty,
+                _mm256_add_ps(_mm256_div_ps(_mm256_sub_ps(bf, rf), delta), two),
+            );
+            let blue = _mm256_mul_ps(
+                sixty,
+                _mm256_add_ps(_mm256_div_ps(_mm256_sub_ps(rf, gf), delta), four),
+            );
+            let mut hue = _mm256_blendv_ps(blue, green, _mm256_cmp_ps::<_CMP_EQ_OQ>(max, gf));
+            hue = _mm256_blendv_ps(hue, red, _mm256_cmp_ps::<_CMP_EQ_OQ>(max, rf));
+            hue = _mm256_blendv_ps(hue, zero, _mm256_cmp_ps::<_CMP_EQ_OQ>(delta, zero));
+            hue = _mm256_blendv_ps(
+                hue,
+                _mm256_add_ps(hue, full),
+                _mm256_cmp_ps::<_CMP_LT_OQ>(hue, zero),
+            );
+            let above = _mm256_cmp_ps::<_CMP_GE_OQ>(hue, lo);
+            let below = _mm256_cmp_ps::<_CMP_LE_OQ>(hue, hi);
+            let in_range = if hue_min <= hue_max {
+                _mm256_and_ps(above, below)
+            } else {
+                _mm256_or_ps(above, below)
+            };
+            let matched = _mm256_and_ps(
+                _mm256_and_ps(opaque, bright),
+                _mm256_and_ps(saturated, in_range),
+            );
+            let bits = _mm256_movemask_ps(matched) as u64;
+            out[i / 64] |= bits << (i % 64);
+            i += 8;
+        }
+        i
+    }
+
+    /// 8 values a step: a comparison, its signs as bits, and the set bits'
+    /// positions. Returns how many values it did.
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn at_least_avx2(values: &[f32], floor: f32, out: &mut Vec<usize>) -> usize {
+        let floor = _mm256_set1_ps(floor);
+        let mut i = 0;
+        while i + 8 <= values.len() {
+            // SAFETY: 8 values from `i`.
+            let v = unsafe { _mm256_loadu_ps(values.as_ptr().add(i)) };
+            let mut bits = _mm256_movemask_ps(_mm256_cmp_ps::<_CMP_GE_OQ>(v, floor)) as u32;
+            while bits != 0 {
+                out.push(i + bits.trailing_zeros() as usize);
+                bits &= bits - 1;
+            }
+            i += 8;
+        }
+        i
     }
 
     thread_local! {
@@ -2125,6 +2386,93 @@ mod tests {
                     assert_eq!(g.to_bits(), e.to_bits(), "n {n} at {i}: {g} vs {e}");
                 }
             }
+        }
+    }
+
+    #[test]
+    fn running_totals_in_vectors_wrap_like_one_at_a_time() {
+        #[cfg(target_arch = "x86_64")]
+        if is_x86_feature_detected!("avx2") {
+            for len in [0usize, 1, 7, 8, 9, 15, 16, 17, 100, 3840] {
+                let values: Vec<u32> = noise(4 * len, len as u32)
+                    .chunks_exact(4)
+                    .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    .collect();
+                let mut expected = vec![0u32; len + 1];
+                for i in 0..len {
+                    expected[i + 1] = expected[i].wrapping_add(values[i]);
+                }
+                let mut got = vec![9u32; len + 1];
+                // SAFETY: the CPU reported AVX2.
+                unsafe { x86::running_totals(&values, &mut got) };
+                assert_eq!(got, expected, "{len}");
+            }
+        }
+    }
+
+    /// The colour test on vectors against the one at a time: a grid through
+    /// every colour, every alpha around the cut, and the parameters the HUD
+    /// is found with (including a hue range that wraps past 360).
+    #[test]
+    fn the_colour_test_in_vectors_answers_as_one_at_a_time() {
+        colour_masks_agree(23);
+    }
+
+    /// Every colour, not a grid (slow without optimisation).
+    #[test]
+    #[ignore]
+    fn the_colour_test_in_vectors_answers_as_one_at_a_time_everywhere() {
+        colour_masks_agree(1);
+    }
+
+    fn colour_masks_agree(step: usize) {
+        let mut pixels = Vec::new();
+        for r in (0..256).step_by(step).chain([254, 255]) {
+            for g in (0..256).step_by(step).chain([1, 255]) {
+                for b in (0..256).step_by(step).chain([0, 128, 255]) {
+                    pixels.extend_from_slice(&[r as u8, g as u8, b as u8, 255]);
+                }
+            }
+        }
+        for a in [0u8, 127, 128, 129, 254] {
+            pixels.extend_from_slice(&[200, 30, 30, a, 30, 30, 200, a]);
+        }
+        // An odd count, so the last few go one at a time.
+        pixels.extend_from_slice(&[255, 0, 0, 255, 0, 255, 0, 255, 9, 9, 9, 255]);
+        for (hue, saturation, value) in [
+            ((340.0, 30.0), 0.35, 0.30),
+            ((190.0, 250.0), 0.30, 0.30),
+            ((40.0, 80.0), 0.25, 0.25),
+            ((320.0, 350.0), 0.25, 0.35),
+            ((0.0, 360.0), 0.0, 0.0),
+            ((0.0, 0.0), 0.0, 0.0),
+        ] {
+            let expected: Vec<bool> = pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|p| crate::color::is_color_pixel(&image::Rgba(*p), hue, saturation, value))
+                .collect();
+            let bits = |words: &[u64]| -> Vec<bool> {
+                (0..expected.len())
+                    .map(|i| words[i / 64] & (1 << (i % 64)) != 0)
+                    .collect()
+            };
+            let mut got = vec![u64::MAX; 3];
+            color_mask(&pixels, hue, saturation, value, &mut got);
+            assert_eq!(got.len(), expected.len().div_ceil(64));
+            assert_eq!(
+                bits(&got),
+                expected,
+                "{hue:?} {saturation} {value} on {:?}",
+                backend()
+            );
+            // No bit set past the last pixel.
+            let tail = expected.len() % 64;
+            assert!(
+                tail == 0 || got[got.len() - 1] >> tail == 0,
+                "bits past the end"
+            );
         }
     }
 
