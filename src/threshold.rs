@@ -99,7 +99,7 @@ fn channel_rows_plain(
             .iter()
             .copied();
         match channel {
-            Channel::Luma => out.extend(pixels.map(|p| luma(u32::from_le_bytes(p)))),
+            Channel::Luma => crate::kernels::luma_into(&raw[start..start + row_len * 4], out),
             Channel::Min => out.extend(pixels.map(|p| p[0].min(p[1]).min(p[2]))),
             Channel::Max => out.extend(pixels.map(|p| p[0].max(p[1]).max(p[2]))),
         }
@@ -114,7 +114,7 @@ fn channel_rows_plain(
 /// loop from vectorising; the channels come out of the word with shifts
 /// and masks of whole lanes rather than a byte shuffle.
 #[inline(always)]
-fn luma(word: u32) -> u8 {
+pub(crate) fn luma(word: u32) -> u8 {
     (((word & 0xff) * 19595 + ((word >> 8) & 0xff) * 38470 + ((word >> 16) & 0xff) * 7471 + 32768)
         >> 16) as u8
 }

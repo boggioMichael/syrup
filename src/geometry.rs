@@ -271,62 +271,35 @@ pub fn horizontal_edges(image: &RgbaImage, threshold: u8, min_run: u32) -> Vec<R
     if width == 0 || height < 2 {
         return Vec::new();
     }
-    let luma = crate::threshold::channel_image(
-        image,
-        Rect {
-            x: 0,
-            y: 0,
-            w: width,
-            h: height,
-        },
-        crate::threshold::Channel::Luma,
-    );
-    let plane = luma.as_raw();
+    let width_px = width;
     let width = width as usize;
     let mut rows: Vec<(u32, u32, u32)> = Vec::new();
-    // Each pair of rows marked a byte a column (a loop the compiler
-    // vectorises), then the marks read eight at a time: a row with no edge
-    // in eight columns, or edge all along them, is passed in one step.
-    let mut marks = vec![0u8; width.next_multiple_of(8)];
-    for y in 0..height as usize - 1 {
-        let (above, below) = (
-            &plane[y * width..(y + 1) * width],
-            &plane[(y + 1) * width..(y + 2) * width],
-        );
-        for (mark, (&a, &b)) in marks.iter_mut().zip(above.iter().zip(below)) {
-            *mark = u8::from(a.abs_diff(b) >= threshold);
-        }
-        let words = marks.as_chunks::<8>().0;
-        // The first column at or after `x` marked `edge` (or not), or the
-        // row's width.
-        let next = |x: usize, edge: bool| -> usize {
-            let mut x = x;
-            while x < width {
-                let word = u64::from_le_bytes(words[x / 8]) >> (8 * (x % 8));
-                let wanted = if edge {
-                    word
-                } else {
-                    !word & 0x0101_0101_0101_0101 >> (8 * (x % 8))
-                };
-                if wanted != 0 {
-                    return (x + wanted.trailing_zeros() as usize / 8).min(width);
-                }
-                x = (x / 8 + 1) * 8;
-            }
-            width
+    // Two rows of luminance at a time (the frame's whole luminance is never
+    // written out); each pair marked a bit a column (many at a time,
+    // `kernels::differ_bits`), then the runs of marks read off the bits a
+    // word at a time.
+    let luma_row = |y: u32, out: &mut Vec<u8>| {
+        out.clear();
+        let row = Rect {
+            x: 0,
+            y,
+            w: width_px,
+            h: 1,
         };
-        let mut x = 0;
-        while x < width {
-            let begin = next(x, true);
-            if begin >= width {
-                break;
-            }
-            let end = next(begin, false);
+        crate::threshold::channel_rows_into(image, row, crate::threshold::Channel::Luma, out);
+    };
+    let (mut above, mut below) = (Vec::with_capacity(width), Vec::with_capacity(width));
+    luma_row(0, &mut above);
+    let mut marks = Vec::new();
+    for y in 0..height as usize - 1 {
+        luma_row(y as u32 + 1, &mut below);
+        crate::kernels::differ_bits(&above, &below, threshold, &mut marks);
+        crate::scan::for_each_bit_run(&marks, width, |begin, end| {
             if (end - begin) as u32 >= min_run {
                 rows.push((y as u32, begin as u32, end as u32 - 1));
             }
-            x = end;
-        }
+        });
+        std::mem::swap(&mut above, &mut below);
     }
     group_segments(rows, 1, 0)
 }

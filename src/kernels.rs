@@ -1191,6 +1191,66 @@ pub(crate) fn largest_difference(a: &[u8], b: &[u8]) -> u8 {
         .fold(largest, u8::max)
 }
 
+/// The luminance of each pixel of `rgba` (RGBA, 4 bytes a pixel), as
+/// [`crate::threshold::luma`] has it, added to `out`. On AVX-512 and AVX2,
+/// 16 pixels a step: the red and green weighed as a pair of 16-bit lanes
+/// (`madd`, the green's weight less 65536 to fit, its 65536 added back as
+/// a shift), the blue as another; the same integers.
+pub(crate) fn luma_into(rgba: &[u8], out: &mut Vec<u8>) {
+    let pixels = rgba.len() / 4;
+    let from = out.len();
+    out.resize(from + pixels, 0);
+    let row = &mut out[from..];
+    #[cfg_attr(not(target_arch = "x86_64"), allow(unused_mut))]
+    let mut done = 0;
+    #[cfg(target_arch = "x86_64")]
+    if backend() == Backend::Avx2 {
+        // SAFETY: AVX-512 F and BW where `vnni()` reported 512-bit vectors,
+        // else AVX2 (`backend()`); `row` has a byte for each pixel.
+        done = unsafe {
+            if vnni() == Some(Vnni::Zmm) {
+                x86::luma_zmm(rgba, row)
+            } else {
+                x86::luma_avx2(rgba, row)
+            }
+        };
+    }
+    for (luma, p) in row[done..].iter_mut().zip(&rgba.as_chunks::<4>().0[done..]) {
+        *luma = crate::threshold::luma(u32::from_le_bytes(*p));
+    }
+}
+
+/// For each place along two rows of bytes (`a` and `b`, as long as each
+/// other), whether they differ there by at least `threshold`: bit `i % 64`
+/// of `bits[i / 64]` for place `i` (the words replace what `bits` held, and
+/// the bits past the last place are clear). On AVX-512 and AVX2, 64 or 32
+/// places a step.
+pub(crate) fn differ_bits(a: &[u8], b: &[u8], threshold: u8, bits: &mut Vec<u64>) {
+    assert_eq!(a.len(), b.len());
+    let len = a.len();
+    bits.clear();
+    bits.resize(len.div_ceil(64), 0);
+    #[cfg_attr(not(target_arch = "x86_64"), allow(unused_mut))]
+    let mut done = 0;
+    #[cfg(target_arch = "x86_64")]
+    if backend() == Backend::Avx2 {
+        // SAFETY: AVX-512 BW where `vnni()` reported 512-bit vectors, else
+        // AVX2 (`backend()`); `bits` has a bit for each of `len` places.
+        done = unsafe {
+            if vnni() == Some(Vnni::Zmm) {
+                x86::differ_bits_zmm(a, b, threshold, bits)
+            } else {
+                x86::differ_bits_avx2(a, b, threshold, bits)
+            }
+        };
+    }
+    for (i, (x, y)) in a.iter().zip(b).enumerate().skip(done) {
+        if x.abs_diff(*y) >= threshold {
+            bits[i / 64] |= 1 << (i % 64);
+        }
+    }
+}
+
 /// For each pixel of two rows of RGBA pixels (`a` and `b`, as long as each
 /// other), whether it moved: when the weighted sum of its channels'
 /// differences, `Σ weights[c] · |a[c] - b[c]|` over red, green and blue,
@@ -1271,6 +1331,169 @@ fn count_runs(buckets: &[u32], starts: &[u32], histogram: usize, counts: &mut [u
 
 mod x86 {
     use std::arch::x86_64::*;
+
+    /// [`super::luma_into`] 16 pixels a step; returns how many pixels it
+    /// did (whole steps).
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F and BW; `out` has a byte for each pixel of `rgba`.
+    #[target_feature(enable = "avx512f,avx512bw")]
+    pub(super) unsafe fn luma_zmm(rgba: &[u8], out: &mut [u8]) -> usize {
+        let pixels = (rgba.len() / 4).min(out.len());
+        let (red_green, blue) = (
+            _mm512_set1_epi32((19595u32 | ((38470u32.wrapping_sub(65536)) << 16)) as i32),
+            _mm512_set1_epi32(7471),
+        );
+        let (byte, second, green, half) = (
+            _mm512_set1_epi32(0xff),
+            _mm512_set1_epi32(0xff00),
+            _mm512_set1_epi32(0x00ff_0000),
+            _mm512_set1_epi32(32768),
+        );
+        let mut i = 0;
+        while i + 16 <= pixels {
+            // SAFETY: 16 pixels from `i`.
+            let v = unsafe { _mm512_loadu_si512(rgba.as_ptr().add(4 * i).cast()) };
+            // Red and green as 16-bit halves (green's byte moved up), blue
+            // alone; green's 65536 · g as the lane shifted.
+            let rg = _mm512_or_si512(
+                _mm512_and_si512(v, byte),
+                _mm512_slli_epi32::<8>(_mm512_and_si512(v, second)),
+            );
+            let b = _mm512_and_si512(_mm512_srli_epi32::<16>(v), byte);
+            let sum = _mm512_add_epi32(
+                _mm512_add_epi32(_mm512_madd_epi16(rg, red_green), _mm512_madd_epi16(b, blue)),
+                _mm512_add_epi32(_mm512_and_si512(_mm512_slli_epi32::<8>(v), green), half),
+            );
+            let luma = _mm512_cvtepi32_epi8(_mm512_srli_epi32::<16>(sum));
+            // SAFETY: 16 bytes from `i` within `out`.
+            unsafe { _mm_storeu_si128(out.as_mut_ptr().add(i).cast(), luma) };
+            i += 16;
+        }
+        i
+    }
+
+    /// [`luma_zmm`] on AVX2, 16 pixels a step in two vectors, packed down
+    /// to bytes and put back in order.
+    ///
+    /// # Safety
+    ///
+    /// AVX2; `out` has a byte for each pixel of `rgba`.
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn luma_avx2(rgba: &[u8], out: &mut [u8]) -> usize {
+        let pixels = (rgba.len() / 4).min(out.len());
+        let (red_green, blue) = (
+            _mm256_set1_epi32((19595u32 | ((38470u32.wrapping_sub(65536)) << 16)) as i32),
+            _mm256_set1_epi32(7471),
+        );
+        let (byte, second, green, half) = (
+            _mm256_set1_epi32(0xff),
+            _mm256_set1_epi32(0xff00),
+            _mm256_set1_epi32(0x00ff_0000),
+            _mm256_set1_epi32(32768),
+        );
+        let weigh = |v: __m256i| {
+            let rg = _mm256_or_si256(
+                _mm256_and_si256(v, byte),
+                _mm256_slli_epi32::<8>(_mm256_and_si256(v, second)),
+            );
+            let b = _mm256_and_si256(_mm256_srli_epi32::<16>(v), byte);
+            let sum = _mm256_add_epi32(
+                _mm256_add_epi32(_mm256_madd_epi16(rg, red_green), _mm256_madd_epi16(b, blue)),
+                _mm256_add_epi32(_mm256_and_si256(_mm256_slli_epi32::<8>(v), green), half),
+            );
+            _mm256_srli_epi32::<16>(sum)
+        };
+        let order = _mm256_setr_epi32(0, 4, 1, 5, 2, 6, 3, 7);
+        let mut i = 0;
+        while i + 16 <= pixels {
+            // SAFETY: 16 pixels from `i`.
+            let (first, last) = unsafe {
+                (
+                    _mm256_loadu_si256(rgba.as_ptr().add(4 * i).cast()),
+                    _mm256_loadu_si256(rgba.as_ptr().add(4 * i + 32).cast()),
+                )
+            };
+            // Words [first 0-3, last 0-3 | first 4-7, last 4-7], then
+            // bytes; dwords 0, 4, 1, 5 are the 16 in order.
+            let words = _mm256_packus_epi32(weigh(first), weigh(last));
+            let bytes = _mm256_packus_epi16(words, words);
+            let ordered = _mm256_permutevar8x32_epi32(bytes, order);
+            // SAFETY: 16 bytes from `i` within `out`.
+            unsafe {
+                _mm_storeu_si128(
+                    out.as_mut_ptr().add(i).cast(),
+                    _mm256_castsi256_si128(ordered),
+                )
+            };
+            i += 16;
+        }
+        i
+    }
+
+    /// [`super::differ_bits`] 64 places a step; returns how many places it
+    /// judged (whole steps).
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F and BW; `bits` has a bit for each place, clear.
+    #[target_feature(enable = "avx512f,avx512bw")]
+    pub(super) unsafe fn differ_bits_zmm(
+        a: &[u8],
+        b: &[u8],
+        threshold: u8,
+        bits: &mut [u64],
+    ) -> usize {
+        let len = a.len().min(b.len());
+        let threshold = _mm512_set1_epi8(threshold as i8);
+        let mut i = 0;
+        while i + 64 <= len {
+            // SAFETY: 64 bytes from `i` within both.
+            let (x, y) = unsafe {
+                (
+                    _mm512_loadu_si512(a.as_ptr().add(i).cast()),
+                    _mm512_loadu_si512(b.as_ptr().add(i).cast()),
+                )
+            };
+            let difference = _mm512_or_si512(_mm512_subs_epu8(x, y), _mm512_subs_epu8(y, x));
+            bits[i / 64] = _mm512_cmpge_epu8_mask(difference, threshold);
+            i += 64;
+        }
+        i
+    }
+
+    /// [`differ_bits_zmm`] 32 places a step, on AVX2: a difference is at
+    /// least the threshold where the larger of the two is the difference.
+    ///
+    /// # Safety
+    ///
+    /// AVX2; `bits` has a bit for each place, clear.
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn differ_bits_avx2(
+        a: &[u8],
+        b: &[u8],
+        threshold: u8,
+        bits: &mut [u64],
+    ) -> usize {
+        let len = a.len().min(b.len());
+        let threshold = _mm256_set1_epi8(threshold as i8);
+        let mut i = 0;
+        while i + 32 <= len {
+            // SAFETY: 32 bytes from `i` within both.
+            let (x, y) = unsafe {
+                (
+                    _mm256_loadu_si256(a.as_ptr().add(i).cast()),
+                    _mm256_loadu_si256(b.as_ptr().add(i).cast()),
+                )
+            };
+            let difference = _mm256_or_si256(_mm256_subs_epu8(x, y), _mm256_subs_epu8(y, x));
+            let at_least = _mm256_cmpeq_epi8(_mm256_max_epu8(difference, threshold), difference);
+            bits[i / 64] |= u64::from(_mm256_movemask_epi8(at_least) as u32) << (i % 64);
+            i += 32;
+        }
+        i
+    }
 
     /// [`super::largest_difference`] 64 bytes a step; returns the largest
     /// of those and how many bytes were looked at (whole steps).
@@ -5004,6 +5227,103 @@ mod tests {
                         assert_eq!(starts[0], 0, "{path}");
                         assert_eq!(starts[runs], w as u32, "{path}");
                         assert_eq!(pixels, one_by_one, "width {w}, step {step} on {path}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn luminance_in_vectors_is_the_luminance_of_each_pixel() {
+        // Every colour (every third level of each channel where the build
+        // is slow), with a random alpha, in rows of varied length.
+        let step = if cfg!(debug_assertions) { 3 } else { 1 };
+        let mut rgba = Vec::new();
+        for r in (0..=255u32).step_by(step) {
+            for g in (0..=255u32).step_by(step) {
+                for b in (0..=255u32).step_by(step) {
+                    rgba.extend([r as u8, g as u8, b as u8, (r * 7 + g * 3 + b) as u8]);
+                }
+            }
+        }
+        let expected: Vec<u8> = rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|p| crate::threshold::luma(u32::from_le_bytes(*p)))
+            .collect();
+        let mut out = vec![9u8; 3];
+        luma_into(&rgba, &mut out);
+        assert_eq!(&out[..3], &[9, 9, 9]);
+        assert!(out[3..] == expected[..], "added after what was there");
+        for len in [0usize, 1, 15, 16, 17, 33, 100] {
+            let mut out = Vec::new();
+            luma_into(&rgba[..4 * len], &mut out);
+            assert_eq!(out, expected[..len], "{len} pixels");
+        }
+        #[cfg(target_arch = "x86_64")]
+        {
+            let pixels = expected.len();
+            if is_x86_feature_detected!("avx2") {
+                let mut out = vec![0u8; pixels];
+                // SAFETY: the CPU reported AVX2; `out` has a byte a pixel.
+                let done = unsafe { x86::luma_avx2(&rgba, &mut out) };
+                assert_eq!(done, pixels / 16 * 16);
+                assert!(out[..done] == expected[..done], "avx2");
+            }
+            if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512bw") {
+                let mut out = vec![0u8; pixels];
+                // SAFETY: the CPU reported AVX-512 F and BW; as above.
+                let done = unsafe { x86::luma_zmm(&rgba, &mut out) };
+                assert_eq!(done, pixels / 16 * 16);
+                assert!(out[..done] == expected[..done], "avx-512");
+            }
+        }
+    }
+
+    #[test]
+    fn differences_marked_in_vectors_are_the_differences_one_at_a_time() {
+        for len in [0usize, 1, 31, 32, 33, 63, 64, 65, 100, 1000, 3840] {
+            let a = noise(len, len as u32 + 11);
+            let b: Vec<u8> = a
+                .iter()
+                .zip(noise(len, len as u32 + 12))
+                .map(|(&v, r)| {
+                    if r % 3 == 0 {
+                        v.wrapping_add(r % 80)
+                    } else {
+                        v
+                    }
+                })
+                .collect();
+            for threshold in [0u8, 1, 40, 79, 80, 255] {
+                let expected = |upto: usize| {
+                    let mut bits = vec![0u64; len.div_ceil(64)];
+                    for i in 0..upto {
+                        if a[i].abs_diff(b[i]) >= threshold {
+                            bits[i / 64] |= 1 << (i % 64);
+                        }
+                    }
+                    bits
+                };
+                let mut bits = vec![5u64; 2];
+                differ_bits(&a, &b, threshold, &mut bits);
+                assert_eq!(bits, expected(len), "{len} at {threshold}");
+                #[cfg(target_arch = "x86_64")]
+                {
+                    if is_x86_feature_detected!("avx2") {
+                        let mut bits = vec![0u64; len.div_ceil(64)];
+                        // SAFETY: the CPU reported AVX2; `bits` has a bit a place.
+                        let done = unsafe { x86::differ_bits_avx2(&a, &b, threshold, &mut bits) };
+                        assert_eq!(done, len / 32 * 32);
+                        assert_eq!(bits, expected(done), "avx2: {len} at {threshold}");
+                    }
+                    if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512bw") {
+                        let mut bits = vec![0u64; len.div_ceil(64)];
+                        // SAFETY: the CPU reported AVX-512 F and BW; as above.
+                        let done = unsafe { x86::differ_bits_zmm(&a, &b, threshold, &mut bits) };
+                        assert_eq!(done, len / 64 * 64);
+                        assert_eq!(bits, expected(done), "zmm: {len} at {threshold}");
                     }
                 }
             }
