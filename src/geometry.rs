@@ -616,7 +616,11 @@ fn walk_bar(
     let mut left = Some(fill.x);
     walk(Box::new(move || {
         let current = left?;
-        left = if current == search_left {
+        // Column 0 ends the walk too, for a fill left of the search: the
+        // walk went on there into columns past the image's width (by
+        // wrapping), which are neither filled nor empty and were never
+        // counted.
+        left = if current == search_left || current == 0 {
             None
         } else {
             Some(current - 1)
