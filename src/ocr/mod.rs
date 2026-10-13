@@ -640,7 +640,30 @@ fn write_temp_image_in(dir: &Path, image: &DynamicImage) -> Option<TempImage> {
     None
 }
 
+/// Where Tesseract is ([`search_tesseract_binary`]), the answer kept for a
+/// few seconds and while the variables it is looked up by stay the same:
+/// the search asks the file system about two names in every directory on
+/// the PATH, which on Windows costs a millisecond or more, and the vision
+/// asks whether an engine is there on every frame.
 fn find_tesseract_binary() -> Option<PathBuf> {
+    type Found = (std::time::Instant, [Option<OsString>; 3], Option<PathBuf>);
+    static FOUND: std::sync::Mutex<Option<Found>> = std::sync::Mutex::new(None);
+    const FRESH_FOR: std::time::Duration = std::time::Duration::from_secs(10);
+    let asked = ["TESSERACT_BIN", "PATH", "LOCALAPPDATA"].map(env::var_os);
+    let mut found = FOUND.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((at, by, path)) = found.as_ref()
+        && *by == asked
+        && at.elapsed() < FRESH_FOR
+    {
+        return path.clone();
+    }
+    let path = search_tesseract_binary();
+    *found = Some((std::time::Instant::now(), asked, path.clone()));
+    path
+}
+
+/// Tesseract on `TESSERACT_BIN`, the PATH or its standard install paths.
+fn search_tesseract_binary() -> Option<PathBuf> {
     if let Some(path) = env::var_os("TESSERACT_BIN") {
         let candidate = PathBuf::from(path);
         if candidate.is_file() {
