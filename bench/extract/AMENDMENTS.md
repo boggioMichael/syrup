@@ -24,4 +24,25 @@ data existed.
 
 ## After G0
 
-None yet.
+3. **Chat and names are kept off every copy, not masked at capture**
+   (13 October 2026, DATA.md "Consent and privacy"). The recorder
+   ([capture/record.ps1](capture/record.ps1)) keeps frames on the owner's PC,
+   saves only the bottom strip of the game area unless asked for whole frames,
+   and the extraction, which runs on that PC, copies only the HP, MP and EXP
+   crops. *Why:* a recorder cannot find the chat window reliably on every
+   layout, while copying only field crops keeps chat and names out of every
+   copy without having to find them. *Data seen:* no test data exists; the
+   owner's learned crops (dev data) showed where the fields sit.
+4. **Identical crops count once per session** (13 October 2026, DATA.md
+   "Splits and sealing"). Within a session, a crop identical pixel for pixel
+   to one already kept is dropped, so a set's size counts distinct lines,
+   icons or tiles. *Why:* the HUD shows the same value for many frames in a
+   row; repeated identical crops add no evidence and would overstate certainty
+   (the rule of three counts them as independent). *Data seen:* none of the
+   test data.
+5. **A task A label is the visible characters, left to right, without
+   spaces** (13 October 2026, DATA.md "Labelling"). For example
+   `7,360[53.66%]`, not the teacher's `7,36053.66%`. *Why:* MapleSyrup's
+   teacher spells the same line in several ways, and an exact-string measure
+   needs one spelling. *Data seen:* the owner's learned font samples (dev
+   data), where the same EXP line was spelled with and without brackets.

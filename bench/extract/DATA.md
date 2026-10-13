@@ -45,9 +45,12 @@ player's data is used:
 
 ## Consent and privacy
 
-- The owner's own recordings are used with the owner's consent. The chat window
-  is masked at capture time, and the text inside name tags is blanked before
-  labelling; the tag's box stays, because it locates the player.
+- The owner's own recordings are used with the owner's consent. Frames stay on
+  the owner's PC; the recorder keeps only the bottom strip of the game area by
+  default, and the extraction, run on that PC, copies only the HP, MP and EXP
+  crops, so chat and names never leave it (amendment 3). For task C, the text
+  inside name tags is blanked before labelling; the tag's box stays, because it
+  locates the player.
 - Other players take part only by opting in inside MapleSyrup, and can withdraw.
   Processing happens on their machine. Only the crop around a disagreement
   leaves it, never chat, never a whole frame.
@@ -66,7 +69,9 @@ from the game enters this public repository.
 ## Splits and sealing
 
 - Splits are by session, never by frame, because frames of one session are
-  near copies of each other.
+  near copies of each other. Within a session, a crop identical pixel for
+  pixel to one already kept is dropped, so sizes count distinct items
+  (amendment 4).
 - Test sessions are sealed before anything runs on them: `seal.py write` lists
   the SHA-256 of every file in `sealed/<name>.sha256`, and that list is
   committed. The files stay private.
@@ -79,7 +84,8 @@ from the game enters this public repository.
 
 - **Task A, HUD text:** every line is read by a person. The current reader's
   output is shown as a suggestion, and the person confirms or corrects it at full
-  resolution.
+  resolution. A label is the visible characters, left to right, without spaces
+  (amendment 5).
 - **Task B, icons:** the label set is written first, from the game's own skill
   and buff names. A person labels every icon.
 - **Task C, objects:** class definitions are written before labelling. Boxes may
