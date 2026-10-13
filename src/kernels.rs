@@ -463,29 +463,44 @@ pub(crate) fn correlate_everywhere(
     w: usize,
     h: usize,
 ) -> Vec<u32> {
+    let mut out = Vec::new();
+    correlate_everywhere_into(plane, width, height, weights, w, h, &mut out);
+    out
+}
+
+/// [`correlate_everywhere`] into `out` (replacing what it held, and
+/// reusing its room).
+pub(crate) fn correlate_everywhere_into(
+    plane: &[u8],
+    width: usize,
+    height: usize,
+    weights: &[u8],
+    w: usize,
+    h: usize,
+    out: &mut Vec<u32>,
+) {
     assert!(w > 0 && h > 0 && w <= width && h <= height);
     assert!(plane.len() >= width * height && weights.len() >= w * h);
     let (columns, rows) = (width - w + 1, height - h + 1);
-    let mut out = vec![0u32; columns * rows];
+    out.resize(columns * rows, 0);
     #[cfg(target_arch = "x86_64")]
     if let Some(vnni) = vnni() {
         // SAFETY: `vnni()` reported the instructions on this CPU; the sizes
-        // are checked above.
-        unsafe {
-            x86::correlate_everywhere_vnni(vnni, &mut out, plane, width, height, weights, w, h)
-        };
-        return out;
+        // are checked above. The kernel writes every position.
+        unsafe { x86::correlate_everywhere_vnni(vnni, out, plane, width, height, weights, w, h) };
+        return;
     }
+    // The paths below add into the totals.
+    out.fill(0);
     match backend() {
         #[cfg(target_arch = "x86_64")]
         // SAFETY: `backend()` reported AVX2 on this CPU; the sizes are
         // checked above.
         Backend::Avx2 => unsafe {
-            x86::correlate_everywhere_avx2(&mut out, plane, width, height, weights, w, h)
+            x86::correlate_everywhere_avx2(out, plane, width, height, weights, w, h)
         },
-        _ => correlate_everywhere_rows(&mut out, plane, width, weights, w, h),
+        _ => correlate_everywhere_rows(out, plane, width, weights, w, h),
     }
-    out
 }
 
 /// The normalised correlation of a template with a window, from the

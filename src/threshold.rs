@@ -34,6 +34,19 @@ pub enum Channel {
 /// The chosen channel of `region` as a grey image the size of the region
 /// (clipped to the image).
 pub fn channel_image(image: &RgbaImage, region: Rect, channel: Channel) -> GrayImage {
+    let mut out = Vec::new();
+    let (width, height) = channel_rows_into(image, region, channel, &mut out);
+    GrayImage::from_raw(width, height, out).expect("buffer sized to the region")
+}
+
+/// [`channel_image`]'s pixels, row by row, added to `out` (whose room is
+/// reused): the region's width and height (clipped to the image).
+pub(crate) fn channel_rows_into(
+    image: &RgbaImage,
+    region: Rect,
+    channel: Channel,
+    out: &mut Vec<u8>,
+) -> (u32, u32) {
     // The loop below is plain integer arithmetic. Built for the x86-64
     // baseline (SSE2) it cannot multiply 32-bit lanes and runs a pixel at
     // a time; built for AVX2 it does eight at once. The same integers
@@ -42,30 +55,40 @@ pub fn channel_image(image: &RgbaImage, region: Rect, channel: Channel) -> GrayI
     #[cfg(target_arch = "x86_64")]
     if crate::kernels::backend() == crate::kernels::Backend::Avx2 {
         // Safety: the backend is AVX2 only when the CPU reports AVX2.
-        return unsafe { channel_image_avx2(image, region, channel) };
+        return unsafe { channel_rows_avx2(image, region, channel, out) };
     }
-    channel_image_plain(image, region, channel)
+    channel_rows_plain(image, region, channel, out)
 }
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-unsafe fn channel_image_avx2(image: &RgbaImage, region: Rect, channel: Channel) -> GrayImage {
-    channel_image_plain(image, region, channel)
+unsafe fn channel_rows_avx2(
+    image: &RgbaImage,
+    region: Rect,
+    channel: Channel,
+    out: &mut Vec<u8>,
+) -> (u32, u32) {
+    channel_rows_plain(image, region, channel, out)
 }
 
 #[inline(always)]
-fn channel_image_plain(image: &RgbaImage, region: Rect, channel: Channel) -> GrayImage {
+fn channel_rows_plain(
+    image: &RgbaImage,
+    region: Rect,
+    channel: Channel,
+    out: &mut Vec<u8>,
+) -> (u32, u32) {
     let x_end = region.x.saturating_add(region.w).min(image.width());
     let y_end = region.y.saturating_add(region.h).min(image.height());
     if region.x >= x_end || region.y >= y_end {
-        return GrayImage::new(0, 0);
+        return (0, 0);
     }
     let (width, height) = (x_end - region.x, y_end - region.y);
     let row_len = width as usize;
     let stride = image.width() as usize * 4;
     let raw = image.as_raw();
     // Filled row by row as it is computed, never cleared first.
-    let mut out = Vec::with_capacity(row_len * height as usize);
+    out.reserve(row_len * height as usize);
     for y in region.y..y_end {
         let start = y as usize * stride + region.x as usize * 4;
         // Pixels as arrays rather than slices: no bounds checks, so each
@@ -81,7 +104,7 @@ fn channel_image_plain(image: &RgbaImage, region: Rect, channel: Channel) -> Gra
             Channel::Max => out.extend(pixels.map(|p| p[0].max(p[1]).max(p[2]))),
         }
     }
-    GrayImage::from_raw(width, height, out).expect("buffer sized to the region")
+    (width, height)
 }
 
 /// Rec. 601 luma (0.299, 0.587, 0.114) in 16-bit fixed point, rounded to
@@ -527,10 +550,19 @@ mod tests {
                     (90, 40, 33, 9),
                 ] {
                     let region = Rect { x, y, w, h };
-                    let plain = channel_image_plain(&image, region, channel);
+                    let (mut plain, mut wide) = (Vec::new(), vec![7u8]);
+                    let size = channel_rows_plain(&image, region, channel, &mut plain);
                     // SAFETY: the CPU reported AVX2 just above.
-                    let wide = unsafe { channel_image_avx2(&image, region, channel) };
-                    assert_eq!(plain, wide, "{channel:?} {region:?}");
+                    let wide_size =
+                        unsafe { channel_rows_avx2(&image, region, channel, &mut wide) };
+                    assert_eq!(size, wide_size, "{channel:?} {region:?}");
+                    assert_eq!(wide[0], 7, "added to what the buffer held");
+                    assert_eq!(plain, wide[1..], "{channel:?} {region:?}");
+                    assert_eq!(
+                        channel_image(&image, region, channel).as_raw(),
+                        &plain,
+                        "{channel:?} {region:?}"
+                    );
                 }
             }
         }

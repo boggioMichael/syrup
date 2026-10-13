@@ -787,7 +787,7 @@ impl Plane {
     /// the edge pixel; an odd last row or column is dropped.
     fn half(&self) -> Plane {
         let (width, height) = (self.width / 2, self.height / 2);
-        let mut pixels = Vec::with_capacity(width * height);
+        let mut pixels = spare_buffer(width * height);
         if width == 0 || height == 0 {
             return Plane {
                 width,
@@ -1139,6 +1139,14 @@ fn products_everywhere(plane: &Plane, template: &TemplateLevel) -> Vec<u32> {
     )
 }
 
+thread_local! {
+    /// The products of the searches of `peaks_everywhere`, kept from one
+    /// to the next: megabytes for a band of a 4K frame, which the system
+    /// allocator (on Windows, at that size, fresh memory from the system
+    /// every time) would hand out and fault in anew every search.
+    static PRODUCTS: std::cell::RefCell<Vec<Vec<u32>>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
 /// What `local_maxima(&score_everywhere(plane, level), .., floor, limit)`
 /// returns, for each of `levels` (all of one size): with a positive floor,
 /// from only the positions scoring at least the floor
@@ -1159,25 +1167,38 @@ fn peaks_everywhere(
         .iter()
         .all(|l| (l.inner.width, l.inner.height) == (w, h) && l.area() <= MAX_AREA_32);
     if floor > 0.0 && alike {
-        let products: Vec<Vec<u32>> = levels
-            .iter()
-            .map(|level| products_everywhere(plane, level))
-            .collect();
-        let templates: Vec<(&[u32], i64, i64)> = products
-            .iter()
-            .zip(levels)
-            .map(|(p, level)| (p.as_slice(), level.sum, level.spread))
-            .collect();
-        let mut hits = vec![Vec::new(); levels.len()];
-        crate::kernels::hits_everywhere(
-            &plane.pixels,
-            plane.width,
-            plane.height,
-            (w, h),
-            &templates,
-            floor,
-            &mut hits,
-        );
+        let hits = PRODUCTS.with_borrow_mut(|products| {
+            if products.len() < levels.len() {
+                products.resize_with(levels.len(), Vec::new);
+            }
+            for (out, level) in products.iter_mut().zip(levels) {
+                crate::kernels::correlate_everywhere_into(
+                    &plane.pixels,
+                    plane.width,
+                    plane.height,
+                    &level.inner.pixels,
+                    w,
+                    h,
+                    out,
+                );
+            }
+            let templates: Vec<(&[u32], i64, i64)> = products
+                .iter()
+                .zip(levels)
+                .map(|(p, level)| (p.as_slice(), level.sum, level.spread))
+                .collect();
+            let mut hits = vec![Vec::new(); levels.len()];
+            crate::kernels::hits_everywhere(
+                &plane.pixels,
+                plane.width,
+                plane.height,
+                (w, h),
+                &templates,
+                floor,
+                &mut hits,
+            );
+            hits
+        });
         return hits
             .iter()
             .map(|hits| peaks_among(hits, columns, rows, limit))
@@ -1492,6 +1513,46 @@ fn run_with(
         .collect()
 }
 
+/// Grey planes of pyramids past, kept for the next ones: a band of a 4K
+/// frame is megabytes, which the system allocator (on Windows, at that
+/// size, fresh memory from the system every time) would hand out and fault
+/// in anew every frame. At most `SPARE_BYTES` are kept; buffers under 64 KiB
+/// are left to the allocator.
+static SPARE_PLANES: std::sync::Mutex<Vec<Vec<u8>>> = std::sync::Mutex::new(Vec::new());
+const SPARE_BYTES: usize = 64 << 20;
+
+/// An empty buffer with room for `len` bytes: the smallest kept one that
+/// holds them, or a new one.
+fn spare_buffer(len: usize) -> Vec<u8> {
+    if len >= 64 << 10 {
+        let mut spares = SPARE_PLANES.lock().unwrap_or_else(|e| e.into_inner());
+        let best = spares
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.capacity() >= len)
+            .min_by_key(|(_, b)| b.capacity())
+            .map(|(i, _)| i);
+        if let Some(i) = best {
+            let mut buffer = spares.swap_remove(i);
+            buffer.clear();
+            return buffer;
+        }
+    }
+    Vec::with_capacity(len)
+}
+
+/// Keeps `buffer` for a later [`spare_buffer`], room allowing.
+fn keep_spare(buffer: Vec<u8>) {
+    if buffer.capacity() < 64 << 10 {
+        return;
+    }
+    let mut spares = SPARE_PLANES.lock().unwrap_or_else(|e| e.into_inner());
+    let kept: usize = spares.iter().map(Vec::capacity).sum();
+    if kept + buffer.capacity() <= SPARE_BYTES {
+        spares.push(buffer);
+    }
+}
+
 /// The search region of a frame on one channel, at full size and halved
 /// `depth` times: built once, shared by every template of a search (and
 /// by every search of a [`Prepared`] frame).
@@ -1531,11 +1592,11 @@ impl Pyramid {
                 let (d0, d1) = (d.search.y, d.search.y + d.search.h);
                 let (from, to) = (y0.max(d0), y1.min(d1));
                 let width = search.w as usize;
-                let mut pixels = Vec::with_capacity(width * search.h as usize);
+                let mut pixels = spare_buffer(width * search.h as usize);
                 let convert = |y: u32, h: u32, pixels: &mut Vec<u8>| {
                     if h > 0 {
                         let rows = Rect { y, h, ..search };
-                        pixels.extend_from_slice(channel_image(image, rows, channel).as_raw());
+                        crate::threshold::channel_rows_into(image, rows, channel, pixels);
                     }
                 };
                 convert(y0, from - y0, &mut pixels);
@@ -1549,7 +1610,16 @@ impl Pyramid {
                     pixels,
                 }]
             }
-            None => vec![Plane::from_gray(channel_image(image, search, channel))],
+            None => {
+                let mut pixels = spare_buffer(search.w as usize * search.h as usize);
+                let (width, height) =
+                    crate::threshold::channel_rows_into(image, search, channel, &mut pixels);
+                vec![Plane {
+                    width: width as usize,
+                    height: height as usize,
+                    pixels,
+                }]
+            }
         };
         planes.truncate(depth + 1);
         while planes.len() <= depth {
@@ -1576,6 +1646,15 @@ impl Pyramid {
             && (self.search.x, self.search.w) == (search.x, search.w)
             && self.search.y < search.y + search.h
             && search.y < self.search.y + self.search.h
+    }
+}
+
+impl Drop for Pyramid {
+    /// Its planes kept for the next frame's pyramids.
+    fn drop(&mut self) {
+        for plane in self.planes.drain(..) {
+            keep_spare(plane.pixels);
+        }
     }
 }
 
