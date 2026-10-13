@@ -1166,6 +1166,79 @@ pub(crate) fn bucket_counts(
     false
 }
 
+/// The largest difference between bytes at the same place in `a` and `b`
+/// (as long as each other), 64 or 32 at a time on AVX-512 and AVX2.
+pub(crate) fn largest_difference(a: &[u8], b: &[u8]) -> u8 {
+    assert_eq!(a.len(), b.len());
+    #[cfg_attr(not(target_arch = "x86_64"), allow(unused_mut))]
+    let (mut largest, mut done) = (0u8, 0usize);
+    #[cfg(target_arch = "x86_64")]
+    if backend() == Backend::Avx2 {
+        // SAFETY: AVX-512 BW where `vnni()` reported 512-bit vectors, else
+        // AVX2 (`backend()`); both slices hold `a.len()` bytes.
+        (largest, done) = unsafe {
+            if vnni() == Some(Vnni::Zmm) {
+                x86::largest_difference_zmm(a, b)
+            } else {
+                x86::largest_difference_avx2(a, b)
+            }
+        };
+    }
+    a[done..]
+        .iter()
+        .zip(&b[done..])
+        .map(|(x, y)| x.abs_diff(*y))
+        .fold(largest, u8::max)
+}
+
+/// For each pixel of two rows of RGBA pixels (`a` and `b`, as long as each
+/// other), whether it moved: when the weighted sum of its channels'
+/// differences, `Σ weights[c] · |a[c] - b[c]|` over red, green and blue,
+/// reaches `limit`. As bits: bit `i % 64` of `bits[i / 64]` for pixel `i`
+/// (the words replace what `bits` held, and the bits past the last pixel
+/// are clear). Returns how many moved. On AVX-512 and AVX2 16 or 8 pixels
+/// at a time, in the very integers of one at a time; each weight must be
+/// under 2^16.
+pub(crate) fn moved_bits(
+    a: &[u8],
+    b: &[u8],
+    weights: [u32; 3],
+    limit: u32,
+    bits: &mut Vec<u64>,
+) -> u32 {
+    assert!(a.len() == b.len() && a.len().is_multiple_of(4));
+    assert!(weights.iter().all(|&w| w < 1 << 16));
+    let pixels = a.len() / 4;
+    bits.clear();
+    bits.resize(pixels.div_ceil(64), 0);
+    #[cfg_attr(not(target_arch = "x86_64"), allow(unused_mut))]
+    let (mut moved, mut done) = (0u32, 0usize);
+    #[cfg(target_arch = "x86_64")]
+    if backend() == Backend::Avx2 {
+        // SAFETY: AVX-512 F and BW where `vnni()` reported 512-bit vectors,
+        // else AVX2 (`backend()`); the rows hold `pixels` pixels and `bits`
+        // a bit for each.
+        (moved, done) = unsafe {
+            if vnni() == Some(Vnni::Zmm) {
+                x86::moved_bits_zmm(a, b, weights, limit, bits)
+            } else {
+                x86::moved_bits_avx2(a, b, weights, limit, bits)
+            }
+        };
+    }
+    let (pixels_a, pixels_b) = (a.as_chunks::<4>().0, b.as_chunks::<4>().0);
+    for (i, (pa, pb)) in pixels_a.iter().zip(pixels_b).enumerate().skip(done) {
+        let sum = weights[0] * u32::from(pa[0].abs_diff(pb[0]))
+            + weights[1] * u32::from(pa[1].abs_diff(pb[1]))
+            + weights[2] * u32::from(pa[2].abs_diff(pb[2]));
+        if sum >= limit {
+            bits[i / 64] |= 1 << (i % 64);
+            moved += 1;
+        }
+    }
+    moved
+}
+
 /// Each run of `buckets` (the pixels from `starts[k]` to `starts[k + 1]`)
 /// added to its bucket's counter, the runs in turn into each of the
 /// histograms of `counts` (`histogram` counters each): four at a time when
@@ -1198,6 +1271,163 @@ fn count_runs(buckets: &[u32], starts: &[u32], histogram: usize, counts: &mut [u
 
 mod x86 {
     use std::arch::x86_64::*;
+
+    /// [`super::largest_difference`] 64 bytes a step; returns the largest
+    /// of those and how many bytes were looked at (whole steps).
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 BW.
+    #[target_feature(enable = "avx512f,avx512bw")]
+    pub(super) unsafe fn largest_difference_zmm(a: &[u8], b: &[u8]) -> (u8, usize) {
+        let len = a.len().min(b.len());
+        let mut largest = _mm512_setzero_si512();
+        let mut i = 0;
+        while i + 64 <= len {
+            // SAFETY: 64 bytes from `i` within both.
+            let (x, y) = unsafe {
+                (
+                    _mm512_loadu_si512(a.as_ptr().add(i).cast()),
+                    _mm512_loadu_si512(b.as_ptr().add(i).cast()),
+                )
+            };
+            let difference = _mm512_or_si512(_mm512_subs_epu8(x, y), _mm512_subs_epu8(y, x));
+            largest = _mm512_max_epu8(largest, difference);
+            i += 64;
+        }
+        let mut bytes = [0u8; 64];
+        // SAFETY: 64 bytes.
+        unsafe { _mm512_storeu_si512(bytes.as_mut_ptr().cast(), largest) };
+        (bytes.into_iter().fold(0, u8::max), i)
+    }
+
+    /// [`largest_difference_zmm`] 32 bytes a step, on AVX2.
+    ///
+    /// # Safety
+    ///
+    /// AVX2.
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn largest_difference_avx2(a: &[u8], b: &[u8]) -> (u8, usize) {
+        let len = a.len().min(b.len());
+        let mut largest = _mm256_setzero_si256();
+        let mut i = 0;
+        while i + 32 <= len {
+            // SAFETY: 32 bytes from `i` within both.
+            let (x, y) = unsafe {
+                (
+                    _mm256_loadu_si256(a.as_ptr().add(i).cast()),
+                    _mm256_loadu_si256(b.as_ptr().add(i).cast()),
+                )
+            };
+            let difference = _mm256_or_si256(_mm256_subs_epu8(x, y), _mm256_subs_epu8(y, x));
+            largest = _mm256_max_epu8(largest, difference);
+            i += 32;
+        }
+        let mut bytes = [0u8; 32];
+        // SAFETY: 32 bytes.
+        unsafe { _mm256_storeu_si256(bytes.as_mut_ptr().cast(), largest) };
+        (bytes.into_iter().fold(0, u8::max), i)
+    }
+
+    /// [`super::moved_bits`] 16 pixels a step: each pixel's channel
+    /// differences (`|a - b|` as the larger less the smaller, saturating),
+    /// weighted in 32-bit lanes; returns how many moved and how many pixels
+    /// were judged (whole steps).
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F and BW; the rows hold `pixels` pixels and `bits` a bit for
+    /// each, clear.
+    #[target_feature(enable = "avx512f,avx512bw")]
+    pub(super) unsafe fn moved_bits_zmm(
+        a: &[u8],
+        b: &[u8],
+        weights: [u32; 3],
+        limit: u32,
+        bits: &mut [u64],
+    ) -> (u32, usize) {
+        let pixels = a.len().min(b.len()) / 4;
+        let byte = _mm512_set1_epi32(0xff);
+        let [red, green, blue] = weights.map(|w| _mm512_set1_epi32(w as i32));
+        let limit = _mm512_set1_epi32(limit as i32);
+        let mut moved = 0u32;
+        let mut i = 0;
+        while i + 16 <= pixels {
+            // SAFETY: 16 pixels from `i` within both rows.
+            let (x, y) = unsafe {
+                (
+                    _mm512_loadu_si512(a.as_ptr().add(4 * i).cast()),
+                    _mm512_loadu_si512(b.as_ptr().add(4 * i).cast()),
+                )
+            };
+            let d = _mm512_or_si512(_mm512_subs_epu8(x, y), _mm512_subs_epu8(y, x));
+            let sum = _mm512_add_epi32(
+                _mm512_add_epi32(
+                    _mm512_mullo_epi32(_mm512_and_si512(d, byte), red),
+                    _mm512_mullo_epi32(_mm512_and_si512(_mm512_srli_epi32::<8>(d), byte), green),
+                ),
+                _mm512_mullo_epi32(_mm512_and_si512(_mm512_srli_epi32::<16>(d), byte), blue),
+            );
+            let m = _mm512_cmpge_epu32_mask(sum, limit);
+            bits[i / 64] |= u64::from(m) << (i % 64);
+            moved += m.count_ones();
+            i += 16;
+        }
+        (moved, i)
+    }
+
+    /// [`moved_bits_zmm`] 8 pixels a step, on AVX2.
+    ///
+    /// # Safety
+    ///
+    /// AVX2; the rows hold `pixels` pixels and `bits` a bit for each, clear.
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn moved_bits_avx2(
+        a: &[u8],
+        b: &[u8],
+        weights: [u32; 3],
+        limit: u32,
+        bits: &mut [u64],
+    ) -> (u32, usize) {
+        let pixels = a.len().min(b.len()) / 4;
+        let byte = _mm256_set1_epi32(0xff);
+        let [red, green, blue] = weights.map(|w| _mm256_set1_epi32(w as i32));
+        // `sum >= limit`, unsigned, as `sum > limit - 1` signed with both
+        // shifted by 2^31; a limit of 0 takes every pixel.
+        let flip = _mm256_set1_epi32(i32::MIN);
+        let below = _mm256_xor_si256(_mm256_set1_epi32(limit.wrapping_sub(1) as i32), flip);
+        let mut moved = 0u32;
+        let mut i = 0;
+        while i + 8 <= pixels {
+            // SAFETY: 8 pixels from `i` within both rows.
+            let (x, y) = unsafe {
+                (
+                    _mm256_loadu_si256(a.as_ptr().add(4 * i).cast()),
+                    _mm256_loadu_si256(b.as_ptr().add(4 * i).cast()),
+                )
+            };
+            let d = _mm256_or_si256(_mm256_subs_epu8(x, y), _mm256_subs_epu8(y, x));
+            let sum = _mm256_add_epi32(
+                _mm256_add_epi32(
+                    _mm256_mullo_epi32(_mm256_and_si256(d, byte), red),
+                    _mm256_mullo_epi32(_mm256_and_si256(_mm256_srli_epi32::<8>(d), byte), green),
+                ),
+                _mm256_mullo_epi32(_mm256_and_si256(_mm256_srli_epi32::<16>(d), byte), blue),
+            );
+            let m = if limit == 0 {
+                0xff
+            } else {
+                _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpgt_epi32(
+                    _mm256_xor_si256(sum, flip),
+                    below,
+                ))) as u32
+            };
+            bits[i / 64] |= u64::from(m) << (i % 64);
+            moved += m.count_ones();
+            i += 8;
+        }
+        (moved, i)
+    }
 
     /// The runs of one bucket along a row of `w` RGBA pixels (as
     /// [`super::bucket_counts`] buckets them, `(magic, per_channel, trash)`
@@ -4774,6 +5004,93 @@ mod tests {
                         assert_eq!(starts[0], 0, "{path}");
                         assert_eq!(starts[runs], w as u32, "{path}");
                         assert_eq!(pixels, one_by_one, "width {w}, step {step} on {path}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn motion_is_judged_in_vectors_as_one_pixel_at_a_time() {
+        let weights = [13933u32, 46871, 4732];
+        for pixels in [0usize, 1, 7, 8, 9, 15, 16, 17, 31, 33, 64, 100, 999] {
+            let a = noise(4 * pixels, pixels as u32 + 3);
+            // Some pixels the same, some a little off, some far.
+            let b: Vec<u8> = a
+                .iter()
+                .zip(noise(4 * pixels, pixels as u32 + 4))
+                .map(|(&v, r)| match r % 4 {
+                    0 => v,
+                    1 => v.wrapping_add(r % 40),
+                    2 => v.saturating_sub(r % 60),
+                    _ => r,
+                })
+                .collect();
+            let largest = a.iter().zip(&b).map(|(x, y)| x.abs_diff(*y)).max();
+            assert_eq!(
+                largest_difference(&a, &b),
+                largest.unwrap_or(0),
+                "{pixels} pixels"
+            );
+            for limit in [0u32, 1, 28 << 16, (28 << 16) - 1, 100 << 16, u32::MAX] {
+                let moved: Vec<bool> = a
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .zip(b.as_chunks::<4>().0)
+                    .map(|(p, q)| {
+                        let sum: u32 = (0..3)
+                            .map(|c| weights[c] * u32::from(p[c].abs_diff(q[c])))
+                            .sum();
+                        sum >= limit
+                    })
+                    .collect();
+                let as_bits = |upto: usize| {
+                    let mut bits = vec![0u64; pixels.div_ceil(64)];
+                    for (i, _) in moved[..upto].iter().enumerate().filter(|(_, m)| **m) {
+                        bits[i / 64] |= 1 << (i % 64);
+                    }
+                    bits
+                };
+                let count = |upto: usize| moved[..upto].iter().filter(|&&m| m).count() as u32;
+                let mut bits = vec![7u64; 3];
+                assert_eq!(moved_bits(&a, &b, weights, limit, &mut bits), count(pixels));
+                assert_eq!(bits, as_bits(pixels), "{pixels} pixels, limit {limit}");
+                #[cfg(target_arch = "x86_64")]
+                {
+                    if is_x86_feature_detected!("avx2") {
+                        let mut bits = vec![0u64; pixels.div_ceil(64)];
+                        // SAFETY: the CPU reported AVX2; the rows hold
+                        // `pixels` pixels and `bits` a bit for each.
+                        let (moved, done) =
+                            unsafe { x86::moved_bits_avx2(&a, &b, weights, limit, &mut bits) };
+                        assert_eq!(done, pixels / 8 * 8);
+                        assert_eq!((moved, bits), (count(done), as_bits(done)), "avx2, {limit}");
+                        // SAFETY: as above.
+                        let (most, looked) = unsafe { x86::largest_difference_avx2(&a, &b) };
+                        assert_eq!(looked, 4 * pixels / 32 * 32);
+                        let within = a[..looked]
+                            .iter()
+                            .zip(&b[..looked])
+                            .map(|(x, y)| x.abs_diff(*y));
+                        assert_eq!(most, within.max().unwrap_or(0));
+                    }
+                    if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512bw") {
+                        let mut bits = vec![0u64; pixels.div_ceil(64)];
+                        // SAFETY: the CPU reported AVX-512 F and BW; the rows
+                        // hold `pixels` pixels and `bits` a bit for each.
+                        let (moved, done) =
+                            unsafe { x86::moved_bits_zmm(&a, &b, weights, limit, &mut bits) };
+                        assert_eq!(done, pixels / 16 * 16);
+                        assert_eq!((moved, bits), (count(done), as_bits(done)), "zmm, {limit}");
+                        // SAFETY: as above.
+                        let (most, looked) = unsafe { x86::largest_difference_zmm(&a, &b) };
+                        assert_eq!(looked, 4 * pixels / 64 * 64);
+                        let within = a[..looked]
+                            .iter()
+                            .zip(&b[..looked])
+                            .map(|(x, y)| x.abs_diff(*y));
+                        assert_eq!(most, within.max().unwrap_or(0));
                     }
                 }
             }
