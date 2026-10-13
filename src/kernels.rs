@@ -107,6 +107,115 @@ pub fn window_stats(
     }
 }
 
+/// Pairs of neighbouring template pixels, row by row, as [`block_stats`]
+/// takes them: `t[2k] | t[2k + 1] << 16`, `w.div_ceil(2)` to a row, the last
+/// pixel of an odd row paired with zero.
+pub(crate) fn weight_pairs(weights: &[u8], w: usize, h: usize) -> Vec<u32> {
+    let half = w.div_ceil(2);
+    let mut pairs = Vec::with_capacity(h * half);
+    for line in weights[..w * h].chunks_exact(w.max(1)) {
+        for k in 0..half {
+            let a = u32::from(line[2 * k]);
+            let b = line.get(2 * k + 1).map_or(0, |&b| u32::from(b));
+            pairs.push(a | (b << 16));
+        }
+    }
+    pairs
+}
+
+/// Largest template area whose sums of products fit in 32 bits.
+const MAX_AREA_32: usize = (u32::MAX / (255 * 255)) as usize;
+
+/// [`window_stats`] at every position of a block: for the `bw`×`bh`
+/// positions from `(x0, y0)`, row by row, `out[j·bw + i]` is the window
+/// whose top left is `(x0 + i, y0 + j)`. The same three sums, computed
+/// together: on AVX2 the products of 8 positions a vector, each row of
+/// pixels loaded once for every position row it reaches, and the pixel
+/// sums slid along columns, where a window at a time sums every pixel
+/// once per position. `pairs` is [`weight_pairs`] of `weights`.
+///
+/// # Panics
+///
+/// When a window or the weights reach past their slices.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn block_stats(
+    pixels: &[u8],
+    stride: usize,
+    (x0, y0): (usize, usize),
+    (bw, bh): (usize, usize),
+    weights: &[u8],
+    pairs: &[u32],
+    (w, h): (usize, usize),
+    out: &mut Vec<(u64, u64, u64)>,
+) {
+    out.clear();
+    if bw == 0 || bh == 0 {
+        return;
+    }
+    assert!(w > 0 && h > 0 && x0 + bw - 1 + w <= stride);
+    assert!(pixels.len() >= (y0 + bh - 1 + h - 1) * stride + x0 + bw - 1 + w);
+    assert!(weights.len() >= w * h && pairs.len() >= w.div_ceil(2) * h);
+    match backend() {
+        #[cfg(target_arch = "x86_64")]
+        // SAFETY: `backend()` reported AVX2 on this CPU; the sizes are
+        // checked above.
+        Backend::Avx2 if w <= MAX_AREA_32 => unsafe {
+            x86::block_stats_avx2(pixels, stride, (x0, y0), (bw, bh), pairs, (w, h), out)
+        },
+        _ => {
+            for y in y0..y0 + bh {
+                for x in x0..x0 + bw {
+                    out.push(window_stats(pixels, stride, x, y, weights, w, h));
+                }
+            }
+        }
+    }
+}
+
+/// Over the `w`×`h` region of an RGBA image (`stride` bytes a row) whose
+/// top left is `(x, y)`: the sums of the red, green and blue of its opaque
+/// pixels (alpha at least 128), and how many there are. Exact integers, so
+/// a mean taken from them is the same whatever order they were added in.
+pub(crate) fn opaque_sums(
+    raw: &[u8],
+    stride: usize,
+    (x, y): (usize, usize),
+    (w, h): (usize, usize),
+) -> ([u64; 3], u64) {
+    if w == 0 || h == 0 {
+        return ([0; 3], 0);
+    }
+    assert!((x + w) * 4 <= stride && raw.len() >= (y + h - 1) * stride + (x + w) * 4);
+    match backend() {
+        #[cfg(target_arch = "x86_64")]
+        // SAFETY: `backend()` reported AVX2 on this CPU; the region is
+        // checked above.
+        Backend::Avx2 => unsafe { x86::opaque_sums_avx2(raw, stride, (x, y), (w, h)) },
+        _ => opaque_sums_scalar(raw, stride, (x, y), (w, h)),
+    }
+}
+
+fn opaque_sums_scalar(
+    raw: &[u8],
+    stride: usize,
+    (x, y): (usize, usize),
+    (w, h): (usize, usize),
+) -> ([u64; 3], u64) {
+    let (mut sums, mut count) = ([0u64; 3], 0u64);
+    for row in y..y + h {
+        let start = row * stride + x * 4;
+        for p in raw[start..start + w * 4].as_chunks::<4>().0 {
+            if p[3] >= 128 {
+                for (sum, &v) in sums.iter_mut().zip(&p[..3]) {
+                    *sum += u64::from(v);
+                }
+                count += 1;
+            }
+        }
+    }
+    (sums, count)
+}
+
 fn window_stats_scalar(
     pixels: &[u8],
     stride: usize,
@@ -190,6 +299,59 @@ pub(crate) fn correlate_everywhere(
         _ => correlate_everywhere_rows(&mut out, plane, width, weights, w, h),
     }
     out
+}
+
+/// One row of a plane halved across, the first pass of the pyramid's
+/// 1-3-3-1 halving: `out[i] = row[2i-1] + 3·row[2i] + 3·row[2i+1] + row[2i+2]`,
+/// the row's first and last pixels standing in for those past its ends.
+/// `out` is half the row, rounded down; each value is at most 8 · 255.
+pub(crate) fn halve_across(row: &[u8], out: &mut [u16]) {
+    assert_eq!(out.len(), row.len() / 2);
+    match backend() {
+        #[cfg(target_arch = "x86_64")]
+        // SAFETY: `backend()` reported AVX2 on this CPU.
+        Backend::Avx2 => unsafe { x86::halve_across_avx2(row, out) },
+        _ => halve_across_scalar(row, out, 0, out.len()),
+    }
+}
+
+/// [`halve_across`] for the outputs `from..to`.
+#[inline(always)]
+fn halve_across_scalar(row: &[u8], out: &mut [u16], from: usize, to: usize) {
+    if from >= to {
+        return;
+    }
+    let last = row.len() - 1;
+    for (i, value) in out[..to].iter_mut().enumerate().skip(from) {
+        let left = u16::from(row[(2 * i).saturating_sub(1)]);
+        let right = u16::from(row[(2 * i + 2).min(last)]);
+        *value = left + 3 * (u16::from(row[2 * i]) + u16::from(row[2 * i + 1])) + right;
+    }
+}
+
+/// Four consecutive rows halved across, combined down — the second pass of
+/// the halving — and appended to `out`:
+/// `(a[i] + 3·b[i] + 3·c[i] + d[i] + 32) / 64`, rounded down. The total
+/// stays within 16 bits (64 · 255 + 32).
+pub(crate) fn combine_down(a: &[u16], b: &[u16], c: &[u16], d: &[u16], out: &mut Vec<u8>) {
+    let n = a.len();
+    assert!(b.len() == n && c.len() == n && d.len() == n);
+    match backend() {
+        #[cfg(target_arch = "x86_64")]
+        // SAFETY: `backend()` reported AVX2 on this CPU; the lengths agree.
+        Backend::Avx2 => unsafe { x86::combine_down_avx2(a, b, c, d, out) },
+        _ => combine_down_scalar(a, b, c, d, out),
+    }
+}
+
+#[inline(always)]
+fn combine_down_scalar(a: &[u16], b: &[u16], c: &[u16], d: &[u16], out: &mut Vec<u8>) {
+    out.extend(
+        a.iter()
+            .zip(b)
+            .zip(c.iter().zip(d))
+            .map(|((&a, &b), (&c, &d))| ((a + 3 * b + 3 * c + d + 32) >> 6) as u8),
+    );
 }
 
 /// Row by row: each template row multiplied into a whole row of positions
@@ -497,6 +659,383 @@ mod x86 {
         }
     }
 
+    /// The block's sums of pixels and of their squares from column totals
+    /// over the template's height, slid down a row at a time, each
+    /// window's slid along its row; the products 8 positions a vector, as
+    /// in `correlate_everywhere_avx2`, from a copy of the block's pixels in
+    /// neighbouring pairs, with up to 8 position rows at once so that each
+    /// load of a pixel pair serves every position row it reaches.
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn block_stats_avx2(
+        pixels: &[u8],
+        stride: usize,
+        (x0, y0): (usize, usize),
+        (bw, bh): (usize, usize),
+        pairs: &[u32],
+        (w, h): (usize, usize),
+        out: &mut Vec<(u64, u64, u64)>,
+    ) {
+        let (span, rows) = (bw - 1 + w, bh - 1 + h);
+        assert!(x0 + span <= stride && pixels.len() >= (y0 + rows - 1) * stride + x0 + span);
+        let half = w.div_ceil(2);
+        assert!(pairs.len() >= half * h && w <= super::MAX_AREA_32);
+        out.clear();
+        out.resize(bw * bh, (0, 0, 0));
+        let row_of = |r: usize| &pixels[(y0 + r) * stride + x0..][..span];
+
+        // Sums and squares.
+        let (mut sums, mut squares) = (vec![0u32; span], vec![0u32; span]);
+        for v in 0..h {
+            for ((s, q), &p) in sums.iter_mut().zip(squares.iter_mut()).zip(row_of(v)) {
+                *s += u32::from(p);
+                *q += u32::from(p) * u32::from(p);
+            }
+        }
+        for j in 0..bh {
+            if j > 0 {
+                let (leaving, entering) = (row_of(j - 1), row_of(j - 1 + h));
+                for (((s, q), &old), &new) in sums
+                    .iter_mut()
+                    .zip(squares.iter_mut())
+                    .zip(leaving)
+                    .zip(entering)
+                {
+                    let (old, new) = (u32::from(old), u32::from(new));
+                    *s = *s + new - old;
+                    *q = *q + new * new - old * old;
+                }
+            }
+            let mut sum: u64 = sums[..w].iter().map(|&s| u64::from(s)).sum();
+            let mut square: u64 = squares[..w].iter().map(|&q| u64::from(q)).sum();
+            for i in 0..bw {
+                if i > 0 {
+                    sum = sum + u64::from(sums[i - 1 + w]) - u64::from(sums[i - 1]);
+                    square = square + u64::from(squares[i - 1 + w]) - u64::from(squares[i - 1]);
+                }
+                let o = &mut out[j * bw + i];
+                o.0 = sum;
+                o.1 = square;
+            }
+        }
+
+        // Products, a strip of 8 position columns at a time.
+        let cols = 8 + 2 * half;
+        let chunk = (super::MAX_AREA_32 / w).max(1);
+        let mut block = vec![0u32; rows * cols];
+        for strip in (0..bw).step_by(8) {
+            let lanes = (bw - strip).min(8);
+            for r in 0..rows {
+                // The whole plane row (less of the last if the slice ends
+                // early): pairs reaching past it read zeros, which meet
+                // only zero weights or positions outside the block.
+                let start = (y0 + r) * stride;
+                let line = &pixels[start..(start + stride).min(pixels.len())];
+                pair_up(line, x0 + strip, &mut block[r * cols..(r + 1) * cols]);
+            }
+            for v0 in (0..h).step_by(chunk) {
+                let v1 = (v0 + chunk).min(h);
+                let mut j0 = 0;
+                while j0 < bh {
+                    let n = (bh - j0).min(8);
+                    let mut lanes_of = [[0u32; 8]; 8];
+                    // SAFETY: rows `j0 + j + v < rows` and every load ends
+                    // within a row of `block` (`2 (half - 1) + 8 <= cols`).
+                    unsafe {
+                        match n {
+                            1 => products_rows::<1>(
+                                &block,
+                                cols,
+                                j0,
+                                pairs,
+                                half,
+                                v0..v1,
+                                &mut lanes_of,
+                            ),
+                            2 => products_rows::<2>(
+                                &block,
+                                cols,
+                                j0,
+                                pairs,
+                                half,
+                                v0..v1,
+                                &mut lanes_of,
+                            ),
+                            3 => products_rows::<3>(
+                                &block,
+                                cols,
+                                j0,
+                                pairs,
+                                half,
+                                v0..v1,
+                                &mut lanes_of,
+                            ),
+                            4 => products_rows::<4>(
+                                &block,
+                                cols,
+                                j0,
+                                pairs,
+                                half,
+                                v0..v1,
+                                &mut lanes_of,
+                            ),
+                            5 => products_rows::<5>(
+                                &block,
+                                cols,
+                                j0,
+                                pairs,
+                                half,
+                                v0..v1,
+                                &mut lanes_of,
+                            ),
+                            6 => products_rows::<6>(
+                                &block,
+                                cols,
+                                j0,
+                                pairs,
+                                half,
+                                v0..v1,
+                                &mut lanes_of,
+                            ),
+                            7 => products_rows::<7>(
+                                &block,
+                                cols,
+                                j0,
+                                pairs,
+                                half,
+                                v0..v1,
+                                &mut lanes_of,
+                            ),
+                            _ => products_rows::<8>(
+                                &block,
+                                cols,
+                                j0,
+                                pairs,
+                                half,
+                                v0..v1,
+                                &mut lanes_of,
+                            ),
+                        }
+                    }
+                    for (j, lane) in lanes_of.iter().enumerate().take(n) {
+                        let at = (j0 + j) * bw + strip;
+                        for (o, &p) in out[at..at + lanes].iter_mut().zip(lane) {
+                            o.2 += u64::from(p);
+                        }
+                    }
+                    j0 += n;
+                }
+            }
+        }
+    }
+
+    /// `out[c] = line[x + c] | line[x + c + 1] << 16`, zero past the line:
+    /// each pixel beside its right-hand neighbour, as 16-bit halves.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    fn pair_up(line: &[u8], x: usize, out: &mut [u32]) {
+        let mut c = 0;
+        // 16 pairs a step, from two loads of 16 pixels a pixel apart.
+        while c + 16 <= out.len() && x + c + 17 <= line.len() {
+            // SAFETY: `x + c + 17 <= line.len()` and `c + 16 <= out.len()`.
+            unsafe {
+                let at = line.as_ptr().add(x + c);
+                let here = _mm256_cvtepu8_epi16(_mm_loadu_si128(at.cast()));
+                let next = _mm256_cvtepu8_epi16(_mm_loadu_si128(at.add(1).cast()));
+                let low = _mm256_unpacklo_epi16(here, next);
+                let high = _mm256_unpackhi_epi16(here, next);
+                let target = out.as_mut_ptr().add(c);
+                _mm256_storeu_si256(target.cast(), _mm256_permute2x128_si256::<0x20>(low, high));
+                _mm256_storeu_si256(
+                    target.add(8).cast(),
+                    _mm256_permute2x128_si256::<0x31>(low, high),
+                );
+            }
+            c += 16;
+        }
+        for (k, pair) in out.iter_mut().enumerate().skip(c) {
+            let a = line.get(x + k).map_or(0, |&p| u32::from(p));
+            let b = line.get(x + k + 1).map_or(0, |&p| u32::from(p));
+            *pair = a | (b << 16);
+        }
+    }
+
+    /// The products of `ROWS` position rows from `j0` with template rows
+    /// `rows`, into the first `ROWS` of `out`: for each pair of template
+    /// pixels, one broadcast, and for each position row a load and a
+    /// multiply-add, the accumulators staying in registers throughout.
+    ///
+    /// # Safety
+    ///
+    /// AVX2, and `block` holds rows `j0 + ROWS - 1 + rows.end - 1` of
+    /// `cols >= 2 half + 6` pairs.
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn products_rows<const ROWS: usize>(
+        block: &[u32],
+        cols: usize,
+        j0: usize,
+        pairs: &[u32],
+        half: usize,
+        rows: std::ops::Range<usize>,
+        out: &mut [[u32; 8]; 8],
+    ) {
+        debug_assert!(block.len() >= (j0 + ROWS - 1 + rows.end) * cols);
+        let mut acc = [_mm256_setzero_si256(); ROWS];
+        let base = block.as_ptr();
+        for v in rows {
+            for (k, &pair) in pairs[v * half..(v + 1) * half].iter().enumerate() {
+                let weight = _mm256_set1_epi32(pair as i32);
+                for (j, sum) in acc.iter_mut().enumerate() {
+                    // SAFETY: by the caller's guarantee.
+                    let p =
+                        unsafe { _mm256_loadu_si256(base.add((j0 + j + v) * cols + 2 * k).cast()) };
+                    *sum = _mm256_add_epi32(*sum, _mm256_madd_epi16(p, weight));
+                }
+            }
+        }
+        for (lane, sum) in out.iter_mut().zip(acc) {
+            // SAFETY: a lane array is 32 bytes, and the store unaligned.
+            unsafe { _mm256_storeu_si256(lane.as_mut_ptr().cast(), sum) };
+        }
+    }
+
+    /// 8 pixels a step: the alpha byte's top bit, spread over its lane by
+    /// an arithmetic shift, masks the transparent pixels out, and each
+    /// channel is added in 32-bit lanes (moved to 64 bits every row).
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn opaque_sums_avx2(
+        raw: &[u8],
+        stride: usize,
+        (x, y): (usize, usize),
+        (w, h): (usize, usize),
+    ) -> ([u64; 3], u64) {
+        assert!(raw.len() >= (y + h - 1) * stride + (x + w) * 4);
+        let byte = _mm256_set1_epi32(0xff);
+        let (mut sums, mut count) = ([0u64; 3], 0u64);
+        let steps = w / 8;
+        for row in y..y + h {
+            let start = row * stride + x * 4;
+            let line = &raw[start..start + w * 4];
+            let (mut r, mut g, mut b, mut n) = (
+                _mm256_setzero_si256(),
+                _mm256_setzero_si256(),
+                _mm256_setzero_si256(),
+                _mm256_setzero_si256(),
+            );
+            for i in 0..steps {
+                // SAFETY: `i * 32 + 32 <= w * 4`, the line's length.
+                let px = unsafe { _mm256_loadu_si256(line.as_ptr().add(i * 32).cast()) };
+                let opaque = _mm256_srai_epi32::<31>(px);
+                let kept = _mm256_and_si256(px, opaque);
+                r = _mm256_add_epi32(r, _mm256_and_si256(kept, byte));
+                g = _mm256_add_epi32(g, _mm256_and_si256(_mm256_srli_epi32::<8>(kept), byte));
+                b = _mm256_add_epi32(b, _mm256_and_si256(_mm256_srli_epi32::<16>(kept), byte));
+                n = _mm256_sub_epi32(n, opaque);
+            }
+            sums[0] += sum_i32x8(r);
+            sums[1] += sum_i32x8(g);
+            sums[2] += sum_i32x8(b);
+            count += sum_i32x8(n);
+            for p in line[steps * 32..].as_chunks::<4>().0 {
+                if p[3] >= 128 {
+                    for (sum, &v) in sums.iter_mut().zip(&p[..3]) {
+                        *sum += u64::from(v);
+                    }
+                    count += 1;
+                }
+            }
+        }
+        (sums, count)
+    }
+
+    /// 16 outputs a step: the row loaded three times, a pixel pair apart,
+    /// and each load split into its even and odd pixels as 16-bit lanes
+    /// (a mask and a shift), so the four taps of 16 outputs are four whole
+    /// vectors. The first output, and the last few, which reach past the
+    /// row's ends, go one at a time.
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn halve_across_avx2(row: &[u8], out: &mut [u16]) {
+        let width = out.len();
+        assert_eq!(width, row.len() / 2);
+        if width == 0 {
+            return;
+        }
+        let low = _mm256_set1_epi16(0x00ff);
+        let mut i = 1;
+        // A step at `i` reads `row[2i - 2 .. 2i + 34]` and writes
+        // `out[i .. i + 16]`.
+        while i + 16 <= width && 2 * i + 34 <= row.len() {
+            // SAFETY: within both slices, by the loop's bounds.
+            unsafe {
+                let at = row.as_ptr().add(2 * i - 2);
+                let before = _mm256_loadu_si256(at.cast());
+                let here = _mm256_loadu_si256(at.add(2).cast());
+                let after = _mm256_loadu_si256(at.add(4).cast());
+                // Little-endian lanes: the low byte is the even pixel.
+                let left = _mm256_srli_epi16::<8>(before);
+                let middle =
+                    _mm256_add_epi16(_mm256_and_si256(here, low), _mm256_srli_epi16::<8>(here));
+                let right = _mm256_and_si256(after, low);
+                let sum = _mm256_add_epi16(
+                    _mm256_add_epi16(left, right),
+                    _mm256_add_epi16(middle, _mm256_add_epi16(middle, middle)),
+                );
+                _mm256_storeu_si256(out.as_mut_ptr().add(i).cast(), sum);
+            }
+            i += 16;
+        }
+        super::halve_across_scalar(row, out, 0, 1);
+        super::halve_across_scalar(row, out, i.max(1), width);
+    }
+
+    /// 32 outputs a step: two vectors of 16-bit totals, shifted down and
+    /// packed to bytes (the pack interleaves the halves of the two vectors;
+    /// a permute puts them back in order).
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn combine_down_avx2(
+        a: &[u16],
+        b: &[u16],
+        c: &[u16],
+        d: &[u16],
+        out: &mut Vec<u8>,
+    ) {
+        let n = a.len();
+        assert!(b.len() == n && c.len() == n && d.len() == n);
+        out.reserve(n);
+        let start = out.len();
+        let round = _mm256_set1_epi16(32);
+        // SAFETY: each slice holds `k + 16` values when called below.
+        let down = |k: usize| unsafe {
+            let load = |s: &[u16]| _mm256_loadu_si256(s.as_ptr().add(k).cast());
+            let middle = _mm256_add_epi16(load(b), load(c));
+            let total = _mm256_add_epi16(
+                _mm256_add_epi16(load(a), load(d)),
+                _mm256_add_epi16(
+                    _mm256_add_epi16(middle, middle),
+                    _mm256_add_epi16(middle, round),
+                ),
+            );
+            _mm256_srli_epi16::<6>(total)
+        };
+        // SAFETY: `reserve` made room for `n` more bytes past `start`.
+        let target = unsafe { out.as_mut_ptr().add(start) };
+        let mut i = 0;
+        while i + 32 <= n {
+            let packed = _mm256_packus_epi16(down(i), down(i + 16));
+            let ordered = _mm256_permute4x64_epi64::<0b11_01_10_00>(packed);
+            // SAFETY: `i + 32 <= n`, within the room reserved.
+            unsafe { _mm256_storeu_si256(target.add(i).cast(), ordered) };
+            i += 32;
+        }
+        for k in i..n {
+            let value = ((a[k] + 3 * b[k] + 3 * c[k] + d[k] + 32) >> 6) as u8;
+            // SAFETY: `k < n`, within the room reserved.
+            unsafe { target.add(k).write(value) };
+        }
+        // SAFETY: all `n` bytes past `start` were written above.
+        unsafe { out.set_len(start + n) };
+    }
+
     /// The row correlation compiled for AVX2: the compiler vectorises the
     /// inner loop itself, 32 pixels a step.
     #[target_feature(enable = "avx2")]
@@ -640,6 +1179,218 @@ mod tests {
         let weights = vec![255u8; 256 * 256];
         let got = correlate_everywhere(&white, width, height, &weights, 256, 256);
         assert!(got.iter().all(|&t| t == 256 * 256 * 255 * 255));
+    }
+
+    #[test]
+    fn a_block_sums_what_its_windows_sum() {
+        let (stride, rows) = (331usize, 300usize);
+        let plane = noise(stride * rows, 21);
+        let white = vec![255u8; stride * rows];
+        for &(w, h, bw, bh) in &[
+            (1usize, 1usize, 1usize, 1usize),
+            (2, 3, 5, 5),
+            (7, 5, 7, 7),
+            (16, 16, 8, 8),
+            (17, 9, 9, 11),
+            (37, 37, 5, 5),
+            (56, 56, 7, 7),
+            (76, 75, 17, 3),
+            (157, 157, 7, 7),
+            // Wider than a 32-bit sum of products allows in one pass: the
+            // template's rows go in chunks.
+            (300, 240, 3, 2),
+        ] {
+            let weights = noise(w * h, (w * 7 + h) as u32);
+            let pairs = weight_pairs(&weights, w, h);
+            let (x0, y0) = (stride - w - bw + 1, rows - h - bh + 1);
+            for (name, pixels) in [("noise", &plane), ("white", &white)] {
+                let weights = if name == "white" {
+                    vec![255u8; w * h]
+                } else {
+                    weights.clone()
+                };
+                let pairs = if name == "white" {
+                    weight_pairs(&weights, w, h)
+                } else {
+                    pairs.clone()
+                };
+                let mut expected = Vec::new();
+                for y in y0..y0 + bh {
+                    for x in x0..x0 + bw {
+                        expected.push(window_stats_scalar(pixels, stride, x, y, &weights, w, h));
+                    }
+                }
+                let mut got = Vec::new();
+                block_stats(
+                    pixels,
+                    stride,
+                    (x0, y0),
+                    (bw, bh),
+                    &weights,
+                    &pairs,
+                    (w, h),
+                    &mut got,
+                );
+                assert_eq!(
+                    got,
+                    expected,
+                    "{name} {w}x{h}, block {bw}x{bh} on {:?}",
+                    backend()
+                );
+                #[cfg(target_arch = "x86_64")]
+                if is_x86_feature_detected!("avx2") {
+                    let mut avx2 = Vec::new();
+                    // SAFETY: the CPU reported AVX2; the block fits.
+                    unsafe {
+                        x86::block_stats_avx2(
+                            pixels,
+                            stride,
+                            (x0, y0),
+                            (bw, bh),
+                            &pairs,
+                            (w, h),
+                            &mut avx2,
+                        )
+                    };
+                    assert_eq!(avx2, expected, "{name} {w}x{h}, block {bw}x{bh} on avx2");
+                }
+                // And from the top left, where the pairs start at column 0.
+                let mut expected = Vec::new();
+                for y in 0..bh {
+                    for x in 0..bw {
+                        expected.push(window_stats_scalar(pixels, stride, x, y, &weights, w, h));
+                    }
+                }
+                block_stats(
+                    pixels,
+                    stride,
+                    (0, 0),
+                    (bw, bh),
+                    &weights,
+                    &pairs,
+                    (w, h),
+                    &mut got,
+                );
+                assert_eq!(got, expected, "{name} {w}x{h} at the corner");
+            }
+        }
+    }
+
+    #[test]
+    fn opaque_sums_skip_the_transparent_and_count_the_rest() {
+        let (width, height) = (53usize, 9usize);
+        let raw = noise(width * height * 4, 33);
+        for &(x, y, w, h) in &[
+            (0usize, 0usize, 53usize, 9usize),
+            (3, 2, 17, 5),
+            (40, 8, 13, 1),
+            (5, 5, 0, 3),
+        ] {
+            let mut expected = ([0u64; 3], 0u64);
+            for row in y..y + h {
+                for col in x..x + w {
+                    let p = &raw[(row * width + col) * 4..][..4];
+                    if p[3] >= 128 {
+                        for (sum, &v) in expected.0.iter_mut().zip(p) {
+                            *sum += u64::from(v);
+                        }
+                        expected.1 += 1;
+                    }
+                }
+            }
+            assert_eq!(
+                opaque_sums(&raw, width * 4, (x, y), (w, h)),
+                expected,
+                "{x},{y} {w}x{h}"
+            );
+            assert_eq!(
+                opaque_sums_scalar(&raw, width * 4, (x, y), (w, h)),
+                expected
+            );
+            #[cfg(target_arch = "x86_64")]
+            if is_x86_feature_detected!("avx2") && w > 0 {
+                // SAFETY: the CPU reported AVX2; the region fits.
+                let avx2 = unsafe { x86::opaque_sums_avx2(&raw, width * 4, (x, y), (w, h)) };
+                assert_eq!(avx2, expected, "{x},{y} {w}x{h} on avx2");
+            }
+        }
+    }
+
+    /// Halving across, the reference: each tap read with the row's ends
+    /// repeated.
+    fn halve_across_reference(row: &[u8]) -> Vec<u16> {
+        let at = |k: isize| u16::from(row[k.clamp(0, row.len() as isize - 1) as usize]);
+        (0..row.len() as isize / 2)
+            .map(|i| at(2 * i - 1) + 3 * at(2 * i) + 3 * at(2 * i + 1) + at(2 * i + 2))
+            .collect()
+    }
+
+    #[test]
+    fn every_path_halves_a_row_the_same() {
+        let source = noise(2000, 5);
+        let white = vec![255u8; 300];
+        for len in [
+            0usize, 1, 2, 3, 4, 5, 33, 34, 35, 36, 37, 64, 65, 66, 67, 99, 1366, 1999,
+        ] {
+            for row in [&source[..len], &white[..len.min(300)]] {
+                let expected = halve_across_reference(row);
+                let mut got = vec![0u16; row.len() / 2];
+                halve_across(row, &mut got);
+                assert_eq!(got, expected, "{} pixels on {:?}", row.len(), backend());
+                let mut scalar = vec![0u16; row.len() / 2];
+                halve_across_scalar(row, &mut scalar, 0, row.len() / 2);
+                assert_eq!(scalar, expected, "{} pixels, scalar", row.len());
+                #[cfg(target_arch = "x86_64")]
+                if is_x86_feature_detected!("avx2") {
+                    let mut avx2 = vec![0u16; row.len() / 2];
+                    // SAFETY: the CPU reported AVX2.
+                    unsafe { x86::halve_across_avx2(row, &mut avx2) };
+                    assert_eq!(avx2, expected, "{} pixels on avx2", row.len());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_path_combines_rows_down_the_same() {
+        let wide = |seed: u32, n: usize| -> Vec<u16> {
+            noise(2 * n, seed)
+                .chunks_exact(2)
+                .map(|p| u16::from_le_bytes([p[0], p[1]]) % 2041)
+                .collect()
+        };
+        for n in [0usize, 1, 15, 16, 31, 32, 33, 64, 100, 683] {
+            let (a, b, c, d) = (wide(1, n), wide(2, n), wide(3, n), wide(4, n));
+            let expected: Vec<u8> = (0..n)
+                .map(|i| {
+                    ((u32::from(a[i])
+                        + 3 * u32::from(b[i])
+                        + 3 * u32::from(c[i])
+                        + u32::from(d[i])
+                        + 32)
+                        / 64) as u8
+                })
+                .collect();
+            let mut got = vec![9u8];
+            combine_down(&a, &b, &c, &d, &mut got);
+            assert_eq!(got[0], 9, "appends");
+            assert_eq!(&got[1..], &expected[..], "{n} on {:?}", backend());
+            let mut scalar = Vec::new();
+            combine_down_scalar(&a, &b, &c, &d, &mut scalar);
+            assert_eq!(scalar, expected, "{n}, scalar");
+            #[cfg(target_arch = "x86_64")]
+            if is_x86_feature_detected!("avx2") {
+                let mut avx2 = Vec::new();
+                // SAFETY: the CPU reported AVX2.
+                unsafe { x86::combine_down_avx2(&a, &b, &c, &d, &mut avx2) };
+                assert_eq!(avx2, expected, "{n} on avx2");
+            }
+        }
+        // The largest totals still round down to 255.
+        let full = vec![2040u16; 40];
+        let mut got = Vec::new();
+        combine_down(&full, &full, &full, &full, &mut got);
+        assert!(got.iter().all(|&v| v == 255));
     }
 
     #[test]

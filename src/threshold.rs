@@ -34,6 +34,27 @@ pub enum Channel {
 /// The chosen channel of `region` as a grey image the size of the region
 /// (clipped to the image).
 pub fn channel_image(image: &RgbaImage, region: Rect, channel: Channel) -> GrayImage {
+    // The loop below is plain integer arithmetic. Built for the x86-64
+    // baseline (SSE2) it cannot multiply 32-bit lanes and runs a pixel at
+    // a time; built for AVX2 it does eight at once. The same integers
+    // either way: the AVX2 copy is this function compiled for a wider
+    // instruction set, chosen at run time like the kernels.
+    #[cfg(target_arch = "x86_64")]
+    if crate::kernels::backend() == crate::kernels::Backend::Avx2 {
+        // Safety: the backend is AVX2 only when the CPU reports AVX2.
+        return unsafe { channel_image_avx2(image, region, channel) };
+    }
+    channel_image_plain(image, region, channel)
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn channel_image_avx2(image: &RgbaImage, region: Rect, channel: Channel) -> GrayImage {
+    channel_image_plain(image, region, channel)
+}
+
+#[inline(always)]
+fn channel_image_plain(image: &RgbaImage, region: Rect, channel: Channel) -> GrayImage {
     let x_end = region.x.saturating_add(region.w).min(image.width());
     let y_end = region.y.saturating_add(region.h).min(image.height());
     if region.x >= x_end || region.y >= y_end {
@@ -56,7 +77,7 @@ pub fn channel_image(image: &RgbaImage, region: Rect, channel: Channel) -> GrayI
         match channel {
             Channel::Luma => {
                 for (value, p) in out_row.iter_mut().zip(pixels) {
-                    *value = luma(p[0], p[1], p[2]);
+                    *value = luma(u32::from_le_bytes(p));
                 }
             }
             Channel::Min => {
@@ -75,12 +96,15 @@ pub fn channel_image(image: &RgbaImage, region: Rect, channel: Channel) -> GrayI
 }
 
 /// Rec. 601 luma (0.299, 0.587, 0.114) in 16-bit fixed point, rounded to
-/// the nearest level. The weights sum to exactly 65536, so greys map to
+/// the nearest level, of a pixel read as one little-endian word (red in
+/// the low byte). The weights sum to exactly 65536, so greys map to
 /// themselves, and a shift replaces the division by 1000 that kept the
-/// loop from vectorising.
-#[inline]
-fn luma(r: u8, g: u8, b: u8) -> u8 {
-    ((u32::from(r) * 19595 + u32::from(g) * 38470 + u32::from(b) * 7471 + 32768) >> 16) as u8
+/// loop from vectorising; the channels come out of the word with shifts
+/// and masks of whole lanes rather than a byte shuffle.
+#[inline(always)]
+fn luma(word: u32) -> u8 {
+    (((word & 0xff) * 19595 + ((word >> 8) & 0xff) * 38470 + ((word >> 16) & 0xff) * 7471 + 32768)
+        >> 16) as u8
 }
 
 /// A 256-bin histogram of a grey image.
@@ -489,7 +513,37 @@ mod tests {
     #[test]
     fn luma_maps_greys_to_themselves() {
         for v in 0..=255u8 {
-            assert_eq!(luma(v, v, v), v);
+            assert_eq!(luma(u32::from_le_bytes([v, v, v, 255])), v);
+        }
+    }
+
+    /// The copy compiled for AVX2 gives exactly the plain loop's values,
+    /// on every channel, for regions of every alignment and odd widths.
+    #[test]
+    fn the_avx2_copy_matches_the_plain_loop() {
+        #[cfg(target_arch = "x86_64")]
+        if is_x86_feature_detected!("avx2") {
+            let mut state = 0x2545_f491u32;
+            let image = RgbaImage::from_fn(97, 41, |_, _| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                Rgba(state.to_le_bytes())
+            });
+            for channel in [Channel::Luma, Channel::Min, Channel::Max] {
+                for (x, y, w, h) in [
+                    (0, 0, 97, 41),
+                    (3, 1, 61, 17),
+                    (5, 7, 1, 1),
+                    (90, 40, 33, 9),
+                ] {
+                    let region = Rect { x, y, w, h };
+                    let plain = channel_image_plain(&image, region, channel);
+                    // SAFETY: the CPU reported AVX2 just above.
+                    let wide = unsafe { channel_image_avx2(&image, region, channel) };
+                    assert_eq!(plain, wide, "{channel:?} {region:?}");
+                }
+            }
         }
     }
 }

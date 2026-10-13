@@ -214,24 +214,20 @@ fn clip(region: Rect, width: u32, height: u32) -> Rect {
 /// are none.
 fn mean_rgb(image: &RgbaImage, region: Rect) -> [f32; 3] {
     let region = clip(region, image.width(), image.height());
-    let mut sum = [0f64; 3];
-    let mut count = 0f64;
-    for y in region.y..region.y + region.h {
-        for x in region.x..region.x + region.w {
-            let p = image.get_pixel(x, y).0;
-            if p[3] < 128 {
-                continue;
-            }
-            for (s, &v) in sum.iter_mut().zip(&p[..3]) {
-                *s += f64::from(v);
-            }
-            count += 1.0;
-        }
-    }
-    if count == 0.0 {
+    // Integer sums (`kernels::opaque_sums`), exact, as sums of whole
+    // numbers in f64 are too: the same means as adding in f64 pixel by
+    // pixel, at a fraction of the cost.
+    let (sum, count) = crate::kernels::opaque_sums(
+        image.as_raw(),
+        image.width() as usize * 4,
+        (region.x as usize, region.y as usize),
+        (region.w as usize, region.h as usize),
+    );
+    if count == 0 {
         return [0.0; 3];
     }
-    sum.map(|v| (v / count) as f32)
+    let count = count as f64;
+    sum.map(|v| (v as f64 / count) as f32)
 }
 
 /// Several pictures of one thing — its poses, and when asked their mirror
@@ -549,6 +545,16 @@ pub fn find_set_in(
             w: picture.width,
             h: picture.height,
         };
+        // Either check drops the match without changing anything else, so
+        // the cheap one goes first.
+        let overlaps = kept.iter().any(|k| {
+            let (kw, kh) = (k.bounds.w as usize, k.bounds.h as usize);
+            2 * (k.bounds.x as usize).abs_diff(bounds.x as usize) < w.min(kw)
+                && 2 * (k.bounds.y as usize).abs_diff(bounds.y as usize) < h.min(kh)
+        });
+        if overlaps {
+            continue;
+        }
         if let Some(max_shift) = options.max_colour_shift {
             let template = if mirrored {
                 picture.mirror.as_ref().unwrap_or(&picture.template)
@@ -562,14 +568,6 @@ pub fn find_set_in(
             if shift > max_shift {
                 continue;
             }
-        }
-        let overlaps = kept.iter().any(|k| {
-            let (kw, kh) = (k.bounds.w as usize, k.bounds.h as usize);
-            2 * (k.bounds.x as usize).abs_diff(bounds.x as usize) < w.min(kw)
-                && 2 * (k.bounds.y as usize).abs_diff(bounds.y as usize) < h.min(kh)
-        });
-        if overlaps {
-            continue;
         }
         let template = if mirrored {
             picture.mirror.as_ref().unwrap_or(&picture.template)
@@ -769,56 +767,40 @@ impl Plane {
     /// the edge pixel; an odd last row or column is dropped.
     fn half(&self) -> Plane {
         let (width, height) = (self.width / 2, self.height / 2);
-        let last_x = self.width as isize - 1;
-        let last_y = self.height as isize - 1;
-
-        // Horizontal pass: weights sum to 8. The taps of output `i` are the
-        // input pixels 2i-1 .. 2i+2; splitting the (edge-extended) row into
-        // its even and odd pixels turns that into four contiguous streams.
-        let mut horizontal = vec![0u16; width * self.height];
-        // even[k] is input pixel 2k-1 and odd[k] input pixel 2k, so output
-        // i reads even[i], odd[i], even[i+1], odd[i+1].
-        let (mut even, mut odd) = (vec![0u16; width + 1], vec![0u16; width + 1]);
-        for (y, out) in horizontal
-            .chunks_exact_mut(width.max(1))
-            .enumerate()
-            .take(self.height)
-        {
-            let row = self.row(y, 0, self.width);
-            for (k, pair) in row.as_chunks::<2>().0.iter().enumerate() {
-                odd[k] = u16::from(pair[0]);
-                even[k + 1] = u16::from(pair[1]);
-            }
-            even[0] = u16::from(row[0]);
-            odd[width] = u16::from(row[(2 * width).min(last_x as usize)]);
-            for ((value, (e0, o0)), (e1, o1)) in out
-                .iter_mut()
-                .zip(even.iter().zip(&odd))
-                .zip(even[1..].iter().zip(&odd[1..]))
-            {
-                *value = e0 + 3 * o0 + 3 * e1 + o1;
-            }
-        }
-
-        // Vertical pass: weights sum to 8, so 64 in all, and the largest
-        // total, 64 * 255, still fits 16 bits.
         let mut pixels = Vec::with_capacity(width * height);
-        let row_of = |y: isize| {
-            let y = y.clamp(0, last_y) as usize;
-            &horizontal[y * width..(y + 1) * width]
-        };
-        for j in 0..height as isize {
-            let (a, b, c, d) = (
-                row_of(2 * j - 1),
-                row_of(2 * j),
-                row_of(2 * j + 1),
-                row_of(2 * j + 2),
-            );
-            pixels.extend(
-                a.iter()
-                    .zip(b)
-                    .zip(c.iter().zip(d))
-                    .map(|((&a, &b), (&c, &d))| ((a + 3 * b + 3 * c + d + 32) >> 6) as u8),
+        if width == 0 || height == 0 {
+            return Plane {
+                width,
+                height,
+                pixels,
+            };
+        }
+        let last_y = self.height - 1;
+        // Each row is halved across once (weights summing to 8, in 16
+        // bits), into a ring of the four that output rows combine down: row
+        // `j` takes the rows halved across at 2j-1 .. 2j+2, so the next one
+        // needs two new rows and reuses two (`kernels::halve_across` and
+        // `kernels::combine_down`, at the CPU's vector width). The ring
+        // stays in the fastest cache, where a buffer of every row did not.
+        let mut ring = vec![0u16; 4 * width];
+        let mut done = 0;
+        for j in 0..height {
+            // Rows past the bottom repeat the last one.
+            let bottom = (2 * j + 2).min(last_y);
+            while done <= bottom {
+                let slot = &mut ring[(done % 4) * width..(done % 4 + 1) * width];
+                crate::kernels::halve_across(self.row(done, 0, self.width), slot);
+                done += 1;
+            }
+            let row = |y: usize| &ring[(y % 4) * width..(y % 4 + 1) * width];
+            // Weights summing to 8 again, so 64 in all: the largest total,
+            // 64 * 255, still fits 16 bits.
+            crate::kernels::combine_down(
+                row((2 * j).saturating_sub(1)),
+                row(2 * j),
+                row(2 * j + 1),
+                row(bottom),
+                &mut pixels,
             );
         }
         Plane {
@@ -905,6 +887,8 @@ struct TemplateLevel {
     /// `n * Σt² - (Σt)²` over the `n` matched pixels: `n²` times their
     /// variance, kept exact in integers.
     spread: i64,
+    /// `inner`'s pixels in neighbouring pairs, for `kernels::block_stats`.
+    pairs: Vec<u32>,
 }
 
 impl TemplateLevel {
@@ -921,12 +905,17 @@ impl TemplateLevel {
             .sum();
         let spread = n * squares - sum * sum;
         // Less than a quarter of a level of variance: flat.
-        (4 * spread > n * n).then_some(Self {
+        if 4 * spread <= n * n {
+            return None;
+        }
+        let pairs = crate::kernels::weight_pairs(&inner.pixels, inner.width, inner.height);
+        Some(Self {
             plane,
             inner,
             margin,
             sum,
             spread,
+            pairs,
         })
     }
 
@@ -1221,14 +1210,30 @@ fn refine(
         cy.saturating_sub(radius).min(max_y)..=(cy + radius).min(max_y),
     );
     let mut best = (cx.min(max_x), cy.min(max_y), f32::NEG_INFINITY);
-    for y in ys.clone() {
-        for x in xs.clone() {
-            let score = score_at(x, y);
-            if score > best.2 {
-                best = (x, y, score);
-            }
+    // Every position of the window in one pass (`kernels::block_stats`),
+    // in the order the window is scanned: the first of equal scores wins.
+    let (x0, y0) = (*xs.start(), *ys.start());
+    let (bw, bh) = (xs.end() - x0 + 1, ys.end() - y0 + 1);
+    let mut window = Vec::with_capacity(bw * bh);
+    crate::kernels::block_stats(
+        &plane.pixels,
+        plane.width,
+        (x0, y0),
+        (bw, bh),
+        &template.inner.pixels,
+        &template.pairs,
+        (w, h),
+        &mut window,
+    );
+    for (n, &(sum, squares, products)) in window.iter().enumerate() {
+        let score = score_from(template, products, sum, squares);
+        if score > best.2 {
+            best = (x0 + n % bw, y0 + n / bw, score);
         }
     }
+    // Positions scored while climbing, so a step does not score again the
+    // ones the step before it did.
+    let mut climbed: Vec<(usize, usize, f32)> = Vec::new();
     for _ in 0..MAX_CLIMB {
         let (bx, by, _) = best;
         let mut next = best;
@@ -1237,7 +1242,14 @@ fn refine(
                 if xs.contains(&x) && ys.contains(&y) {
                     continue; // already scored
                 }
-                let score = score_at(x, y);
+                let score = match climbed.iter().find(|c| (c.0, c.1) == (x, y)) {
+                    Some(c) => c.2,
+                    None => {
+                        let score = score_at(x, y);
+                        climbed.push((x, y, score));
+                        score
+                    }
+                };
                 if score > next.2 {
                     next = (x, y, score);
                 }
