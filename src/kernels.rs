@@ -1098,7 +1098,6 @@ pub(crate) fn bgra_to_rgba_word(bgra: [u8; 4]) -> [u8; 4] {
         .to_le_bytes()
 }
 
-#[cfg(target_arch = "x86_64")]
 /// The colour bucket of every pixel of the `w`×`h` region of an RGBA image
 /// whose top left is `(x0, y0)` (`stride` bytes a row), counted into
 /// `counts`: bucket `(r / step · per_channel + g / step) · per_channel +
@@ -1329,6 +1328,7 @@ fn count_runs(buckets: &[u32], starts: &[u32], histogram: usize, counts: &mut [u
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 mod x86 {
     use std::arch::x86_64::*;
 
