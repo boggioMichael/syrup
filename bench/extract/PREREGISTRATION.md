@@ -1,10 +1,11 @@
 # Pre-registration: from weights to explicit algorithms
 
-**Status:** proposed on 12 October 2026, before any data for this research was
-collected or measured. It locks at gate G0, when the owner signs it off
-together with [LICENSES.md](LICENSES.md) and [DATA.md](DATA.md). After that,
-every change goes to [AMENDMENTS.md](AMENDMENTS.md) with its reason. No test
-data exists yet, so nothing here can have been tuned on it.
+**Status:** locked at gate G0 on 13 October 2026, when the owner approved it
+together with [LICENSES.md](LICENSES.md), [DATA.md](DATA.md) and the two
+proposals that became amendments 1 and 2. It was written on 12 October 2026,
+before any data for this research was collected or measured; no test data
+existed at G0, so nothing here can have been tuned on it. Every change from
+now on goes to [AMENDMENTS.md](AMENDMENTS.md) with its reason.
 
 The plan, phases and dates are in the roadmap:
 https://claude.ai/code/artifact/1132d900-351a-43cd-89be-a3d05c8080fd
@@ -45,8 +46,10 @@ character, NPC, dropped item, portal.
 3. **Tiny network**: the smallest network in a fixed family that reaches the
    teacher's dev accuracy within 1 point, trained on the teacher's labels.
    The family is an MLP with one hidden layer of 32 to 512 units, or a CNN with
-   2 to 4 convolutions of 8 to 64 channels. It is quantised to INT8 and runs
-   single-threaded in ONNX Runtime, or in Syrup's runtime once K7 lands.
+   2 to 4 convolutions of 8 to 64 channels. For task A it also includes a small
+   CNN over the whole text line with CTC decoding, of at most 100,000
+   parameters (amendment 1). It is quantised to INT8 and runs single-threaded
+   in ONNX Runtime, or in Syrup's runtime once K7 lands.
 4. **OpenCV**: the best pipeline found on dev. For A, Otsu thresholding,
    connected components and k-NN, as in the OpenCV benchmark (F5). For B,
    normalised template matching. For C there is no comparable OpenCV pipeline,
@@ -105,7 +108,7 @@ sets are used, each for one decision and never for tuning:
 | Gate | Passes when |
 | --- | --- |
 | G0 | The owner signs off this file, LICENSES.md and DATA.md. |
-| G1 | On dev, every baseline gives the same outputs in two separate runs, its p50 differs by less than 5% between them, and its p95 interval is narrower than ±10% of the estimate. |
+| G1 | On dev, every baseline gives the same outputs in two separate runs, its p50 differs by less than 5% between them, and its p95 interval is narrower than ±10% of the estimate. Measured on a machine that runs nothing else, with CPU frequency scaling fixed, not on a shared cloud container (amendment 2). |
 | G2 | On S1, the teacher reaches 99.5% exact strings on A, 99.5% on B, and recall and precision of at least 95% on C. |
 | G3 (H1) | On S2, for A and for B, each on its own: explicit code makes 0 wrong reads in 3,000; refuses at most 2%; with the tiny network as fallback, system accuracy is at least 99.5%; and explicit p95 is below both the tiny network's and OpenCV's, with the ratio's interval excluding 1. |
 | G4 (H2) | On S3, white-box coverage minus black-box coverage on C has a 95% interval above 0, while the white-box wrong rate stays at or below 0.5% of tiles. |
