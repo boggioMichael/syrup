@@ -553,7 +553,7 @@ pub fn find_set_in(
             }
         }
     }
-    found.sort_by(|a, b| b.4.total_cmp(&a.4));
+    sort_strongest_first(&mut found, |f| f.4);
     let search = pyramid.search;
     let mut kept: Vec<SetMatch> = Vec::new();
     for (index, mirrored, x, y, score) in found {
@@ -1216,6 +1216,38 @@ fn peaks_everywhere(
         .collect()
 }
 
+/// Sorts `items` strongest first by `score` (as `total_cmp` orders the
+/// scores), items of equal score keeping their order: the order a stable
+/// `sort_by` from the highest score gives, by sorting integers instead —
+/// each the score's bits arranged to order as `total_cmp` does, inverted,
+/// above the item's place — which is several times faster.
+fn sort_strongest_first<T: Copy>(items: &mut [T], score: impl Fn(&T) -> f32) {
+    if items.len() < 32 || items.len() > u32::MAX as usize {
+        items.sort_by(|a, b| score(b).total_cmp(&score(a)));
+        return;
+    }
+    let mut keys: Vec<u64> = items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let bits = score(item).to_bits();
+            // Negative scores have every bit flipped, the rest their sign:
+            // as unsigned integers they then order as `total_cmp` does.
+            let ordered = if bits >> 31 == 1 {
+                !bits
+            } else {
+                bits | 1 << 31
+            };
+            (u64::from(!ordered) << 32) | i as u64
+        })
+        .collect();
+    keys.sort_unstable();
+    let original = items.to_vec();
+    for (slot, key) in items.iter_mut().zip(&keys) {
+        *slot = original[(key & u64::from(u32::MAX)) as usize];
+    }
+}
+
 /// The peaks among `hits` — the positions of a `columns`×`rows` search
 /// scoring at least a floor, in scan order — strongest first, at most
 /// `limit`, one per neighbourhood: what [`local_maxima`] returns of the
@@ -1237,19 +1269,35 @@ fn peaks_among(
         starts[y + 1] += starts[y];
     }
     let mut peaks = Vec::new();
-    for &(x, y, score) in hits {
-        let (x, y) = (x as usize, y as usize);
-        let (y0, y1) = (y.saturating_sub(1), (y + 1).min(rows - 1));
-        let highest = (y0..=y1).all(|ny| {
-            let row = &hits[starts[ny]..starts[ny + 1]];
-            let from = row.partition_point(|n| (n.0 as usize) + 1 < x);
-            row[from..]
-                .iter()
-                .take_while(|n| n.0 as usize <= x + 1)
-                .all(|n| score >= n.2)
-        });
-        if highest {
-            peaks.push((x, y, score));
+    let row = |y: usize| &hits[starts[y]..starts[y + 1]];
+    for y in 0..rows {
+        let here = row(y);
+        if here.is_empty() {
+            continue;
+        }
+        // The rows above and below, each with how far along it the
+        // neighbours of the hits so far begin (both only move right).
+        let mut beside: [(&[crate::kernels::Hit], usize); 2] = [
+            (if y > 0 { row(y - 1) } else { &[] }, 0),
+            (if y + 1 < rows { row(y + 1) } else { &[] }, 0),
+        ];
+        for (k, &(x, _, score)) in here.iter().enumerate() {
+            // A neighbour scoring higher (any non-hit scores lower).
+            let higher = |n: &crate::kernels::Hit| n.2 > score;
+            let mut highest = !(k > 0 && here[k - 1].0 + 1 == x && higher(&here[k - 1]))
+                && !(k + 1 < here.len() && here[k + 1].0 == x + 1 && higher(&here[k + 1]));
+            for (line, from) in &mut beside {
+                while *from < line.len() && line[*from].0 + 1 < x {
+                    *from += 1;
+                }
+                highest &= line[*from..]
+                    .iter()
+                    .take_while(|n| n.0 <= x + 1)
+                    .all(|n| !higher(n));
+            }
+            if highest {
+                peaks.push((x as usize, y, score));
+            }
         }
     }
     strongest_peaks(peaks, columns, rows, limit)
@@ -1362,7 +1410,7 @@ fn strongest_peaks(
     }
     // Along a straight edge every position ties, and each counts as a
     // peak; keep one per neighbourhood so ties cannot use up the budget.
-    peaks.sort_by(|a, b| b.2.total_cmp(&a.2));
+    sort_strongest_first(&mut peaks, |p| p.2);
     // A kept peak marks its position, and a peak is crowded out when a
     // position within `PEAK_SPACING` of it is marked: a fixed number of
     // look-ups per peak. (Comparing each peak with every kept one was
@@ -1829,7 +1877,7 @@ fn descend(
             })
             .filter(|&(_, _, score)| score >= floor_at(finer))
             .collect();
-        candidates.sort_by(|a, b| b.2.total_cmp(&a.2));
+        sort_strongest_first(&mut candidates, |c| c.2);
         // Two candidates can converge on one position.
         candidates.dedup_by(|a, b| (a.0, a.1) == (b.0, b.1));
         candidates.truncate(keep_at(finer));
@@ -1887,6 +1935,41 @@ fn describe(
             left as f32 + w as f32 / 2.0 + dx,
             top as f32 + h as f32 / 2.0 + dy,
         ),
+    }
+}
+
+/// Internals exposed for timing them on their own; not a stable API.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub mod bench {
+    use super::*;
+
+    /// Builds the pyramid of `search` on `channel`, `depth` levels below
+    /// full size, and returns each plane's size.
+    pub fn pyramid(
+        image: &RgbaImage,
+        search: Rect,
+        channel: Channel,
+        depth: usize,
+    ) -> Vec<(usize, usize)> {
+        Pyramid::new(image, search, channel, depth)
+            .planes
+            .iter()
+            .map(|p| (p.width, p.height))
+            .collect()
+    }
+
+    /// Halves a `width`×`height` grey plane `times` times.
+    pub fn halve(pixels: &[u8], width: usize, height: usize, times: usize) -> usize {
+        let mut plane = Plane {
+            width,
+            height,
+            pixels: pixels[..width * height].to_vec(),
+        };
+        for _ in 0..times {
+            plane = plane.half();
+        }
+        plane.pixels.len()
     }
 }
 
@@ -2678,6 +2761,52 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    /// Sorting strongest first on integer keys gives the order of a
+    /// stable sort from the highest score: ties, signed zeros, negatives,
+    /// infinities and NaNs included.
+    #[test]
+    fn sorting_strongest_first_is_the_stable_sort() {
+        let mut state = 5u32;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+        let specials = [
+            0.0f32,
+            -0.0,
+            1.0,
+            -1.0,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            -f32::NAN,
+            0.58,
+        ];
+        for len in [0usize, 1, 31, 32, 33, 100, 1000, 5000] {
+            let items: Vec<(usize, f32)> = (0..len)
+                .map(|i| {
+                    let r = next();
+                    let score = match r % 4 {
+                        0 => specials[(r / 4) as usize % specials.len()],
+                        1 => (r % 7) as f32 / 7.0 - 0.5,
+                        _ => f32::from_bits(next()),
+                    };
+                    (i, score)
+                })
+                .collect();
+            let mut want = items.clone();
+            want.sort_by(|a, b| b.1.total_cmp(&a.1));
+            let mut got = items.clone();
+            sort_strongest_first(&mut got, |item| item.1);
+            let bits = |v: &[(usize, f32)]| -> Vec<(usize, u32)> {
+                v.iter().map(|&(i, s)| (i, s.to_bits())).collect()
+            };
+            assert_eq!(bits(&got), bits(&want), "{len}");
         }
     }
 

@@ -2882,25 +2882,24 @@ mod x86 {
                         & mask;
                 }
                 if passed.iter().any(|&p| p != 0) {
+                    let (sums, squares) = (window(run_s), window(run_q));
                     for t in 0..T {
+                        if passed[t] == 0 {
+                            continue;
+                        }
+                        // The 16 positions' scores as `ncc` gives them.
                         let (_, t_sum, t_spread) = templates[t];
+                        let p = _mm512_maskz_loadu_epi32(mask, rows[t].add(x).cast());
+                        let mut scores = [0f32; 16];
+                        _mm512_storeu_ps(
+                            scores.as_mut_ptr(),
+                            scores16(p, sums, squares, (n, t_sum, t_spread)),
+                        );
                         let mut bits = passed[t];
                         while bits != 0 {
-                            let c = x + bits.trailing_zeros() as usize;
-                            // The window's sums, as the running totals give
-                            // them (wrapping: the true sums fit).
-                            let sum = (*run_s.add(c + w + 15)).wrapping_sub(*run_s.add(c + 15));
-                            let squares = (*run_q.add(c + w + 15)).wrapping_sub(*run_q.add(c + 15));
-                            let score = super::ncc(
-                                n,
-                                t_sum,
-                                t_spread,
-                                (*rows[t].add(c)).into(),
-                                sum.into(),
-                                squares.into(),
-                            );
-                            if score >= floor {
-                                hits[t].push((c as u32, y as u32, score));
+                            let lane = bits.trailing_zeros() as usize;
+                            if scores[lane] >= floor {
+                                hits[t].push(((x + lane) as u32, y as u32, scores[lane]));
                             }
                             bits &= bits - 1;
                         }
@@ -2909,6 +2908,54 @@ mod x86 {
             }
             x += 16;
         }
+    }
+
+    /// `ncc` of 16 positions from their products, pixel sums and sums of
+    /// squares (32-bit lanes): `scores_row_zmm`'s arithmetic, 8 lanes a
+    /// half, so the same scores.
+    #[inline]
+    #[target_feature(enable = "avx512f,avx512dq,avx512vl")]
+    pub(super) fn scores16(
+        products: __m512i,
+        sums: __m512i,
+        squares: __m512i,
+        (n, t_sum, t_spread): (i64, i64, i64),
+    ) -> __m512 {
+        let n_v = _mm512_set1_epi64(n);
+        let nn = _mm512_set1_epi64(n * n);
+        let t_sum_v = _mm512_set1_epi64(t_sum);
+        let t_spread_v = _mm256_set1_ps(t_spread as f32);
+        let (low, high) = (_mm256_set1_ps(-1.0), _mm256_set1_ps(1.0));
+        let half = |v: __m512i, upper: bool| {
+            _mm512_cvtepu32_epi64(if upper {
+                _mm512_extracti64x4_epi64::<1>(v)
+            } else {
+                _mm512_castsi512_si256(v)
+            })
+        };
+        let eight = |upper: bool| {
+            let (p, s, q) = (
+                half(products, upper),
+                half(sums, upper),
+                half(squares, upper),
+            );
+            let spread = _mm512_sub_epi64(_mm512_mul_epu32(n_v, q), _mm512_mul_epu32(s, s));
+            let covariance =
+                _mm512_sub_epi64(_mm512_mul_epu32(n_v, p), _mm512_mul_epu32(s, t_sum_v));
+            // `4 spread > n²`: not flat.
+            let varied = _mm512_cmpgt_epi64_mask(_mm512_slli_epi64::<2>(spread), nn);
+            let denominator = _mm256_sqrt_ps(_mm256_mul_ps(_mm512_cvtepi64_ps(spread), t_spread_v));
+            let score = _mm256_min_ps(
+                _mm256_max_ps(
+                    _mm256_div_ps(_mm512_cvtepi64_ps(covariance), denominator),
+                    low,
+                ),
+                high,
+            );
+            // A flat window scores 0.
+            _mm256_maskz_mov_ps(varied, score)
+        };
+        _mm512_insertf32x8::<1>(_mm512_castps256_ps512(eight(false)), eight(true))
     }
 
     /// The positions of a row (`y`) that score at least `floor`, pushed to
@@ -4124,6 +4171,40 @@ mod tests {
                 }
             }
             #[cfg(target_arch = "x86_64")]
+            if is_x86_feature_detected!("avx512f")
+                && is_x86_feature_detected!("avx512dq")
+                && is_x86_feature_detected!("avx512vl")
+            {
+                for start in (0..products.len() - 16).step_by(16) {
+                    let load = |v: &[u32]| {
+                        // SAFETY: 16 values from `start`; AVX-512 F reported.
+                        unsafe { std::arch::x86_64::_mm512_loadu_si512(v[start..].as_ptr().cast()) }
+                    };
+                    let mut got = [0f32; 16];
+                    // SAFETY: the CPU reported AVX-512 F, DQ and VL.
+                    unsafe {
+                        std::arch::x86_64::_mm512_storeu_ps(
+                            got.as_mut_ptr(),
+                            x86::scores16(
+                                load(&products),
+                                load(&sums),
+                                load(&squares),
+                                (n as i64, t_sum, t_spread),
+                            ),
+                        )
+                    };
+                    for (k, g) in got.iter().enumerate() {
+                        let e = expected[start + k];
+                        assert_eq!(
+                            g.to_bits(),
+                            e.to_bits(),
+                            "16 at once, n {n} at {}: {g} vs {e}",
+                            start + k
+                        );
+                    }
+                }
+            }
+            #[cfg(target_arch = "x86_64")]
             if is_x86_feature_detected!("avx2") {
                 let mut got = vec![7.0f32];
                 // SAFETY: the CPU reported AVX2.
@@ -4601,16 +4682,18 @@ pub mod bench {
         out
     }
 
+    /// A block's sums from its plane, stride, top left and size, into the
+    /// given list.
+    pub type BlockStats<'a> =
+        Box<dyn Fn(&[u8], usize, (usize, usize), (usize, usize), &mut Vec<(u64, u64, u64)>) + 'a>;
+
     /// The same with the template's forms made once: call the returned
     /// closure to take the block's sums.
-    pub fn block_stats_prepared<'a>(
-        weights: &'a [u8],
-        (w, h): (usize, usize),
-    ) -> impl Fn(&[u8], usize, (usize, usize), (usize, usize), &mut Vec<(u64, u64, u64)>) + 'a {
+    pub fn block_stats_prepared<'a>(weights: &'a [u8], (w, h): (usize, usize)) -> BlockStats<'a> {
         let pairs = super::weight_pairs(weights, w, h);
         let quads = super::weight_quads(weights, w, h);
         let rows64 = super::weight_rows64(weights, w, h);
-        move |pixels, stride, at, block, out| {
+        Box::new(move |pixels, stride, at, block, out| {
             let template = super::BlockWeights {
                 pixels: weights,
                 pairs: &pairs,
@@ -4618,7 +4701,7 @@ pub mod bench {
                 rows64: &rows64,
             };
             super::block_stats(pixels, stride, at, block, &template, (w, h), out);
-        }
+        })
     }
 
     /// [`super::hits_everywhere`]: for each template (its products, pixel

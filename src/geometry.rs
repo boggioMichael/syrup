@@ -485,18 +485,96 @@ where
                 empty += 1;
             }
         }
-        let rows = y_end - y_start;
-        // Require a real majority so a stray matching row cannot claim a
-        // column that is mostly background.
-        if filled * 2 > rows {
-            ColumnKind::Filled
-        } else if empty * 2 > rows {
-            ColumnKind::Empty
-        } else {
-            ColumnKind::Neither
-        }
+        column_kind(filled, empty, y_end - y_start)
     };
+    walk_bar(image, fill, search, classify)
+}
 
+/// [`measure_bar_fill`] for a bar of a colour, `is_filled` being
+/// [`crate::color::is_color_pixel`] with `colour` (its hue range, least
+/// saturation and least value): the same reading, the columns' votes taken
+/// 64 columns at a time from each row's pixels tested together
+/// (`kernels::color_mask`), where the general one tests a pixel at a time.
+pub fn measure_color_bar_fill(
+    image: &RgbaImage,
+    fill: Rect,
+    search: Rect,
+    colour: ((f32, f32), f32, f32),
+) -> Option<f32> {
+    let (hue_range, min_saturation, min_value) = colour;
+    let is_filled = |pixel: &Rgba<u8>| {
+        crate::color::is_color_pixel(pixel, hue_range, min_saturation, min_value)
+    };
+    let groove = match sample_groove_color(image, fill, search, &is_filled) {
+        Groove::Colour(colour) => Some(colour),
+        Groove::Background => None,
+        Groove::Unknown => return None,
+    };
+    if fill.w == 0 || fill.h == 0 {
+        return None;
+    }
+    let (y_start, y_end) = bar_core_rows(image, fill)?;
+    let width = image.width();
+    let raw = image.as_raw();
+    // Each block of 64 columns' kinds, once a column of it is asked for.
+    let mut blocks: Vec<Option<[ColumnKind; 64]>> = vec![None; width.div_ceil(64) as usize];
+    let mut mask = Vec::new();
+    let mut classify = |x: u32| -> ColumnKind {
+        if x >= width {
+            return ColumnKind::Neither;
+        }
+        let block = (x / 64) as usize;
+        if blocks[block].is_none() {
+            let (x0, x1) = (64 * block as u32, (64 * block as u32 + 64).min(width));
+            let n = (x1 - x0) as usize;
+            let (mut filled, mut empty) = ([0u32; 64], [0u32; 64]);
+            for y in y_start..y_end {
+                let at = (y as usize * width as usize + x0 as usize) * 4;
+                let row = &raw[at..at + 4 * n];
+                crate::kernels::color_mask(row, hue_range, min_saturation, min_value, &mut mask);
+                for (c, pixel) in row.as_chunks::<4>().0.iter().enumerate() {
+                    if mask[0] & (1 << c) != 0 {
+                        filled[c] += 1;
+                    } else if let Some(reference) = groove
+                        && is_similar_color(&Rgba(*pixel), reference, GROOVE_TOLERANCE)
+                    {
+                        empty[c] += 1;
+                    }
+                }
+            }
+            let rows = y_end - y_start;
+            let mut kinds = [ColumnKind::Neither; 64];
+            for c in 0..n {
+                kinds[c] = column_kind(filled[c], empty[c], rows);
+            }
+            blocks[block] = Some(kinds);
+        }
+        blocks[block].expect("filled above")[(x % 64) as usize]
+    };
+    walk_bar(image, fill, search, &mut classify)
+}
+
+/// A column of a bar by its votes over `rows` rows: filled, empty or
+/// neither. A real majority is required, so a stray matching row cannot
+/// claim a column that is mostly background.
+fn column_kind(filled: u32, empty: u32, rows: u32) -> ColumnKind {
+    if filled * 2 > rows {
+        ColumnKind::Filled
+    } else if empty * 2 > rows {
+        ColumnKind::Empty
+    } else {
+        ColumnKind::Neither
+    }
+}
+
+/// The walk of [`measure_bar_fill`] out from a bar's fill, its columns
+/// classified by `classify`: the fill's percentage of its track.
+fn walk_bar(
+    image: &RgbaImage,
+    fill: Rect,
+    search: Rect,
+    mut classify: impl FnMut(u32) -> ColumnKind,
+) -> Option<f32> {
     let search_left = search.x;
     let search_right = search.x.saturating_add(search.w).min(image.width());
 
@@ -824,17 +902,42 @@ fn color_runs(
         hits
     });
     // Where the run of matching pixels through `at` ends, to the right (one
-    // past its last) and to the left (its first).
+    // past its last) and to the left (its first): stretches of 64 pixels
+    // tested together, then twice as many each time while the run goes on.
+    let first_miss = |mask: &[u64], n: usize| -> Option<usize> {
+        (0..n.div_ceil(64)).find_map(|w| {
+            let valid = (n - 64 * w).min(64);
+            let misses = !mask[w]
+                & if valid == 64 {
+                    u64::MAX
+                } else {
+                    (1 << valid) - 1
+                };
+            (misses != 0).then(|| 64 * w + misses.trailing_zeros() as usize)
+        })
+    };
+    let last_miss = |mask: &[u64], n: usize| -> Option<usize> {
+        (0..n.div_ceil(64)).rev().find_map(|w| {
+            let valid = (n - 64 * w).min(64);
+            let misses = !mask[w]
+                & if valid == 64 {
+                    u64::MAX
+                } else {
+                    (1 << valid) - 1
+                };
+            (misses != 0).then(|| 64 * w + 63 - misses.leading_zeros() as usize)
+        })
+    };
     let run_right = |at: usize, mask: &mut Vec<u64>| -> usize {
-        let mut i = at + 1;
+        let (mut i, mut stretch) = (at + 1, 64);
         while i < count {
-            let n = (count - i).min(64);
+            let n = (count - i).min(stretch);
             test(i, i + n, mask);
-            let misses = !mask[0] & if n == 64 { u64::MAX } else { (1 << n) - 1 };
-            if misses != 0 {
-                return i + misses.trailing_zeros() as usize;
+            if let Some(miss) = first_miss(mask, n) {
+                return i + miss;
             }
             i += n;
+            stretch *= 2;
         }
         count
     };
@@ -843,17 +946,17 @@ fn color_runs(
         if at < done {
             continue; // within the run just found
         }
-        let mut begin = at;
+        let (mut begin, mut stretch) = (at, 64);
         while begin > 0 {
-            let n = begin.min(64);
+            let n = begin.min(stretch);
             test(begin - n, begin, mask);
-            let misses = !mask[0] & if n == 64 { u64::MAX } else { (1 << n) - 1 };
-            if misses != 0 {
+            if let Some(miss) = last_miss(mask, n) {
                 // One past the last miss.
-                begin = begin - n + (63 - misses.leading_zeros() as usize) + 1;
+                begin = begin - n + miss + 1;
                 break;
             }
             begin -= n;
+            stretch *= 2;
         }
         let end = run_right(at, mask);
         if end - begin >= step {
@@ -1018,6 +1121,9 @@ mod tests {
             state ^= state << 5;
             // Long stretches of red, of blue, and of noise; every fifth
             // row red from end to end but for a few gaps.
+            if y % 10 == 0 {
+                return Rgba([220, 20, 30, 255]);
+            }
             if y % 5 == 0 {
                 return if x % 97 == 13 || x % 151 == 0 {
                     Rgba([20, 40, 230, 255])
@@ -1254,6 +1360,101 @@ mod tests {
         let (image, fill) = bar_frame(0, 120, 0.5);
         let percent = measure_bar_fill(&image, fill, search, red_filled).unwrap();
         assert!((percent - 50.0).abs() <= 1.5, "edge bar read {percent}%");
+    }
+
+    /// The colour bar's reading, its votes taken from row masks, is the
+    /// general reading with the colour test, on bars of every kind: full,
+    /// partial and empty, dark and light grooves, noisy edges, at the
+    /// frame's edges, with searches cut short.
+    #[test]
+    fn a_colour_bar_reads_as_the_general_reading_with_the_colour_test() {
+        let mut state = 99u32;
+        let mut next = move |n: u32| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state % n
+        };
+        let colours = [
+            ((340.0, 30.0), 0.35, 0.30),
+            ((40.0, 80.0), 0.25, 0.25),
+            ((190.0, 250.0), 0.30, 0.30),
+        ];
+        let fills = [[230, 30, 30, 255], [225, 225, 40, 255], [40, 90, 230, 255]];
+        let (mut read, mut unread) = (0, 0);
+        for trial in 0..300u32 {
+            let k = (trial % 3) as usize;
+            let (width, height) = (150 + next(400), 40);
+            let mut image =
+                RgbaImage::from_pixel(width, height, Rgba([25 + next(100) as u8, 25, 28, 255]));
+            let track_x = next(width / 2);
+            let track_w = (1 + next(width - track_x)).min(width - track_x);
+            let filled_w = next(track_w + 1);
+            let groove = if trial % 2 == 0 {
+                [16u8, 16, 16, 255]
+            } else {
+                [210, 210, 210, 255]
+            };
+            let (y0, y1) = (10 + next(4), 20 + next(6));
+            for y in y0..y1 {
+                for x in track_x..track_x + track_w {
+                    let mut pixel = if x < track_x + filled_w {
+                        fills[k]
+                    } else {
+                        groove
+                    };
+                    // Noise: a stray pixel here and there, and soft edges.
+                    if next(13) == 0 {
+                        pixel = [next(256) as u8, next(256) as u8, next(256) as u8, 255];
+                    }
+                    image.put_pixel(x, y, Rgba(pixel));
+                }
+            }
+            let fill = Rect {
+                x: track_x,
+                y: y0,
+                w: filled_w.max(1),
+                h: y1 - y0,
+            };
+            for search in [
+                Rect {
+                    x: 0,
+                    y: 0,
+                    w: width,
+                    h: height,
+                },
+                Rect {
+                    x: track_x.saturating_sub(3),
+                    y: 0,
+                    w: track_w / 2 + 5,
+                    h: height,
+                },
+                Rect {
+                    x: track_x + track_w / 3,
+                    y: 0,
+                    w: width,
+                    h: height,
+                },
+            ] {
+                let (hue, saturation, value) = colours[k];
+                let general = measure_bar_fill(&image, fill, search, |p| {
+                    is_color_pixel(p, hue, saturation, value)
+                });
+                let colour = measure_color_bar_fill(&image, fill, search, colours[k]);
+                if general.is_some() {
+                    read += 1;
+                } else {
+                    unread += 1;
+                }
+                assert_eq!(
+                    colour.map(f32::to_bits),
+                    general.map(f32::to_bits),
+                    "trial {trial}: {fill:?} in {search:?}: {colour:?} vs {general:?}"
+                );
+            }
+        }
+        // Both outcomes were met, many times.
+        assert!(read > 200 && unread > 50, "{read} read, {unread} not");
     }
 
     #[test]
