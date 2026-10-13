@@ -200,10 +200,11 @@ pub fn window_stats(
 /// the windows scored one at a time — a refinement's climb, a match's
 /// sub-pixel centre.
 ///
-/// With AVX-512 dot products, a window at least [`ROWS64_MIN_WIDTH`] wide
-/// (whose sums fit 32 bits) is taken row by row in 64-byte vectors from
-/// the template's signed rows (`rows64`, [`weight_rows64`]): the same three
-/// sums.
+/// With AVX-512 dot products, a window whose sums fit 32 bits is taken row
+/// by row in 64-byte vectors from the template's signed rows (`rows64`,
+/// [`weight_rows64`]), however narrow: the same three sums, in a fraction
+/// of the instructions of either 256-bit path (a 13×20 window: about 160
+/// against 1000).
 pub(crate) fn window_stats_wide(
     pixels: &[u8],
     stride: usize,
@@ -212,7 +213,7 @@ pub(crate) fn window_stats_wide(
     (w, h): (usize, usize),
 ) -> (u64, u64, u64) {
     #[cfg(target_arch = "x86_64")]
-    if w >= ROWS64_MIN_WIDTH && w * h <= MAX_AREA_32 && vnni() == Some(Vnni::Zmm) {
+    if w * h <= MAX_AREA_32 && vnni() == Some(Vnni::Zmm) {
         // SAFETY: AVX-512 F, BW and VNNI were detected (`vnni()`); the
         // kernel checks the sizes.
         return unsafe { x86::window_stats_zmm(pixels, stride, (x, y), rows64, (w, h)) };
@@ -507,6 +508,42 @@ pub(crate) fn correlate_everywhere_into(
             x86::correlate_everywhere_avx2(out, plane, width, height, weights, w, h)
         },
         _ => correlate_everywhere_rows(out, plane, width, weights, w, h),
+    }
+}
+
+/// [`correlate_everywhere_into`] for several templates of one size (a
+/// picture and its mirror image), `outs[i]` the totals of `templates[i]`:
+/// on the dot-product path the plane is rearranged for them once.
+pub(crate) fn correlate_alike_into(
+    plane: &[u8],
+    width: usize,
+    height: usize,
+    templates: &[&[u8]],
+    (w, h): (usize, usize),
+    outs: &mut [Vec<u32>],
+) {
+    assert_eq!(templates.len(), outs.len());
+    assert!(w > 0 && h > 0 && w <= width && h <= height);
+    assert!(plane.len() >= width * height && templates.iter().all(|t| t.len() >= w * h));
+    #[cfg(target_arch = "x86_64")]
+    if let Some(vnni) = vnni() {
+        let (columns, rows) = (width - w + 1, height - h + 1);
+        let mut slices: Vec<&mut [u32]> = outs
+            .iter_mut()
+            .map(|out| {
+                out.resize(columns * rows, 0);
+                out.as_mut_slice()
+            })
+            .collect();
+        // SAFETY: `vnni()` reported the instructions on this CPU; the sizes
+        // are checked above. The kernels write every position.
+        unsafe {
+            x86::correlate_alike_vnni(vnni, &mut slices, plane, width, height, templates, w, h)
+        };
+        return;
+    }
+    for (out, weights) in outs.iter_mut().zip(templates) {
+        correlate_everywhere_into(plane, width, height, weights, w, h, out);
     }
 }
 
@@ -879,6 +916,31 @@ pub(crate) fn weight_quads(weights: &[u8], w: usize, h: usize) -> (Vec<u32>, u32
         }
     }
     (out, sum.wrapping_mul(128))
+}
+
+/// A template's columns in fours down the rows, as the vertical form of the
+/// dot-product correlation takes them: `out[j·w + c]` holds the pixels of
+/// column `c` in rows `4j .. 4j + 4` (`t(c, 4j) | t(c, 4j + 1) << 8 | …`,
+/// zero past the last row), `h.div_ceil(4)` rows of `w`; and `128 Σt`.
+pub(crate) fn weight_vquads(weights: &[u8], w: usize, h: usize) -> (Vec<u32>, u32) {
+    let rows = h.div_ceil(4);
+    let mut out = vec![0u32; rows * w];
+    let mut sum = 0u32;
+    for (v, line) in weights[..w * h].chunks_exact(w).enumerate() {
+        for (c, &t) in line.iter().enumerate() {
+            out[(v / 4) * w + c] |= u32::from(t) << (8 * (v % 4));
+            sum = sum.wrapping_add(u32::from(t));
+        }
+    }
+    (out, sum.wrapping_mul(128))
+}
+
+/// Whether the vertical form of the dot-product correlation takes fewer
+/// dot products than the horizontal one for a `w`×`h` template: fours of
+/// a column (`h.div_ceil(4) · w` a position) against fours of a row
+/// (`h · w.div_ceil(4)`); a 13×20 template, 65 against 80.
+pub(crate) fn vertical_quads_pay(w: usize, h: usize) -> bool {
+    h.div_ceil(4) * w < h * w.div_ceil(4)
 }
 
 /// One row of a plane halved across, the first pass of the pyramid's
@@ -3489,10 +3551,39 @@ mod x86 {
         w: usize,
         h: usize,
     ) {
+        // SAFETY: as this function's.
+        unsafe { correlate_alike_vnni(vnni, &mut [out], plane, width, height, &[weights], w, h) }
+    }
+
+    /// [`correlate_everywhere_vnni`] for several templates of one size (a
+    /// picture and its mirror image): the plane's quads made once for all
+    /// of them, `outs[i]` the totals of `templates[i]`.
+    ///
+    /// # Safety
+    ///
+    /// `vnni` was detected on this CPU.
+    #[allow(clippy::too_many_arguments)]
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn correlate_alike_vnni(
+        vnni: super::Vnni,
+        outs: &mut [&mut [u32]],
+        plane: &[u8],
+        width: usize,
+        height: usize,
+        templates: &[&[u8]],
+        w: usize,
+        h: usize,
+    ) {
         let (columns, rows) = (width - w + 1, height - h + 1);
-        assert!(out.len() >= columns * rows);
-        assert!(plane.len() >= width * height && weights.len() >= w * h);
-        let (tq, bias) = super::weight_quads(weights, w, h);
+        assert_eq!(outs.len(), templates.len());
+        assert!(outs.iter().all(|out| out.len() >= columns * rows));
+        assert!(plane.len() >= width * height && templates.iter().all(|t| t.len() >= w * h));
+        if vnni == super::Vnni::Zmm && super::vertical_quads_pay(w, h) {
+            // SAFETY: `Zmm` is reported only when the CPU has AVX-512 F, BW
+            // and VNNI; the sizes are checked above.
+            unsafe { correlate_alike_vquads(outs, plane, width, height, templates, w, h) };
+            return;
+        }
         let per_row = w.div_ceil(4);
         // Every load of a block stays within its row of quads: the last
         // block starts before `columns` and reads `VNNI_BLOCK` lanes from
@@ -3506,18 +3597,276 @@ mod x86 {
                 quad_up(line, &mut quads[r * stride..(r + 1) * stride]);
             }
             let quads = &quads[..height * stride];
-            // SAFETY: as checked above; `vnni` was detected on this CPU.
-            unsafe {
-                match vnni {
-                    super::Vnni::Zmm => correlate_quads_zmm(
-                        out, quads, stride, columns, rows, &tq, per_row, h, bias,
-                    ),
-                    super::Vnni::Ymm => correlate_quads_ymm(
-                        out, quads, stride, columns, rows, &tq, per_row, h, bias,
-                    ),
+            for (out, weights) in outs.iter_mut().zip(templates) {
+                let (tq, bias) = super::weight_quads(weights, w, h);
+                // SAFETY: as checked above; `vnni` was detected on this CPU.
+                unsafe {
+                    match vnni {
+                        super::Vnni::Zmm => correlate_quads_zmm(
+                            out, quads, stride, columns, rows, &tq, per_row, h, bias,
+                        ),
+                        super::Vnni::Ymm => correlate_quads_ymm(
+                            out, quads, stride, columns, rows, &tq, per_row, h, bias,
+                        ),
+                    }
                 }
             }
         });
+    }
+
+    /// The exhaustive correlation on 512-bit dot products with the quads
+    /// taken down the columns: each pixel, less 128, stored with the three
+    /// below it as one 32-bit lane (`vquad_rows`), and the template's
+    /// columns in fours the same way (`weight_vquads`). A template whose
+    /// width is not a multiple of four leaves fewer lanes empty so (13×20:
+    /// 65 dot products a position, against 80). The same exact totals:
+    /// `Σ t (p - 128)`, wrapping, to which `128 Σ t` is added back.
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F, BW and VNNI; each of `outs` holds `columns · rows`
+    /// positions.
+    #[allow(clippy::too_many_arguments)]
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    unsafe fn correlate_alike_vquads(
+        outs: &mut [&mut [u32]],
+        plane: &[u8],
+        width: usize,
+        height: usize,
+        templates: &[&[u8]],
+        w: usize,
+        h: usize,
+    ) {
+        let (columns, rows) = (width - w + 1, height - h + 1);
+        assert!(outs.iter().all(|out| out.len() >= columns * rows));
+        assert!(plane.len() >= width * height && templates.iter().all(|t| t.len() >= w * h));
+        // A block's loads reach `VNNI_BLOCK` lanes past its first column
+        // and `w` columns along; the rows are written whole, in 64-lane
+        // steps.
+        let stride = (columns.next_multiple_of(VNNI_BLOCK) + w).max(width.next_multiple_of(64));
+        QUADS_SCRATCH.with_borrow_mut(|vq| {
+            if vq.len() < height * stride {
+                vq.resize(height * stride, 0);
+            }
+            // SAFETY: AVX-512 F and BW, by this function's guarantee; `vq`
+            // holds `height` rows of `stride >= width.next_multiple_of(64)`.
+            unsafe { vquad_rows(plane, width, height, &mut vq[..height * stride], stride) };
+            let vq = &vq[..height * stride];
+            for (out, weights) in outs.iter_mut().zip(templates) {
+                // SAFETY: as this function's; `out` holds every position.
+                unsafe { vquads_into(out, vq, stride, (columns, rows), weights, (w, h)) };
+            }
+        });
+    }
+
+    /// The vertical correlation of one template, from the plane's quads
+    /// (`vquad_rows`), into `out`.
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F, BW and VNNI; `vq` holds the quad rows of a plane
+    /// `columns + w - 1` wide and `rows + h - 1` high, `stride >=
+    /// columns.next_multiple_of(64) + w` lanes apart; `out` holds `columns
+    /// · rows` positions.
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    unsafe fn vquads_into(
+        out: &mut [u32],
+        vq: &[u32],
+        stride: usize,
+        (columns, rows): (usize, usize),
+        weights: &[u8],
+        (w, h): (usize, usize),
+    ) {
+        assert!(out.len() >= columns * rows && weights.len() >= w * h);
+        assert!(stride >= columns.next_multiple_of(VNNI_BLOCK) + w);
+        assert!(vq.len() >= (rows + h - 1) * stride);
+        let (tv, bias) = super::weight_vquads(weights, w, h);
+        let fours = h.div_ceil(4);
+        {
+            let bias = _mm512_set1_epi32(bias as i32);
+            let mut store = |y: usize, x: usize, sums: &[__m512i; 4]| {
+                for (lane, &sum) in sums.iter().enumerate() {
+                    let at = x + 16 * lane;
+                    if at >= columns {
+                        break;
+                    }
+                    let n = (columns - at).min(16);
+                    let mask: __mmask16 = if n == 16 { u16::MAX } else { (1 << n) - 1 };
+                    // SAFETY: the mask keeps the store within row `y`.
+                    unsafe {
+                        _mm512_mask_storeu_epi32(
+                            out.as_mut_ptr().add(y * columns + at).cast(),
+                            mask,
+                            _mm512_add_epi32(sum, bias),
+                        )
+                    };
+                }
+            };
+            // Position rows four apart go together, so that each row of
+            // quads loaded serves up to four of them (each with its own
+            // fours of the template's rows); sixteen rows are four such sets.
+            let mut y0 = 0;
+            while y0 < rows {
+                for phase in 0..4 {
+                    let first = y0 + phase;
+                    if first >= rows {
+                        break;
+                    }
+                    let r = (rows - first).div_ceil(4).min(4);
+                    let mut x = 0;
+                    while x < columns {
+                        // SAFETY: position rows `first + 4a < rows` take
+                        // quad rows up to `first + 4(a + fours - 1) <=
+                        // height - 1`; the loads end by `x + 64 + w <=
+                        // stride`; `tv` holds `fours · w`.
+                        unsafe {
+                            match r {
+                                4 => {
+                                    let sums =
+                                        vquad_block::<4>(vq, stride, (x, first), &tv, (w, fours));
+                                    for (a, sums) in sums.iter().enumerate() {
+                                        store(first + 4 * a, x, sums);
+                                    }
+                                }
+                                3 => {
+                                    let sums =
+                                        vquad_block::<3>(vq, stride, (x, first), &tv, (w, fours));
+                                    for (a, sums) in sums.iter().enumerate() {
+                                        store(first + 4 * a, x, sums);
+                                    }
+                                }
+                                2 => {
+                                    let sums =
+                                        vquad_block::<2>(vq, stride, (x, first), &tv, (w, fours));
+                                    for (a, sums) in sums.iter().enumerate() {
+                                        store(first + 4 * a, x, sums);
+                                    }
+                                }
+                                _ => {
+                                    let sums =
+                                        vquad_block::<1>(vq, stride, (x, first), &tv, (w, fours));
+                                    store(first, x, &sums[0]);
+                                }
+                            }
+                        }
+                        x += VNNI_BLOCK;
+                    }
+                }
+                y0 += 16;
+            }
+        }
+    }
+
+    /// `vq[y·stride + x]`: the pixels at column `x` of rows `y .. y + 4`,
+    /// each less 128 (its top bit flipped), as the bytes of one lane;
+    /// rows past the plane's last count as zero (they meet only zero
+    /// weights), and so do columns past its width, up to the next 64.
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F and BW; `vq` holds `height` rows of `stride >=
+    /// width.next_multiple_of(64)` lanes.
+    #[target_feature(enable = "avx512f,avx512bw")]
+    unsafe fn vquad_rows(plane: &[u8], width: usize, height: usize, vq: &mut [u32], stride: usize) {
+        assert!(plane.len() >= width * height);
+        assert!(stride >= width.next_multiple_of(64) && vq.len() >= height * stride);
+        let flip = _mm512_set1_epi8(-128);
+        for y in 0..height {
+            let mut x = 0;
+            while x < width {
+                let n = (width - x).min(64);
+                let mask: u64 = if n == 64 { u64::MAX } else { (1 << n) - 1 };
+                let row = |r: usize| {
+                    if y + r < height {
+                        // SAFETY: the mask keeps the load within row `y + r`.
+                        let bytes = unsafe {
+                            _mm512_maskz_loadu_epi8(
+                                mask,
+                                plane.as_ptr().add((y + r) * width + x).cast(),
+                            )
+                        };
+                        _mm512_xor_si512(bytes, flip)
+                    } else {
+                        _mm512_setzero_si512()
+                    }
+                };
+                let (r0, r1, r2, r3) = (row(0), row(1), row(2), row(3));
+                // Within each 128-bit lane: bytes of rows 0 and 1, then 2
+                // and 3, side by side, then those pairs side by side — the
+                // lane's 16 columns as four vectors' quarters, put in order
+                // by exchanging quarters.
+                let (a, b) = (_mm512_unpacklo_epi8(r0, r1), _mm512_unpackhi_epi8(r0, r1));
+                let (c, d) = (_mm512_unpacklo_epi8(r2, r3), _mm512_unpackhi_epi8(r2, r3));
+                let q0 = _mm512_unpacklo_epi16(a, c);
+                let q1 = _mm512_unpackhi_epi16(a, c);
+                let q2 = _mm512_unpacklo_epi16(b, d);
+                let q3 = _mm512_unpackhi_epi16(b, d);
+                let t0 = _mm512_shuffle_i64x2::<0b01_00_01_00>(q0, q1);
+                let t1 = _mm512_shuffle_i64x2::<0b01_00_01_00>(q2, q3);
+                let t2 = _mm512_shuffle_i64x2::<0b11_10_11_10>(q0, q1);
+                let t3 = _mm512_shuffle_i64x2::<0b11_10_11_10>(q2, q3);
+                let lanes = [
+                    _mm512_shuffle_i64x2::<0b10_00_10_00>(t0, t1),
+                    _mm512_shuffle_i64x2::<0b11_01_11_01>(t0, t1),
+                    _mm512_shuffle_i64x2::<0b10_00_10_00>(t2, t3),
+                    _mm512_shuffle_i64x2::<0b11_01_11_01>(t2, t3),
+                ];
+                for (k, &v) in lanes.iter().enumerate() {
+                    // SAFETY: 16 lanes from `x + 16k < x + 64 <= stride`
+                    // within row `y`.
+                    unsafe {
+                        _mm512_storeu_si512(vq.as_mut_ptr().add(y * stride + x + 16 * k).cast(), v)
+                    };
+                }
+                x += 64;
+            }
+        }
+    }
+
+    /// The vertical correlation's inner loop: 64 positions from `x` in each
+    /// of `R` position rows four apart from `y`. Quad row `y + 4m` serves
+    /// position row `a` with the template's fours `m - a`, so each load is
+    /// used by up to `R` dot products.
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F, BW and VNNI; `vq` holds quad rows `y .. y + 4(R - 1 +
+    /// fours - 1)` of `stride >= x + 64 + w` lanes; `tv` holds `fours · w`.
+    #[inline]
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    unsafe fn vquad_block<const R: usize>(
+        vq: &[u32],
+        stride: usize,
+        (x, y): (usize, usize),
+        tv: &[u32],
+        (w, fours): (usize, usize),
+    ) -> [[__m512i; 4]; R] {
+        debug_assert!(vq.len() >= (y + 4 * (R + fours - 2)) * stride + x + 64 + w);
+        debug_assert!(tv.len() >= fours * w);
+        let mut acc = [[_mm512_setzero_si512(); 4]; R];
+        let base = vq.as_ptr();
+        for m in 0..fours + R - 1 {
+            // SAFETY: quad row `y + 4m`, by the caller's guarantee.
+            let row = unsafe { base.add((y + 4 * m) * stride + x) };
+            for c in 0..w {
+                let mut p = [_mm512_setzero_si512(); 4];
+                for (lane, v) in p.iter_mut().enumerate() {
+                    // SAFETY: within the row, by the caller's guarantee.
+                    *v = unsafe { _mm512_loadu_si512(row.add(c + 16 * lane).cast()) };
+                }
+                for (a, sums) in acc.iter_mut().enumerate() {
+                    let Some(j) = m.checked_sub(a).filter(|&j| j < fours) else {
+                        continue;
+                    };
+                    // SAFETY: `j < fours` and `c < w`, so within `tv`.
+                    let t = _mm512_set1_epi32(unsafe { *tv.get_unchecked(j * w + c) } as i32);
+                    for (sum, &p) in sums.iter_mut().zip(&p) {
+                        *sum = _mm512_dpbusd_epi32(*sum, t, p);
+                    }
+                }
+            }
+        }
+        acc
     }
 
     /// `out[c]`: the bytes `line[c .. c + 4]`, each less 128 (flipping its
@@ -3902,6 +4251,51 @@ mod tests {
     }
 
     #[test]
+    fn alike_templates_correlate_as_each_alone() {
+        // A picture and its mirror, and a third of the same size: the
+        // plane's quads made once give each the totals it gets alone, on
+        // the column-wise fours (13×20) and the row-wise ones (16×16).
+        let (width, height) = (331usize, 47usize);
+        let plane = noise(width * height, 29);
+        for &(w, h) in &[(13usize, 20usize), (16, 16), (7, 9)] {
+            let picture = noise(w * h, (w * 7 + h) as u32);
+            let mirror: Vec<u8> = picture
+                .chunks_exact(w)
+                .flat_map(|row| row.iter().rev().copied().collect::<Vec<_>>())
+                .collect();
+            let third = noise(w * h, 3);
+            let templates = [picture.as_slice(), mirror.as_slice(), third.as_slice()];
+            let mut outs = vec![Vec::new(); 3];
+            correlate_alike_into(&plane, width, height, &templates, (w, h), &mut outs);
+            for (t, out) in templates.iter().zip(&outs) {
+                let mut expected = vec![0u32; (width - w + 1) * (height - h + 1)];
+                correlate_everywhere_rows(&mut expected, &plane, width, t, w, h);
+                assert_eq!(out, &expected, "{w}x{h}");
+            }
+            #[cfg(target_arch = "x86_64")]
+            for vnni in available_vnni() {
+                let mut got = vec![vec![0u32; outs[0].len()]; 3];
+                let mut slices: Vec<&mut [u32]> =
+                    got.iter_mut().map(|g| g.as_mut_slice()).collect();
+                // SAFETY: the CPU reported the instructions.
+                unsafe {
+                    x86::correlate_alike_vnni(
+                        vnni,
+                        &mut slices,
+                        &plane,
+                        width,
+                        height,
+                        &templates,
+                        w,
+                        h,
+                    )
+                };
+                assert_eq!(got, outs, "{w}x{h} on {vnni:?}");
+            }
+        }
+    }
+
+    #[test]
     fn correlated_rows_add_up_the_same() {
         let source = noise(1000, 3);
         let weights = noise(56, 9);
@@ -3929,6 +4323,19 @@ mod tests {
             (64, 60),
             (173, 1),
             (140, 61),
+            // Shapes the column-wise fours take (`vertical_quads_pay`):
+            // every height around a multiple of four, and position rows
+            // that do not fill the last set of sixteen.
+            (1, 4),
+            (3, 4),
+            (5, 8),
+            (9, 12),
+            (13, 20),
+            (13, 21),
+            (13, 22),
+            (13, 23),
+            (21, 37),
+            (101, 58),
         ] {
             let weights = noise(w * h, (w * 131 + h) as u32);
             let mut expected = vec![0u32; (width - w + 1) * (height - h + 1)];
@@ -4004,6 +4411,14 @@ mod tests {
             };
             assert!(got.iter().all(|&t| t == 0), "{vnni:?} on black");
         }
+        // The same on the column-wise fours: a 255×256 template, all 255s.
+        let weights = vec![255u8; 255 * 256];
+        assert!(vertical_quads_pay(255, 256));
+        let got = correlate_everywhere(&white, width, height, &weights, 255, 256);
+        assert!(got.iter().all(|&t| t == 255 * 256 * 255 * 255));
+        let black = vec![0u8; width * height];
+        let got = correlate_everywhere(&black, width, height, &weights, 255, 256);
+        assert!(got.iter().all(|&t| t == 0));
     }
 
     /// The dot-product instructions this CPU has, each to test.

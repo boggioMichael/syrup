@@ -1168,17 +1168,15 @@ fn peaks_everywhere(
             if products.len() < levels.len() {
                 products.resize_with(levels.len(), Vec::new);
             }
-            for (out, level) in products.iter_mut().zip(levels) {
-                crate::kernels::correlate_everywhere_into(
-                    &plane.pixels,
-                    plane.width,
-                    plane.height,
-                    &level.inner.pixels,
-                    w,
-                    h,
-                    out,
-                );
-            }
+            let pictures: Vec<&[u8]> = levels.iter().map(|l| l.inner.pixels.as_slice()).collect();
+            crate::kernels::correlate_alike_into(
+                &plane.pixels,
+                plane.width,
+                plane.height,
+                &pictures,
+                (w, h),
+                &mut products[..levels.len()],
+            );
             let templates: Vec<(&[u32], i64, i64)> = products
                 .iter()
                 .zip(levels)
