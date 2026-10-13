@@ -199,17 +199,24 @@ pub fn window_stats(
 /// they are multiplied, where it would widen them for every window. For
 /// the windows scored one at a time — a refinement's climb, a match's
 /// sub-pixel centre.
-#[allow(clippy::too_many_arguments)]
+///
+/// With AVX-512 dot products, a window at least [`ROWS64_MIN_WIDTH`] wide
+/// (whose sums fit 32 bits) is taken row by row in 64-byte vectors from
+/// the template's signed rows (`rows64`, [`weight_rows64`]): the same three
+/// sums.
 pub(crate) fn window_stats_wide(
     pixels: &[u8],
     stride: usize,
-    x: usize,
-    y: usize,
-    weights: &[u8],
-    wide: &[i16],
-    w: usize,
-    h: usize,
+    (x, y): (usize, usize),
+    (weights, wide, rows64): (&[u8], &[i16], &[u8]),
+    (w, h): (usize, usize),
 ) -> (u64, u64, u64) {
+    #[cfg(target_arch = "x86_64")]
+    if w >= ROWS64_MIN_WIDTH && w * h <= MAX_AREA_32 && vnni() == Some(Vnni::Zmm) {
+        // SAFETY: AVX-512 F, BW and VNNI were detected (`vnni()`); the
+        // kernel checks the sizes.
+        return unsafe { x86::window_stats_zmm(pixels, stride, (x, y), rows64, (w, h)) };
+    }
     match backend() {
         #[cfg(target_arch = "x86_64")]
         // SAFETY: `backend()` reported AVX2 on this CPU; the kernel checks
@@ -1163,6 +1170,62 @@ mod x86 {
             }
         }
         (sum_u64x4(sums), sum_i32x8(squares), sum_i32x8(products))
+    }
+
+    /// One window's three sums on AVX-512 dot products, row by row, 64
+    /// pixels a step straight from the plane (the last step of a row
+    /// loaded under a mask, so nothing past the window is read): the
+    /// products `Σ p (t - 128)` with the template's signed rows (`rows64`,
+    /// `w.next_multiple_of(64)` bytes a row), the squares `Σ p (p - 128)`,
+    /// and the pixel sums of eight bytes at a time; `128 Σ p` added back to
+    /// the first two. The 32-bit lanes wrap, and the true sums fit 32 bits.
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F, BW and VNNI.
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    pub(super) unsafe fn window_stats_zmm(
+        pixels: &[u8],
+        stride: usize,
+        (x, y): (usize, usize),
+        rows64: &[u8],
+        (w, h): (usize, usize),
+    ) -> (u64, u64, u64) {
+        let row = w.next_multiple_of(64);
+        assert!(w > 0 && h > 0 && w * h <= super::MAX_AREA_32);
+        assert!(rows64.len() >= row * h);
+        assert!(pixels.len() >= (y + h - 1) * stride + x + w);
+        let chunks = row / 64;
+        let last: u64 = if w.is_multiple_of(64) {
+            u64::MAX
+        } else {
+            (1 << (w % 64)) - 1
+        };
+        let flip = _mm512_set1_epi8(-128);
+        let zero = _mm512_setzero_si512();
+        let (mut sums, mut squares, mut products) = (zero, zero, zero);
+        let (base, weights) = (pixels.as_ptr(), rows64.as_ptr());
+        for v in 0..h {
+            // SAFETY: row `v` of the window and of the weights, by the
+            // checks above; the mask keeps the last load within the row.
+            unsafe {
+                let line = base.add((y + v) * stride + x);
+                let t = weights.add(v * row);
+                for k in 0..chunks {
+                    let mask = if k + 1 == chunks { last } else { u64::MAX };
+                    let p = _mm512_maskz_loadu_epi8(mask, line.add(64 * k).cast());
+                    products =
+                        _mm512_dpbusd_epi32(products, p, _mm512_loadu_si512(t.add(64 * k).cast()));
+                    squares = _mm512_dpbusd_epi32(squares, p, _mm512_xor_si512(p, flip));
+                    sums = _mm512_add_epi64(sums, _mm512_sad_epu8(p, zero));
+                }
+            }
+        }
+        let sum = _mm512_reduce_add_epi64(sums) as u64;
+        let bias = (sum as u32).wrapping_mul(128);
+        let squares = (_mm512_reduce_add_epi32(squares) as u32).wrapping_add(bias);
+        let products = (_mm512_reduce_add_epi32(products) as u32).wrapping_add(bias);
+        (sum, u64::from(squares), u64::from(products))
     }
 
     /// For a row of `w` pixels: how many are left after the whole steps of
@@ -3982,13 +4045,20 @@ mod tests {
                     noise(w * h, (w * 3 + h) as u32)
                 };
                 let wide: Vec<i16> = weights.iter().map(|&v| i16::from(v)).collect();
+                let rows64 = weight_rows64(&weights, w, h);
                 for (x, y) in [
                     (0, 0),
                     (stride - w, rows - h),
                     ((stride - w) / 3, (rows - h) / 2),
                 ] {
                     let expected = window_stats_scalar(pixels, stride, x, y, &weights, w, h);
-                    let got = window_stats_wide(pixels, stride, x, y, &weights, &wide, w, h);
+                    let got = window_stats_wide(
+                        pixels,
+                        stride,
+                        (x, y),
+                        (&weights, &wide, &rows64),
+                        (w, h),
+                    );
                     assert_eq!(
                         got,
                         expected,
@@ -4002,6 +4072,15 @@ mod tests {
                             x86::window_stats_wide_avx2(pixels, stride, x, y, &wide, w, h)
                         };
                         assert_eq!(avx2, expected, "{name} {w}x{h} at {x},{y} on avx2");
+                    }
+                    #[cfg(target_arch = "x86_64")]
+                    if vnni() == Some(Vnni::Zmm) && w * h <= MAX_AREA_32 {
+                        // SAFETY: the CPU reported AVX-512 VNNI; the window
+                        // fits.
+                        let zmm = unsafe {
+                            x86::window_stats_zmm(pixels, stride, (x, y), &rows64, (w, h))
+                        };
+                        assert_eq!(zmm, expected, "{name} {w}x{h} at {x},{y} on avx-512");
                     }
                 }
             }

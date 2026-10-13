@@ -1018,12 +1018,9 @@ fn score_at(plane: &Plane, template: &TemplateLevel, x: usize, y: usize) -> f32 
     let (sum, squares, products) = crate::kernels::window_stats_wide(
         &plane.pixels,
         plane.width,
-        x,
-        y,
-        &template.inner.pixels,
-        &template.wide,
-        w,
-        h,
+        (x, y),
+        (&template.inner.pixels, &template.wide, &template.rows64),
+        (w, h),
     );
     score_from(template, products, sum, squares)
 }
