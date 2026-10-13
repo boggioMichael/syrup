@@ -161,6 +161,21 @@ impl Template {
         Self::from_image(&flipped, channel)
     }
 
+    /// Whether `other` is this template in every form a search uses: the
+    /// same channel, mean colour and levels (each made from the one before,
+    /// so the same pixels at full size give the same levels; compared all
+    /// the same).
+    fn same(&self, other: &Template) -> bool {
+        self.channel == other.channel
+            && self.mean_rgb.map(f32::to_bits) == other.mean_rgb.map(f32::to_bits)
+            && self.levels.len() == other.levels.len()
+            && self.levels.iter().zip(&other.levels).all(|(a, b)| {
+                a.margin == b.margin
+                    && (a.plane.width, a.plane.height) == (b.plane.width, b.plane.height)
+                    && a.plane.pixels == b.plane.pixels
+            })
+    }
+
     /// The whole of `image` as a template.
     pub fn from_image(image: &RgbaImage, channel: Channel) -> Option<Self> {
         let region = Rect {
@@ -245,6 +260,10 @@ struct Picture {
     mirror: Option<Template>,
     width: u32,
     height: u32,
+    /// The first picture added before this one that is the same, in every
+    /// form a search uses (its levels, its mirror, its mean colour): this
+    /// one then finds nothing the other has not.
+    same_as: Option<usize>,
 }
 
 impl TemplateSet {
@@ -274,13 +293,40 @@ impl TemplateSet {
             .mirrored
             .then(|| Template::mirrored(image, region, self.channel))
             .flatten();
+        let same_as = self.pictures.iter().position(|p| {
+            p.same_as.is_none()
+                && p.template.same(&template)
+                && match (&p.mirror, &mirror) {
+                    (None, None) => true,
+                    (Some(a), Some(b)) => a.same(b),
+                    _ => false,
+                }
+        });
         self.pictures.push(Picture {
             template,
             mirror,
             width: image.width(),
             height: image.height(),
+            same_as,
         });
         true
+    }
+
+    /// Every picture searched, the same ones too, as before they were told
+    /// apart: what skipping them must not change.
+    #[cfg(test)]
+    fn forget_sameness(&mut self) {
+        for picture in &mut self.pictures {
+            picture.same_as = None;
+        }
+    }
+
+    /// The earlier picture that picture `index` is the same as, if any (see
+    /// [`TemplateSet::add`]): a search with either finds the same places
+    /// with the same scores, so the set's searches look with the first, and
+    /// a caller looking with each picture of a set in turn may too.
+    pub fn same_as(&self, index: usize) -> Option<usize> {
+        self.pictures.get(index).and_then(|p| p.same_as)
     }
 
     pub fn len(&self) -> usize {
@@ -541,6 +587,13 @@ pub fn find_set_in(
     let pyramid = &*pyramid;
     let mut found: Vec<(usize, bool, usize, usize, f32)> = Vec::new();
     for (index, picture) in set.pictures.iter().enumerate() {
+        // A picture the same as one before it finds the same places with
+        // the same scores, after that one's in the order below: each is
+        // dropped, as overlapping the earlier match, or for the colour the
+        // earlier failed with.
+        if picture.same_as.is_some() {
+            continue;
+        }
         // A picture and its mirror image are searched together: the same
         // size, so the windows' sums serve both.
         let variants: Vec<&Template> = std::iter::once(&picture.template)
@@ -631,6 +684,11 @@ pub fn find_set_near(
     let reach = radius + MAX_CLIMB as u32;
     let mut best: Option<(SetMatch, f32)> = None;
     for (index, picture) in set.pictures.iter().enumerate() {
+        // The same as an earlier picture: the same score, which does not
+        // beat the earlier one's (or fails as it did).
+        if picture.same_as.is_some() {
+            continue;
+        }
         let (w, h) = (picture.width, picture.height);
         // The region the search can reach: the picture centred at `centre`,
         // plus the radius and the climb on every side.
@@ -2270,6 +2328,81 @@ mod tests {
         let with = find(Some(60.0));
         assert_eq!(with.len(), 1, "{with:?}");
         assert_eq!((with[0].bounds.x, with[0].bounds.y), (100, 200));
+    }
+
+    #[test]
+    fn a_picture_added_again_finds_nothing_the_first_did_not() {
+        // Two poses, each added twice (a session keeps a pose it already
+        // has), and a frame with both, facing either way, and a lookalike
+        // of another colour.
+        let mut closed = creature(false);
+        for y in 24..27 {
+            for x in 8..32 {
+                closed.put_pixel(x, y, Rgba([240, 140, 40, 255]));
+            }
+        }
+        let original = creature(false);
+        let green = RgbaImage::from_fn(40, 36, |x, y| {
+            let p = original.get_pixel(x, y).0;
+            if p == [240, 140, 40, 255] {
+                Rgba([120, 190, 60, 255])
+            } else {
+                Rgba(p)
+            }
+        });
+        let mut frame = field();
+        paste(&mut frame, &closed, (300, 250));
+        paste(
+            &mut frame,
+            &image::imageops::flip_horizontal(&closed),
+            (200, 40),
+        );
+        paste(&mut frame, &green, (500, 250));
+        let mut set = TemplateSet::new(Channel::Luma, true);
+        for picture in [&original, &closed, &original, &original, &closed] {
+            assert!(set.add(picture));
+        }
+        let sameness: Vec<Option<usize>> = (0..set.len()).map(|i| set.same_as(i)).collect();
+        assert_eq!(sameness, vec![None, None, Some(0), Some(0), Some(1)]);
+        let mut every = set.clone();
+        every.forget_sameness();
+        let prepared = Prepared::new(&frame);
+        // Something to agree about: every copy, and the lookalike.
+        let loose = SetSearch {
+            min_score: 0.6,
+            limit: 8,
+            max_colour_shift: None,
+        };
+        assert!(find_set_in(&prepared, whole(&frame), &set, loose).len() >= 5);
+        assert!(find_set_near(&prepared, &set, (322.0, 266.0), 3, loose).is_some());
+        for min_score in [0.6, 0.9] {
+            for limit in [1, 2, 8] {
+                for max_colour_shift in [None, Some(60.0)] {
+                    let options = SetSearch {
+                        min_score,
+                        limit,
+                        max_colour_shift,
+                    };
+                    assert_eq!(
+                        find_set_in(&prepared, whole(&frame), &set, options),
+                        find_set_in(&prepared, whole(&frame), &every, options),
+                        "{options:?}"
+                    );
+                    for centre in [
+                        (123.0, 215.0),
+                        (446.0, 108.0),
+                        (322.0, 266.0),
+                        (520.0, 268.0),
+                    ] {
+                        assert_eq!(
+                            find_set_near(&prepared, &set, centre, 3, options),
+                            find_set_near(&prepared, &every, centre, 3, options),
+                            "{options:?} near {centre:?}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
