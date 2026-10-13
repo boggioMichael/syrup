@@ -7,8 +7,6 @@
 
 use image::{Pixel, Rgba, RgbaImage};
 
-use crate::color::is_text_pixel;
-
 /// Pixels `x0..=x1` of row `y`, with their x coordinate, read straight from
 /// the image buffer.
 ///
@@ -170,6 +168,13 @@ impl NormRect {
 
 /// Find runs of `min_width`-or-longer consecutive pixels along row `y` in
 /// `[x0, x1]` matching `predicate`. Returns inclusive `(start_x, end_x)` pairs.
+///
+/// A run at least `min_width` long holds one of every `min_width`-th pixel
+/// along the row, so (for a `min_width` of 3 or more) only those are asked
+/// about at first, and each that matches is followed out to both ends of
+/// its run; the rest of the row is never asked about. The same runs: the
+/// predicate is asked about fewer pixels, so it must say the same of a
+/// pixel whenever it is asked.
 pub fn segment_row<F>(
     image: &RgbaImage,
     y: u32,
@@ -188,6 +193,34 @@ where
     let mut start = None;
     let x1 = x1.min(image.width() - 1);
     if x0 > x1 {
+        return result;
+    }
+    let step = min_width as usize;
+    if step > 2 {
+        let width = image.width() as usize;
+        let at = (y as usize * width + x0 as usize) * 4;
+        let count = (x1 - x0 + 1) as usize;
+        let row = image.as_raw()[at..at + 4 * count].as_chunks::<4>().0;
+        let matches = |i: usize| predicate(Rgba::from_slice(&row[i]));
+        // Where the last run found ended (one past it: a miss, or the end).
+        let mut done = 0;
+        for sample in (step - 1..count).step_by(step) {
+            if sample < done || !matches(sample) {
+                continue;
+            }
+            let mut begin = sample;
+            while begin > 0 && matches(begin - 1) {
+                begin -= 1;
+            }
+            let mut end = sample + 1;
+            while end < count && matches(end) {
+                end += 1;
+            }
+            if end - begin >= step {
+                result.push((x0 + begin as u32, x0 + end as u32 - 1));
+            }
+            done = end;
+        }
         return result;
     }
 
@@ -251,25 +284,48 @@ pub fn horizontal_edges(image: &RgbaImage, threshold: u8, min_run: u32) -> Vec<R
     let plane = luma.as_raw();
     let width = width as usize;
     let mut rows: Vec<(u32, u32, u32)> = Vec::new();
+    // Each pair of rows marked a byte a column (a loop the compiler
+    // vectorises), then the marks read eight at a time: a row with no edge
+    // in eight columns, or edge all along them, is passed in one step.
+    let mut marks = vec![0u8; width.next_multiple_of(8)];
     for y in 0..height as usize - 1 {
         let (above, below) = (
             &plane[y * width..(y + 1) * width],
             &plane[(y + 1) * width..(y + 2) * width],
         );
-        let mut start: Option<usize> = None;
-        for (x, (&a, &b)) in above.iter().zip(below).enumerate() {
-            if a.abs_diff(b) >= threshold {
-                start.get_or_insert(x);
-            } else if let Some(begin) = start.take()
-                && (x - begin) as u32 >= min_run
-            {
-                rows.push((y as u32, begin as u32, x as u32 - 1));
-            }
+        for (mark, (&a, &b)) in marks.iter_mut().zip(above.iter().zip(below)) {
+            *mark = u8::from(a.abs_diff(b) >= threshold);
         }
-        if let Some(begin) = start
-            && (width - begin) as u32 >= min_run
-        {
-            rows.push((y as u32, begin as u32, width as u32 - 1));
+        let words = marks.as_chunks::<8>().0;
+        // The first column at or after `x` marked `edge` (or not), or the
+        // row's width.
+        let next = |x: usize, edge: bool| -> usize {
+            let mut x = x;
+            while x < width {
+                let word = u64::from_le_bytes(words[x / 8]) >> (8 * (x % 8));
+                let wanted = if edge {
+                    word
+                } else {
+                    !word & 0x0101_0101_0101_0101 >> (8 * (x % 8))
+                };
+                if wanted != 0 {
+                    return (x + wanted.trailing_zeros() as usize / 8).min(width);
+                }
+                x = (x / 8 + 1) * 8;
+            }
+            width
+        };
+        let mut x = 0;
+        while x < width {
+            let begin = next(x, true);
+            if begin >= width {
+                break;
+            }
+            let end = next(begin, false);
+            if (end - begin) as u32 >= min_run {
+                rows.push((y as u32, begin as u32, end as u32 - 1));
+            }
+            x = end;
         }
     }
     group_segments(rows, 1, 0)
@@ -382,11 +438,19 @@ pub fn find_text_block(image: &RgbaImage, region: Rect) -> Option<Rect> {
         return None;
     }
 
+    // `is_text_pixel` from tables (`color::TextTables`): the same answers.
+    let tables = crate::color::TextTables::get();
+    let width = image.width() as usize;
     for y in region.y..y_end {
-        for (x, pixel) in row_pixels(image, y, region.x, x_end - 1) {
-            if !is_text_pixel(pixel) {
+        let at = (y as usize * width + region.x as usize) * 4;
+        let row = image.as_raw()[at..at + 4 * (x_end - region.x) as usize]
+            .as_chunks::<4>()
+            .0;
+        for (i, pixel) in row.iter().enumerate() {
+            if !tables.matches(pixel) {
                 continue;
             }
+            let x = region.x + i as u32;
             count += 1;
             bounds = Some(match bounds {
                 None => (x, x, y, y),
@@ -1117,28 +1181,45 @@ pub fn dominant_color_bucket(image: &RgbaImage, region: Rect, step: u8) -> Optio
     // hashing. Buckets per channel is 256/step rounded up, so a step of 8
     // or more fits in at most 32^3 counters.
     let per_channel = 255 / step as usize + 1;
-    let index = |pixel: &Rgba<u8>| {
-        let (r, g, b) = (
-            (pixel[0] / step) as usize,
-            (pixel[1] / step) as usize,
-            (pixel[2] / step) as usize,
-        );
-        (r * per_channel + g) * per_channel + b
-    };
 
     if per_channel.pow(3) <= DENSE_HISTOGRAM_LIMIT {
-        let mut counts = vec![0u32; per_channel.pow(3)];
+        let size = per_channel.pow(3);
+        // Each channel's share of the index from a table (a division a
+        // channel a pixel otherwise), and, while the histogram is small,
+        // the pixels counted into four histograms in turn and summed after:
+        // a panel of one colour then does not wait on one counter. The same
+        // counts.
+        let weights = [(per_channel * per_channel) as u32, per_channel as u32, 1];
+        let tables = weights.map(|weight| {
+            std::array::from_fn::<u32, 256, _>(|v| (v as u32 / u32::from(step)) * weight)
+        });
+        let ways = if size <= 1 << 16 { 4 } else { 1 };
+        let mut counts = vec![0u32; ways * size];
         let mut any = false;
+        let width = image.width() as usize;
         for y in region.y..y_end {
-            for (_, pixel) in row_pixels(image, y, region.x, x_end - 1) {
-                if pixel[3] >= 200 {
-                    counts[index(pixel)] += 1;
-                    any = true;
+            let at = (y as usize * width + region.x as usize) * 4;
+            let row = &image.as_raw()[at..at + 4 * (x_end - region.x) as usize];
+            let mut turn = 0usize;
+            for p in row.as_chunks::<4>().0 {
+                if p[3] >= 200 {
+                    let i = (tables[0][p[0] as usize]
+                        + tables[1][p[1] as usize]
+                        + tables[2][p[2] as usize]) as usize;
+                    counts[(turn % ways) * size + i] += 1;
+                    turn += 1;
                 }
             }
+            any |= turn > 0;
         }
         if !any {
             return None;
+        }
+        let (counts, others) = counts.split_at_mut(size);
+        for other in others.chunks_exact(size) {
+            for (count, &more) in counts.iter_mut().zip(other) {
+                *count += more;
+            }
         }
         // First maximum in index order, i.e. the lowest bucket on ties.
         let (best, _) =
@@ -1189,11 +1270,18 @@ pub fn find_uniform_color_panel(
     bucket: (u8, u8, u8),
     step: u8,
 ) -> Option<Rect> {
+    if step == 0 {
+        return None;
+    }
+    // Whether each channel's value falls in the bucket's, from a table: a
+    // division a channel a pixel otherwise.
+    let tables = [bucket.0, bucket.1, bucket.2]
+        .map(|b| std::array::from_fn::<bool, 256, _>(|v| v as u8 / step == b));
     let matches = |pixel: &Rgba<u8>| {
         pixel[3] >= 200
-            && pixel[0] / step == bucket.0
-            && pixel[1] / step == bucket.1
-            && pixel[2] / step == bucket.2
+            && tables[0][pixel[0] as usize]
+            && tables[1][pixel[1] as usize]
+            && tables[2][pixel[2] as usize]
     };
 
     let mut rows = Vec::new();
@@ -1582,6 +1670,321 @@ mod tests {
         }
         // Both outcomes were met, many times.
         assert!(read > 200 && unread > 50, "{read} read, {unread} not");
+    }
+
+    /// [`segment_row`] as it was first written: every pixel asked about.
+    fn segment_row_one_by_one(
+        image: &RgbaImage,
+        y: u32,
+        x0: u32,
+        x1: u32,
+        min_width: u32,
+        predicate: impl Fn(&Rgba<u8>) -> bool,
+    ) -> Vec<(u32, u32)> {
+        let mut result = Vec::new();
+        if y >= image.height() || image.width() == 0 {
+            return result;
+        }
+        let x1 = x1.min(image.width() - 1);
+        if x0 > x1 {
+            return result;
+        }
+        let mut start = None;
+        for (x, pixel) in row_pixels(image, y, x0, x1) {
+            if predicate(pixel) {
+                start.get_or_insert(x);
+            } else if let Some(begin) = start.take()
+                && x - begin >= min_width
+            {
+                result.push((begin, x - 1));
+            }
+        }
+        if let Some(begin) = start
+            && x1 + 1 - begin >= min_width
+        {
+            result.push((begin, x1));
+        }
+        result
+    }
+
+    /// [`dominant_color_bucket`] as it was first written: a division a
+    /// channel a pixel, one histogram.
+    fn dominant_one_by_one(image: &RgbaImage, region: Rect, step: u8) -> Option<(u8, u8, u8)> {
+        if step == 0 {
+            return None;
+        }
+        let x_end = region.x.saturating_add(region.w).min(image.width());
+        let y_end = region.y.saturating_add(region.h).min(image.height());
+        if region.x >= x_end || region.y >= y_end {
+            return None;
+        }
+        let per_channel = 255 / step as usize + 1;
+        let mut counts = vec![0u32; per_channel.pow(3)];
+        let mut any = false;
+        for y in region.y..y_end {
+            for (_, p) in row_pixels(image, y, region.x, x_end - 1) {
+                if p[3] >= 200 {
+                    let i = ((p[0] / step) as usize * per_channel + (p[1] / step) as usize)
+                        * per_channel
+                        + (p[2] / step) as usize;
+                    counts[i] += 1;
+                    any = true;
+                }
+            }
+        }
+        if !any {
+            return None;
+        }
+        let (best, _) =
+            counts.iter().enumerate().fold(
+                (0, 0u32),
+                |best, (i, &c)| {
+                    if c > best.1 { (i, c) } else { best }
+                },
+            );
+        Some((
+            (best / (per_channel * per_channel)) as u8,
+            ((best / per_channel) % per_channel) as u8,
+            (best % per_channel) as u8,
+        ))
+    }
+
+    #[test]
+    fn runs_from_samples_are_the_runs_of_every_pixel() {
+        let mut state = 11u32;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+        // Stretches of one colour of every length, broken by single odd
+        // pixels and by noise.
+        let image = RgbaImage::from_fn(420, 30, |x, y| {
+            let r = next();
+            if (x / (3 + y % 17)) % 3 == 0 || r % 31 == 0 {
+                Rgba([200, 30, 30, 255])
+            } else if r % 5 == 0 {
+                Rgba(r.to_le_bytes())
+            } else {
+                Rgba([30, 30, 200, 255])
+            }
+        });
+        let red = |p: &Rgba<u8>| p[0] > 150 && p[2] < 100;
+        let blue = |p: &Rgba<u8>| p[2] > 150;
+        for y in 0..31 {
+            for (x0, x1) in [(0, 419), (0, 0), (3, 64), (100, 419), (400, 900), (9, 8)] {
+                for min_width in [0, 1, 2, 3, 4, 7, 8, 20, 21, 64, 419, 500] {
+                    for (name, test) in
+                        [("red", &red as &dyn Fn(&Rgba<u8>) -> bool), ("blue", &blue)]
+                    {
+                        assert_eq!(
+                            segment_row(&image, y, x0, x1, min_width, test),
+                            segment_row_one_by_one(&image, y, x0, x1, min_width, test),
+                            "{name} row {y}, {x0}..={x1}, at least {min_width}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_dominant_bucket_from_tables_is_the_one_counted_by_division() {
+        let mut state = 5u32;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+        for trial in 0..40u32 {
+            let (w, h) = (1 + next() % 90, 1 + next() % 60);
+            // A few colours in patches, noise, and some translucent pixels.
+            let palette: Vec<[u8; 4]> = (0..4).map(|_| next().to_le_bytes()).collect();
+            let image = RgbaImage::from_fn(w, h, |x, y| {
+                let r = next();
+                let mut p = if r % 7 == 0 {
+                    r.to_le_bytes()
+                } else {
+                    palette[((x / 9 + y / 7) % 4) as usize]
+                };
+                p[3] = if r % 11 == 0 { (r >> 8) as u8 } else { 255 };
+                Rgba(p)
+            });
+            for step in [0u8, 1, 2, 3, 7, 8, 10, 12, 16, 33, 128, 255] {
+                for region in [
+                    Rect { x: 0, y: 0, w, h },
+                    Rect {
+                        x: w / 3,
+                        y: h / 4,
+                        w: w / 2 + 1,
+                        h: h / 2 + 1,
+                    },
+                    Rect {
+                        x: w,
+                        y: 0,
+                        w: 5,
+                        h: 5,
+                    },
+                ] {
+                    assert_eq!(
+                        dominant_color_bucket(&image, region, step),
+                        dominant_one_by_one(&image, region, step),
+                        "trial {trial}, step {step}, {region:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_uniform_panel_from_tables_and_samples_is_the_one_found_pixel_by_pixel() {
+        let mut state = 17u32;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+        let mut found = 0;
+        for trial in 0..30u32 {
+            let (w, h) = (40 + next() % 200, 30 + next() % 120);
+            let panel = [
+                (next() % 200) as u8 + 20,
+                (next() % 200) as u8 + 20,
+                90,
+                255,
+            ];
+            let (px, py) = (next() % (w / 2), next() % (h / 2));
+            let (pw, ph) = (10 + next() % (w - px - 9), 5 + next() % (h - py - 4));
+            let image = RgbaImage::from_fn(w, h, |x, y| {
+                let r = next();
+                if (px..px + pw).contains(&x) && (py..py + ph).contains(&y) && r % 23 != 0 {
+                    // The panel, a level or two off here and there.
+                    let d = if trial % 2 == 0 { 0 } else { (r % 3) as u8 };
+                    Rgba([
+                        panel[0] + d,
+                        panel[1],
+                        panel[2] - d,
+                        if r % 41 == 0 { 100 } else { 255 },
+                    ])
+                } else {
+                    Rgba(r.to_le_bytes())
+                }
+            });
+            for step in [1u8, 2, 7, 10, 12, 64] {
+                let bucket = (panel[0] / step, panel[1] / step, panel[2] / step);
+                let region = Rect { x: 0, y: 0, w, h };
+                let expected = {
+                    let matches = |p: &Rgba<u8>| {
+                        p[3] >= 200
+                            && p[0] / step == bucket.0
+                            && p[1] / step == bucket.1
+                            && p[2] / step == bucket.2
+                    };
+                    let mut rows = Vec::new();
+                    for y in 0..h {
+                        for (a, b) in segment_row_one_by_one(&image, y, 0, w - 1, 20, matches) {
+                            rows.push((y, a, b));
+                        }
+                    }
+                    group_segments(rows, 12, 2)
+                        .into_iter()
+                        .max_by_key(|r| r.area())
+                };
+                found += usize::from(expected.is_some());
+                assert_eq!(
+                    find_uniform_color_panel(&image, region, bucket, step),
+                    expected,
+                    "trial {trial}, step {step}"
+                );
+            }
+        }
+        // Panels were there to find, most of the time.
+        assert!(found > 40, "{found} found");
+    }
+
+    #[test]
+    fn edges_read_eight_marks_at_a_time_are_the_edges_read_one_by_one() {
+        // `horizontal_edges` as it was first written: each column compared
+        // and followed on its own.
+        let one_by_one = |image: &RgbaImage, threshold: u8, min_run: u32| {
+            let (width, height) = image.dimensions();
+            let luma = crate::threshold::channel_image(
+                image,
+                Rect {
+                    x: 0,
+                    y: 0,
+                    w: width,
+                    h: height,
+                },
+                crate::threshold::Channel::Luma,
+            );
+            let plane = luma.as_raw();
+            let width = width as usize;
+            let mut rows: Vec<(u32, u32, u32)> = Vec::new();
+            for y in 0..height as usize - 1 {
+                let (above, below) = (
+                    &plane[y * width..(y + 1) * width],
+                    &plane[(y + 1) * width..(y + 2) * width],
+                );
+                let mut start: Option<usize> = None;
+                for (x, (&a, &b)) in above.iter().zip(below).enumerate() {
+                    if a.abs_diff(b) >= threshold {
+                        start.get_or_insert(x);
+                    } else if let Some(begin) = start.take()
+                        && (x - begin) as u32 >= min_run
+                    {
+                        rows.push((y as u32, begin as u32, x as u32 - 1));
+                    }
+                }
+                if let Some(begin) = start
+                    && (width - begin) as u32 >= min_run
+                {
+                    rows.push((y as u32, begin as u32, width as u32 - 1));
+                }
+            }
+            group_segments(rows, 1, 0)
+        };
+        let mut state = 23u32;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+        for (w, h) in [
+            (1u32, 2u32),
+            (7, 5),
+            (8, 3),
+            (9, 9),
+            (63, 20),
+            (64, 8),
+            (65, 11),
+            (300, 40),
+        ] {
+            // Bands of shades with steps between them, broken in places,
+            // and noise.
+            let image = RgbaImage::from_fn(w, h, |x, y| {
+                let r = next();
+                let v = if r % 9 == 0 {
+                    r as u8
+                } else {
+                    ((y / 3) * 40 + (x / 17) % 2 * 9) as u8
+                };
+                Rgba([v, v, v, 255])
+            });
+            for threshold in [0u8, 1, 8, 30, 255] {
+                for min_run in [0u32, 1, 3, 8, 9, 64] {
+                    assert_eq!(
+                        horizontal_edges(&image, threshold, min_run),
+                        one_by_one(&image, threshold, min_run),
+                        "{w}x{h}, at least {threshold}, runs of {min_run}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

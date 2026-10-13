@@ -127,6 +127,74 @@ fn alpha_is_high(pixel: &Rgba<u8>) -> bool {
     pixel[3] as f32 / 255.0 >= 0.45
 }
 
+/// [`is_text_pixel`] from tables, for testing every pixel of a region: the
+/// same answer for every pixel, without its divisions. Each test it makes
+/// depends on less than the whole pixel: the opacity on the alpha; the
+/// value on the brightest channel, and the saturation on the brightest and
+/// the darkest (dividing by 255 keeps the channels' order); and the
+/// brightness, for a green and blue, on the red being at least the least
+/// that is bright enough (each step of the sum only grows with the red).
+pub(crate) struct TextTables {
+    alpha: [bool; 256],
+    value: [bool; 256],
+    /// By `brightest · 256 + darkest`.
+    saturation: Vec<bool>,
+    /// By `green · 256 + blue`: the least red bright enough (256: none).
+    red_from: Vec<u16>,
+}
+
+impl TextTables {
+    /// The tables, made once.
+    pub(crate) fn get() -> &'static TextTables {
+        static TABLES: std::sync::OnceLock<TextTables> = std::sync::OnceLock::new();
+        TABLES.get_or_init(TextTables::new)
+    }
+
+    fn new() -> TextTables {
+        let alpha = std::array::from_fn(|a| alpha_is_high(&Rgba([0, 0, 0, a as u8])));
+        let value = std::array::from_fn(|m| {
+            let parts = HsvParts::new(m as u8, m as u8, m as u8);
+            parts.value() >= 0.45
+        });
+        let mut saturation = vec![false; 256 * 256];
+        for brightest in 0..256usize {
+            for darkest in 0..=brightest {
+                let parts = HsvParts::new(brightest as u8, darkest as u8, darkest as u8);
+                saturation[brightest * 256 + darkest] = parts.saturation() <= 0.55;
+            }
+        }
+        let bright = |r: u8, g: u8, b: u8| {
+            0.299 * (r as f32) + 0.587 * (g as f32) + 0.114 * (b as f32) >= 90.0
+        };
+        let mut red_from = vec![256u16; 256 * 256];
+        for g in 0..256usize {
+            for b in 0..256usize {
+                red_from[g * 256 + b] = (0..=255u8)
+                    .find(|&r| bright(r, g as u8, b as u8))
+                    .map_or(256, u16::from);
+            }
+        }
+        TextTables {
+            alpha,
+            value,
+            saturation,
+            red_from,
+        }
+    }
+
+    /// [`is_text_pixel`].
+    #[inline]
+    pub(crate) fn matches(&self, pixel: &[u8; 4]) -> bool {
+        let [r, g, b, a] = *pixel;
+        if !self.alpha[a as usize] || u16::from(r) < self.red_from[g as usize * 256 + b as usize] {
+            return false;
+        }
+        let (brightest, darkest) = (r.max(g).max(b), r.min(g).min(b));
+        self.value[brightest as usize]
+            && self.saturation[brightest as usize * 256 + darkest as usize]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,6 +274,36 @@ mod tests {
                         assert_eq!(
                             is_text_pixel(&pixel),
                             reference_is_text_pixel(&pixel),
+                            "{pixel:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_text_test_from_tables_answers_as_the_predicate_for_every_colour() {
+        let tables = TextTables::get();
+        // Every colour in a release build; every third level of each
+        // channel (and both ends) where the build is slow.
+        let levels: Vec<u8> = if cfg!(debug_assertions) {
+            (0..=255u16)
+                .step_by(3)
+                .map(|v| v as u8)
+                .chain([255])
+                .collect()
+        } else {
+            (0..=255).collect()
+        };
+        for &r in &levels {
+            for &g in &levels {
+                for &b in &levels {
+                    for alpha in [0u8, 114, 115, 255] {
+                        let pixel = [r, g, b, alpha];
+                        assert_eq!(
+                            tables.matches(&pixel),
+                            is_text_pixel(&Rgba(pixel)),
                             "{pixel:?}"
                         );
                     }
