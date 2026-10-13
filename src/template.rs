@@ -480,16 +480,32 @@ impl<'a> Prepared<'a> {
                 && p.channel == channel
                 && (p.limit >= depth || p.planes.len() > depth)
         };
-        if let Some(kept) = self
-            .pyramids
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .iter()
-            .find(|p| serves(p))
-        {
-            return std::sync::Arc::clone(kept);
-        }
-        let built = std::sync::Arc::new(Pyramid::new(self.image, search, channel, depth));
+        // A kept pyramid that serves; else the one holding the most of
+        // the new one's rows, to take them from.
+        let donor = {
+            let pyramids = self.pyramids.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(kept) = pyramids.iter().find(|p| serves(p)) {
+                return std::sync::Arc::clone(kept);
+            }
+            pyramids
+                .iter()
+                .filter(|p| p.shares_rows(search, channel))
+                .max_by_key(|p| {
+                    let (top, bottom) = (
+                        p.search.y.max(search.y),
+                        (p.search.y + p.search.h).min(search.y + search.h),
+                    );
+                    bottom - top
+                })
+                .map(std::sync::Arc::clone)
+        };
+        let built = std::sync::Arc::new(Pyramid::sharing(
+            self.image,
+            search,
+            channel,
+            depth,
+            donor.as_deref(),
+        ));
         let mut pyramids = self.pyramids.lock().unwrap_or_else(|e| e.into_inner());
         pyramids.retain(|p| p.search != search || p.channel != channel);
         pyramids.push(std::sync::Arc::clone(&built));
@@ -525,11 +541,15 @@ pub fn find_set_in(
     let pyramid = &*pyramid;
     let mut found: Vec<(usize, bool, usize, usize, f32)> = Vec::new();
     for (index, picture) in set.pictures.iter().enumerate() {
-        let variants = std::iter::once((&picture.template, false))
-            .chain(picture.mirror.as_ref().map(|m| (m, true)));
-        for (template, mirrored) in variants {
-            for (x, y, score) in candidates(pyramid, template, Some(options.min_score), true) {
-                found.push((index, mirrored, x, y, score));
+        // A picture and its mirror image are searched together: the same
+        // size, so the windows' sums serve both.
+        let variants: Vec<&Template> = std::iter::once(&picture.template)
+            .chain(picture.mirror.as_ref())
+            .collect();
+        let found_each = candidates_alike(pyramid, &variants, options.min_score);
+        for (mirrored, candidates) in found_each.into_iter().enumerate() {
+            for (x, y, score) in candidates {
+                found.push((index, mirrored == 1, x, y, score));
             }
         }
     }
@@ -894,6 +914,9 @@ struct TemplateLevel {
     /// `inner`'s pixels in fours, and `128 Σt`, for the dot-product path of
     /// `kernels::block_stats`.
     quads: (Vec<u32>, u32),
+    /// `inner`'s rows less 128, in whole 64-byte vectors, for its wide
+    /// dot-product path.
+    rows64: Vec<u8>,
 }
 
 impl TemplateLevel {
@@ -916,6 +939,7 @@ impl TemplateLevel {
         let pairs = crate::kernels::weight_pairs(&inner.pixels, inner.width, inner.height);
         let wide = inner.pixels.iter().map(|&v| i16::from(v)).collect();
         let quads = crate::kernels::weight_quads(&inner.pixels, inner.width, inner.height);
+        let rows64 = crate::kernels::weight_rows64(&inner.pixels, inner.width, inner.height);
         Some(Self {
             plane,
             inner,
@@ -925,6 +949,7 @@ impl TemplateLevel {
             pairs,
             wide,
             quads,
+            rows64,
         })
     }
 
@@ -1114,6 +1139,101 @@ fn products_everywhere(plane: &Plane, template: &TemplateLevel) -> Vec<u32> {
     )
 }
 
+/// What `local_maxima(&score_everywhere(plane, level), .., floor, limit)`
+/// returns, for each of `levels` (all of one size): with a positive floor,
+/// from only the positions scoring at least the floor
+/// (`kernels::hits_everywhere`, which tells most of the rest apart without
+/// scoring them, and takes the windows' sums once for all the levels).
+fn peaks_everywhere(
+    plane: &Plane,
+    levels: &[&TemplateLevel],
+    floor: f32,
+    limit: usize,
+) -> Vec<Vec<(usize, usize, f32)>> {
+    let Some(first) = levels.first() else {
+        return Vec::new();
+    };
+    let (w, h) = (first.inner.width, first.inner.height);
+    let (columns, rows) = (plane.width - w + 1, plane.height - h + 1);
+    let alike = levels
+        .iter()
+        .all(|l| (l.inner.width, l.inner.height) == (w, h) && l.area() <= MAX_AREA_32);
+    if floor > 0.0 && alike {
+        let products: Vec<Vec<u32>> = levels
+            .iter()
+            .map(|level| products_everywhere(plane, level))
+            .collect();
+        let templates: Vec<(&[u32], i64, i64)> = products
+            .iter()
+            .zip(levels)
+            .map(|(p, level)| (p.as_slice(), level.sum, level.spread))
+            .collect();
+        let mut hits = vec![Vec::new(); levels.len()];
+        crate::kernels::hits_everywhere(
+            &plane.pixels,
+            plane.width,
+            plane.height,
+            (w, h),
+            &templates,
+            floor,
+            &mut hits,
+        );
+        return hits
+            .iter()
+            .map(|hits| peaks_among(hits, columns, rows, limit))
+            .collect();
+    }
+    levels
+        .iter()
+        .map(|level| {
+            let (columns, rows) = (
+                plane.width - level.inner.width + 1,
+                plane.height - level.inner.height + 1,
+            );
+            local_maxima(&score_everywhere(plane, level), columns, rows, floor, limit)
+        })
+        .collect()
+}
+
+/// The peaks among `hits` — the positions of a `columns`×`rows` search
+/// scoring at least a floor, in scan order — strongest first, at most
+/// `limit`, one per neighbourhood: what [`local_maxima`] returns of the
+/// search's scores with that floor. A hit is a peak when no neighbouring
+/// hit scores higher: a neighbour that is not a hit scores below the floor,
+/// so below it.
+fn peaks_among(
+    hits: &[crate::kernels::Hit],
+    columns: usize,
+    rows: usize,
+    limit: usize,
+) -> Vec<(usize, usize, f32)> {
+    // Where each row's hits start.
+    let mut starts = vec![0usize; rows + 1];
+    for &(_, y, _) in hits {
+        starts[y as usize + 1] += 1;
+    }
+    for y in 0..rows {
+        starts[y + 1] += starts[y];
+    }
+    let mut peaks = Vec::new();
+    for &(x, y, score) in hits {
+        let (x, y) = (x as usize, y as usize);
+        let (y0, y1) = (y.saturating_sub(1), (y + 1).min(rows - 1));
+        let highest = (y0..=y1).all(|ny| {
+            let row = &hits[starts[ny]..starts[ny + 1]];
+            let from = row.partition_point(|n| (n.0 as usize) + 1 < x);
+            row[from..]
+                .iter()
+                .take_while(|n| n.0 as usize <= x + 1)
+                .all(|n| score >= n.2)
+        });
+        if highest {
+            peaks.push((x, y, score));
+        }
+    }
+    strongest_peaks(peaks, columns, rows, limit)
+}
+
 /// Positions whose score is at least `floor` and no lower than any of their
 /// eight neighbours, strongest first, at most `limit` of them.
 fn local_maxima(
@@ -1226,8 +1346,11 @@ fn strongest_peaks(
     // position within `PEAK_SPACING` of it is marked: a fixed number of
     // look-ups per peak. (Comparing each peak with every kept one was
     // quadratic, and a textured search has a peak every few positions: a
-    // 16-pixel template over a 1366x768 frame spent seconds there.)
-    let mut marked = vec![false; columns * rows];
+    // 16-pixel template over a 1366x768 frame spent seconds there.) The
+    // marks are bits, a word per 64 positions, so few peaks over a large
+    // search cost little to mark.
+    let mut marked = vec![0u64; (columns * rows).div_ceil(64)];
+    let is_marked = |marked: &[u64], at: usize| marked[at / 64] & (1 << (at % 64)) != 0;
     let mut kept: Vec<(usize, usize, f32)> = Vec::new();
     for peak in peaks {
         if kept.len() >= limit {
@@ -1239,9 +1362,10 @@ fn strongest_peaks(
             (x + PEAK_SPACING).min(columns - 1),
         );
         let crowded = (y.saturating_sub(PEAK_SPACING)..=(y + PEAK_SPACING).min(rows - 1))
-            .any(|ny| marked[ny * columns + x0..=ny * columns + x1].contains(&true));
+            .any(|ny| (ny * columns + x0..=ny * columns + x1).any(|at| is_marked(&marked, at)));
         if !crowded {
-            marked[y * columns + x] = true;
+            let at = y * columns + x;
+            marked[at / 64] |= 1 << (at % 64);
             kept.push(peak);
         }
     }
@@ -1283,9 +1407,12 @@ fn refine(
         plane.width,
         (bx, y0),
         (bwide, bh),
-        &template.inner.pixels,
-        &template.pairs,
-        (&template.quads.0, template.quads.1),
+        &crate::kernels::BlockWeights {
+            pixels: &template.inner.pixels,
+            pairs: &template.pairs,
+            quads: (&template.quads.0, template.quads.1),
+            rows64: &template.rows64,
+        },
         (w, h),
         &mut window,
     );
@@ -1380,9 +1507,51 @@ struct Pyramid {
 
 impl Pyramid {
     fn new(image: &RgbaImage, search: Rect, channel: Channel, depth: usize) -> Pyramid {
+        Self::sharing(image, search, channel, depth, None)
+    }
+
+    /// [`Pyramid::new`], taking from `donor` — a pyramid of the same
+    /// frame — what it holds of this one: its full-size plane's rows, when
+    /// it is of the same channel and columns (rows it lacks are converted),
+    /// and all its planes, when it is of the same region. The same values
+    /// either way, converted or halved once.
+    fn sharing(
+        image: &RgbaImage,
+        search: Rect,
+        channel: Channel,
+        depth: usize,
+        donor: Option<&Pyramid>,
+    ) -> Pyramid {
         let search = clip(search, image.width(), image.height());
-        let full = Plane::from_gray(channel_image(image, search, channel));
-        let mut planes = vec![full];
+        let donor = donor.filter(|d| d.shares_rows(search, channel));
+        let mut planes = match donor {
+            Some(d) if d.search == search => d.planes.clone(),
+            Some(d) => {
+                let (y0, y1) = (search.y, search.y + search.h);
+                let (d0, d1) = (d.search.y, d.search.y + d.search.h);
+                let (from, to) = (y0.max(d0), y1.min(d1));
+                let width = search.w as usize;
+                let mut pixels = Vec::with_capacity(width * search.h as usize);
+                let convert = |y: u32, h: u32, pixels: &mut Vec<u8>| {
+                    if h > 0 {
+                        let rows = Rect { y, h, ..search };
+                        pixels.extend_from_slice(channel_image(image, rows, channel).as_raw());
+                    }
+                };
+                convert(y0, from - y0, &mut pixels);
+                pixels.extend_from_slice(
+                    &d.planes[0].pixels[(from - d0) as usize * width..(to - d0) as usize * width],
+                );
+                convert(to, y1 - to, &mut pixels);
+                vec![Plane {
+                    width,
+                    height: search.h as usize,
+                    pixels,
+                }]
+            }
+            None => vec![Plane::from_gray(channel_image(image, search, channel))],
+        };
+        planes.truncate(depth + 1);
         while planes.len() <= depth {
             let last = &planes[planes.len() - 1];
             if last.width < 2 || last.height < 2 {
@@ -1398,6 +1567,16 @@ impl Pyramid {
             limit: depth,
         }
     }
+
+    /// Whether this pyramid's full-size plane holds rows of `search` (as
+    /// clipped) on `channel`: the same channel and columns, and rows in
+    /// common.
+    fn shares_rows(&self, search: Rect, channel: Channel) -> bool {
+        self.channel == channel
+            && (self.search.x, self.search.w) == (search.x, search.w)
+            && self.search.y < search.y + search.h
+            && search.y < self.search.y + self.search.h
+    }
 }
 
 /// Where `template` matches in `pyramid`, as positions of its top-left
@@ -1410,15 +1589,81 @@ fn candidates(
     min_score: Option<f32>,
     use_pyramid: bool,
 ) -> Vec<(usize, usize, f32)> {
+    let Some(coarsest) = search_depth(pyramid, template, use_pyramid) else {
+        return Vec::new();
+    };
+    // Positions below are of each level's matched part (its interior).
+    // Score everywhere at the coarsest level, then carry the strongest
+    // candidates down, refining each at every level and keeping fewer as
+    // the rankings get more reliable.
+    let (plane, level) = (&pyramid.planes[coarsest], &template.levels[coarsest]);
+    if coarsest == 0 && min_score.is_none() {
+        // Every score is exact and only the best is asked for: the
+        // strongest position, which the peak search below would keep with
+        // a limit of one, and the overlap check below would keep alone.
+        return best_everywhere(plane, level).into_iter().collect();
+    }
+    let peaks = peaks_everywhere(
+        plane,
+        &[level],
+        floor_at(min_score, coarsest),
+        first_cut(coarsest, min_score),
+    );
+    descend(pyramid, template, min_score, coarsest, peaks.concat())
+}
+
+/// [`candidates`] of `templates` with a minimum score, when they are
+/// searched alike — to the same depth, at the same size — as a picture
+/// and its mirror image are: the coarsest level is scored for them
+/// together (`peaks_everywhere`). Otherwise each on its own.
+fn candidates_alike(
+    pyramid: &Pyramid,
+    templates: &[&Template],
+    min_score: f32,
+) -> Vec<Vec<(usize, usize, f32)>> {
+    let depths: Vec<Option<usize>> = templates
+        .iter()
+        .map(|t| search_depth(pyramid, t, true))
+        .collect();
+    let together = depths.first().is_some_and(|&first| {
+        first.is_some_and(|depth| {
+            let size = |t: &Template| (t.levels[depth].inner.width, t.levels[depth].inner.height);
+            depths.iter().all(|&d| d == Some(depth))
+                && templates.iter().all(|t| size(t) == size(templates[0]))
+        })
+    });
+    if !together {
+        return templates
+            .iter()
+            .map(|t| candidates(pyramid, t, Some(min_score), true))
+            .collect();
+    }
+    let coarsest = depths[0].expect("checked above");
+    let levels: Vec<&TemplateLevel> = templates.iter().map(|t| &t.levels[coarsest]).collect();
+    let peaks = peaks_everywhere(
+        &pyramid.planes[coarsest],
+        &levels,
+        floor_at(Some(min_score), coarsest),
+        first_cut(coarsest, Some(min_score)),
+    );
+    templates
+        .iter()
+        .zip(peaks)
+        .map(|(t, peaks)| descend(pyramid, t, Some(min_score), coarsest, peaks))
+        .collect()
+}
+
+/// The coarsest level of `pyramid` that `template` is scored everywhere
+/// at (0: full resolution), or `None` when it does not fit the search.
+/// The pyramid is used only when scoring every position exactly would be
+/// expensive, and only as deep as both the template and the search region
+/// allow.
+fn search_depth(pyramid: &Pyramid, template: &Template, use_pyramid: bool) -> Option<usize> {
     let full = &pyramid.planes[0];
     let base = &template.levels[0];
     if full.width < base.inner.width || full.height < base.inner.height {
-        return Vec::new();
+        return None;
     }
-
-    // Use the pyramid only when scoring every position exactly would be
-    // expensive, and only as deep as both the template and the search
-    // region allow.
     let positions =
         ((full.width - base.inner.width + 1) * (full.height - base.inner.height + 1)) as u64;
     let mut depth = 0;
@@ -1432,36 +1677,26 @@ fn candidates(
             depth += 1;
         }
     }
-    let planes = &pyramid.planes[..=depth];
+    Some(depth)
+}
 
-    // Positions below are of each level's matched part (its interior).
-    // Score everywhere at the coarsest level, then carry the strongest
-    // candidates down, refining each at every level and keeping fewer as
-    // the rankings get more reliable.
-    let coarsest = depth;
-    let (plane, level) = (&planes[coarsest], &template.levels[coarsest]);
-    if coarsest == 0 && min_score.is_none() {
-        // Every score is exact and only the best is asked for: the
-        // strongest position, which the peak search below would keep with
-        // a limit of one, and the overlap check below would keep alone.
-        return best_everywhere(plane, level).into_iter().collect();
-    }
-    let scores = score_everywhere(plane, level);
-    let (columns, rows) = (
-        plane.width - level.inner.width + 1,
-        plane.height - level.inner.height + 1,
-    );
-    // Scores at full resolution are exact, so nothing below the requested
-    // score can qualify there; coarser scores get some slack.
-    let floor_at = |level: usize| match min_score {
+/// The score a candidate needs at `level`: scores at full resolution are
+/// exact, so nothing below the requested score can qualify there; coarser
+/// scores get some slack.
+fn floor_at(min_score: Option<f32>, level: usize) -> f32 {
+    match min_score {
         None => f32::NEG_INFINITY,
         Some(min) if level == 0 => min,
         Some(min) => min - COARSE_SLACK,
-    };
-    // The coarsest ranking is the least reliable, so it passes on the most
-    // candidates; refining them one level down still costs less than the
-    // search that ranked them.
-    let first_cut = if coarsest > 0 {
+    }
+}
+
+/// How many peaks of the coarsest level are followed up. The coarsest
+/// ranking is the least reliable, so it passes on the most candidates;
+/// refining them one level down still costs less than the search that
+/// ranked them.
+fn first_cut(coarsest: usize, min_score: Option<f32>) -> usize {
+    if coarsest > 0 {
         MAX_CANDIDATES
     } else if min_score.is_none() {
         // Without a pyramid every score is exact: when only the best match
@@ -1469,8 +1704,22 @@ fn candidates(
         1
     } else {
         keep_at(0)
-    };
-    let mut candidates = local_maxima(&scores, columns, rows, floor_at(coarsest), first_cut);
+    }
+}
+
+/// The rest of [`candidates`]: the peaks found at level `coarsest`
+/// carried down to full resolution, and overlapping matches reduced to the
+/// strongest.
+fn descend(
+    pyramid: &Pyramid,
+    template: &Template,
+    min_score: Option<f32>,
+    coarsest: usize,
+    mut candidates: Vec<(usize, usize, f32)>,
+) -> Vec<(usize, usize, f32)> {
+    let planes = &pyramid.planes[..=coarsest];
+    let base = &template.levels[0];
+    let floor_at = |level: usize| floor_at(min_score, level);
     for finer in (0..coarsest).rev() {
         let (plane, level) = (&planes[finer], &template.levels[finer]);
         let (columns, rows) = (
@@ -1483,8 +1732,8 @@ fn candidates(
         // once is then both cheaper and more complete.
         let neighbourhood = (2 * REFINE_RADIUS + 1).pow(2);
         if candidates.len() * neighbourhood > columns * rows {
-            let scores = score_everywhere(plane, level);
-            candidates = local_maxima(&scores, columns, rows, floor_at(finer), keep_at(finer));
+            candidates =
+                peaks_everywhere(plane, &[level], floor_at(finer), keep_at(finer)).concat();
             continue;
         }
         let (coarse_margin, fine_margin) = (template.levels[finer + 1].margin, level.margin);
@@ -2308,6 +2557,125 @@ mod tests {
                         "trial {trial}, {columns}x{rows}, floor {floor}, limit {limit}"
                     );
                 }
+            }
+        }
+    }
+
+    /// A pyramid taking rows (or planes) from another of the same frame is
+    /// the pyramid built on its own: bands above, below, inside, around
+    /// and the same as the donor, of other columns and channels, at
+    /// several depths.
+    #[test]
+    fn a_pyramid_sharing_rows_is_the_pyramid_built_alone() {
+        let frame = scene(250, 180, 5);
+        let band = |x: u32, y: u32, w: u32, h: u32| Rect { x, y, w, h };
+        let donor = Pyramid::new(&frame, band(0, 60, 250, 70), Channel::Luma, 2);
+        for search in [
+            band(0, 30, 250, 50),
+            band(0, 100, 250, 79),
+            band(0, 70, 250, 20),
+            band(0, 10, 250, 170),
+            band(0, 60, 250, 70),
+            band(0, 140, 250, 200),
+            band(3, 60, 240, 70),
+        ] {
+            for channel in [Channel::Luma, Channel::Max] {
+                for depth in [0, 1, 3] {
+                    let alone = Pyramid::new(&frame, search, channel, depth);
+                    let shared = Pyramid::sharing(&frame, search, channel, depth, Some(&donor));
+                    assert_eq!(shared.search, alone.search, "{search:?}");
+                    assert_eq!(
+                        shared.planes.len(),
+                        alone.planes.len(),
+                        "{search:?} {depth}"
+                    );
+                    for (a, b) in shared.planes.iter().zip(&alone.planes) {
+                        assert_eq!(
+                            (a.width, a.height),
+                            (b.width, b.height),
+                            "{search:?} {depth}"
+                        );
+                        assert!(a.pixels == b.pixels, "{search:?} {channel:?} {depth}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// The peaks found from the hits alone are the peaks of every score,
+    /// for a template and its mirror image at every level they fit, alone
+    /// and together, at every floor and limit.
+    #[test]
+    fn peaks_from_the_hits_are_the_peaks_of_every_score() {
+        let bits = |peaks: &[(usize, usize, f32)]| -> Vec<(usize, usize, u32)> {
+            peaks.iter().map(|p| (p.0, p.1, p.2.to_bits())).collect()
+        };
+        for trial in 0..12u32 {
+            let frame = if trial % 2 == 0 {
+                scene(300, 200, 31 + trial)
+            } else {
+                ui_scene(300, 200, 31 + trial)
+            };
+            let size = 9 + trial * 5;
+            let region = Rect {
+                x: (trial * 41) % (300 - size),
+                y: (trial * 23) % (200 - size),
+                w: size,
+                h: size + trial % 3,
+            };
+            let (Some(template), Some(mirror)) = (
+                Template::new(&frame, region, Channel::Luma),
+                Template::mirrored(&frame, region, Channel::Luma),
+            ) else {
+                continue;
+            };
+            let pyramid = Pyramid::new(&frame, whole(&frame), Channel::Luma, 3);
+            for (depth, plane) in pyramid.planes.iter().enumerate() {
+                let (Some(a), Some(b)) = (template.levels.get(depth), mirror.levels.get(depth))
+                else {
+                    break;
+                };
+                if plane.width < a.inner.width || plane.height < a.inner.height {
+                    break;
+                }
+                let (columns, rows) = (
+                    plane.width - a.inner.width + 1,
+                    plane.height - a.inner.height + 1,
+                );
+                let scores = [score_everywhere(plane, a), score_everywhere(plane, b)];
+                for floor in [f32::NEG_INFINITY, -0.2, 0.0, 0.3, 0.43, 0.58, 0.9] {
+                    for limit in [0, 1, 8, MAX_CANDIDATES, usize::MAX] {
+                        let want: Vec<_> = scores
+                            .iter()
+                            .map(|s| bits(&local_maxima(s, columns, rows, floor, limit)))
+                            .collect();
+                        let together = peaks_everywhere(plane, &[a, b], floor, limit);
+                        let alone = peaks_everywhere(plane, &[b], floor, limit);
+                        let what =
+                            format!("trial {trial}, level {depth}, floor {floor}, limit {limit}");
+                        assert_eq!(bits(&together[0]), want[0], "{what}");
+                        assert_eq!(bits(&together[1]), want[1], "{what}, mirror");
+                        assert_eq!(bits(&alone[0]), want[1], "{what}, mirror alone");
+                    }
+                }
+            }
+            // And a whole search: the two together find what each finds.
+            for min_score in [0.43, 0.58, 0.72, 0.9] {
+                let together = candidates_alike(&pyramid, &[&template, &mirror], min_score);
+                let each = [
+                    candidates(&pyramid, &template, Some(min_score), true),
+                    candidates(&pyramid, &mirror, Some(min_score), true),
+                ];
+                assert_eq!(
+                    bits(&together[0]),
+                    bits(&each[0]),
+                    "trial {trial}, {min_score}"
+                );
+                assert_eq!(
+                    bits(&together[1]),
+                    bits(&each[1]),
+                    "trial {trial}, {min_score}, mirror"
+                );
             }
         }
     }

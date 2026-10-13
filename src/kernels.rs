@@ -240,13 +240,52 @@ pub(crate) fn weight_pairs(weights: &[u8], w: usize, h: usize) -> Vec<u32> {
 /// Largest template area whose sums of products fit in 32 bits.
 const MAX_AREA_32: usize = (u32::MAX / (255 * 255)) as usize;
 
+/// A template as [`block_stats`] takes it: its pixels (`w`×`h`, row by
+/// row), and the same in the forms its vector paths multiply.
+pub(crate) struct BlockWeights<'a> {
+    pub(crate) pixels: &'a [u8],
+    /// In neighbouring pairs ([`weight_pairs`]).
+    pub(crate) pairs: &'a [u32],
+    /// In fours, and `128 Σt` ([`weight_quads`]).
+    pub(crate) quads: (&'a [u32], u32),
+    /// Each row less 128 as signed bytes, in whole 64-byte vectors
+    /// ([`weight_rows64`]).
+    pub(crate) rows64: &'a [u8],
+}
+
+/// Each row of a `w`×`h` template less 128, as signed bytes (the top bit
+/// flipped), padded with zeros to `w.next_multiple_of(64)` bytes: the
+/// template as the wide dot-product path of [`block_stats`] takes it.
+pub(crate) fn weight_rows64(weights: &[u8], w: usize, h: usize) -> Vec<u8> {
+    let stride = w.next_multiple_of(64);
+    let mut out = vec![0u8; stride * h];
+    for (row, line) in out
+        .chunks_exact_mut(stride)
+        .zip(weights[..w * h].chunks_exact(w.max(1)))
+    {
+        for (o, &t) in row.iter_mut().zip(line) {
+            *o = t ^ 0x80;
+        }
+    }
+    out
+}
+
+/// Template rows at least this wide take the wide dot-product path of
+/// [`block_stats`] (where 512-bit dot products are there): the block's
+/// pixels are used as they lie, where the narrower path rearranges them
+/// first, which costs more than the part of each 64-byte vector a row
+/// leaves unused. (On Zen 5, an 8×5 block of a 28×105 template: 1.6 µs
+/// against 2.5; of a 13×20 one, 0.58 against 0.42.)
+const ROWS64_MIN_WIDTH: usize = 20;
+
 /// [`window_stats`] at every position of a block: for the `bw`×`bh`
 /// positions from `(x0, y0)`, row by row, `out[j·bw + i]` is the window
 /// whose top left is `(x0 + i, y0 + j)`. The same three sums, computed
 /// together: on AVX2 the products of 8 positions a vector, each row of
-/// pixels loaded once for every position row it reaches, and the pixel
-/// sums slid along columns, where a window at a time sums every pixel
-/// once per position. `pairs` is [`weight_pairs`] of `weights`.
+/// pixels loaded once for every position row it reaches, or on AVX-512
+/// each position's window row by row, 64 pixels a dot product; and the
+/// pixel sums slid along columns, where a window at a time sums every
+/// pixel once per position.
 ///
 /// # Panics
 ///
@@ -257,9 +296,7 @@ pub(crate) fn block_stats(
     stride: usize,
     (x0, y0): (usize, usize),
     (bw, bh): (usize, usize),
-    weights: &[u8],
-    pairs: &[u32],
-    quads: (&[u32], u32),
+    template: &BlockWeights<'_>,
     (w, h): (usize, usize),
     out: &mut Vec<(u64, u64, u64)>,
 ) {
@@ -267,24 +304,38 @@ pub(crate) fn block_stats(
     if bw == 0 || bh == 0 {
         return;
     }
+    let BlockWeights {
+        pixels: weights,
+        pairs,
+        quads,
+        rows64,
+    } = *template;
     assert!(w > 0 && h > 0 && x0 + bw - 1 + w <= stride);
     assert!(pixels.len() >= (y0 + bh - 1 + h - 1) * stride + x0 + bw - 1 + w);
     assert!(weights.len() >= w * h && pairs.len() >= w.div_ceil(2) * h);
     assert!(quads.0.len() >= w.div_ceil(4) * h);
+    assert!(rows64.len() >= w.next_multiple_of(64) * h);
     match backend() {
         #[cfg(target_arch = "x86_64")]
-        // SAFETY: `backend()` reported AVX2 on this CPU (and
-        // `block_vnni()` AVX-VNNI when it is used); the sizes are checked
-        // above.
+        // SAFETY: `backend()` reported AVX2 on this CPU (and `vnni()`
+        // AVX-512 VNNI, or `block_vnni()` AVX-VNNI, when that is used);
+        // the sizes are checked above.
         Backend::Avx2 if w <= MAX_AREA_32 => unsafe {
-            let quads = (block_vnni() && w * h <= MAX_AREA_32).then_some(quads);
+            let fits = w * h <= MAX_AREA_32;
+            let products = if fits && w >= ROWS64_MIN_WIDTH && vnni() == Some(Vnni::Zmm) {
+                x86::BlockProducts::Rows64(rows64)
+            } else if fits && block_vnni() {
+                x86::BlockProducts::Quads(quads)
+            } else {
+                x86::BlockProducts::Pairs
+            };
             x86::block_stats_avx2(
                 pixels,
                 stride,
                 (x0, y0),
                 (bw, bh),
                 pairs,
-                quads,
+                products,
                 (w, h),
                 out,
             )
@@ -538,7 +589,112 @@ fn scores_everywhere_body(
     _template: (i64, i64),
     out: &mut Vec<f32>,
     mut score_row: impl FnMut(&[u32], &[u32], &[u32], &mut Vec<f32>),
+    running: impl FnMut(&[u32], &mut [u32]),
+) {
+    let columns = width - w + 1;
+    window_rows(plane, width, (w, h), running, |y, sums, squares| {
+        score_row(
+            &products[y * columns..(y + 1) * columns],
+            sums,
+            squares,
+            out,
+        )
+    });
+}
+
+/// A position whose score reached the floor of a search: its column, its
+/// row and the score.
+pub(crate) type Hit = (u32, u32, f32);
+
+/// How far below `floor²` a position's squared correlation may seem, in
+/// double precision, and still be scored: far more than the single
+/// precision of the score itself can move it (a few parts in 10⁷), so the
+/// test drops no position that scores at least the floor.
+const HIT_MARGIN: f64 = 1e-5;
+
+/// The squared covariance a position needs, as a multiple of its spread,
+/// to be scored against `floor` (positive) with a template of spread
+/// `t_spread`: `floor² (1 - HIT_MARGIN) t_spread`.
+fn hit_threshold(floor: f32, t_spread: i64) -> f64 {
+    f64::from(floor) * f64::from(floor) * (1.0 - HIT_MARGIN) * t_spread as f64
+}
+
+/// The positions of a `width`×`height` plane where each of `templates`
+/// scores at least `floor`, with their scores, in scan order, into the
+/// matching list of `hits` (replacing what it held). Each template is
+/// `w`×`h` and given by its products at every position (as
+/// [`correlate_everywhere`] gives them), its pixel sum and its spread; the
+/// windows' sums are taken once for them all.
+///
+/// Exactly the positions and scores of [`scores_everywhere`] at or above
+/// the floor, which must be positive: a position's covariance must then be
+/// positive and its square at least `floor²` times the product of the
+/// spreads, and in vectors that test is made on the exact integer terms
+/// (in double precision, with [`HIT_MARGIN`] to spare) and only the
+/// positions passing it — few, on most searches — are scored.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn hits_everywhere(
+    plane: &[u8],
+    width: usize,
+    height: usize,
+    (w, h): (usize, usize),
+    templates: &[(&[u32], i64, i64)],
+    floor: f32,
+    hits: &mut [Vec<Hit>],
+) {
+    let n = w * h;
+    assert!(w > 0 && h > 0 && w <= width && h <= height && n <= MAX_AREA_32);
+    assert!(plane.len() >= width * height);
+    assert!(floor > 0.0 && hits.len() == templates.len());
+    let (columns, rows) = (width - w + 1, height - h + 1);
+    assert!(templates.iter().all(|t| t.0.len() >= columns * rows));
+    assert!(rows <= u32::MAX as usize && columns <= u32::MAX as usize);
+    hits.iter_mut().for_each(Vec::clear);
+    #[cfg(target_arch = "x86_64")]
+    if backend() == Backend::Avx2 {
+        // SAFETY: `backend()` reported AVX2 on this CPU; sizes checked.
+        unsafe { x86::hits_everywhere_avx2(plane, width, height, (w, h), templates, floor, hits) };
+        return;
+    }
+    window_rows(
+        &plane[..width * height],
+        width,
+        (w, h),
+        |values, totals| {
+            let mut total = 0u32;
+            for (t, &v) in totals[1..].iter_mut().zip(values) {
+                total = total.wrapping_add(v);
+                *t = total;
+            }
+        },
+        |y, sums, squares| {
+            for (&(products, t_sum, t_spread), list) in templates.iter().zip(hits.iter_mut()) {
+                let row = &products[y * columns..(y + 1) * columns];
+                for (x, ((&p, &s), &q)) in row.iter().zip(sums).zip(squares).enumerate() {
+                    let score = ncc(n as i64, t_sum, t_spread, p.into(), s.into(), q.into());
+                    if score >= floor {
+                        list.push((x as u32, y as u32, score));
+                    }
+                }
+            }
+        },
+    );
+}
+
+/// Calls `row(y, sums, squares)` for each row `y` of positions of a
+/// `w`×`h` window over a `width`-wide plane, in order, with the pixel sum
+/// and the sum of squares of the window at each position along the row.
+/// The sums come from column totals over the window's height, slid down a
+/// row at a time, and running totals of those along the row (`running`:
+/// `totals[i + 1] = totals[i] + values[i]`, wrapping, `totals[0]` left at
+/// 0; a window's total, the difference of two, fits 32 bits).
+#[inline(always)]
+fn window_rows(
+    plane: &[u8],
+    width: usize,
+    (w, h): (usize, usize),
     mut running: impl FnMut(&[u32], &mut [u32]),
+    mut row: impl FnMut(usize, &[u32], &[u32]),
 ) {
     let height = plane.len() / width;
     let (columns, rows) = (width - w + 1, height - h + 1);
@@ -583,12 +739,7 @@ fn scores_everywhere_body(
             *ws = s1.wrapping_sub(*s0);
             *wq = q1.wrapping_sub(*q0);
         }
-        score_row(
-            &products[y * columns..(y + 1) * columns],
-            &window_sums,
-            &window_squares,
-            out,
-        );
+        row(y, &window_sums, &window_squares);
     }
 }
 
@@ -769,6 +920,59 @@ mod x86 {
         assert!(h > 0 && w > 0);
         assert!(pixels.len() >= (y + h - 1) * stride + x + w);
         assert!(weights.len() >= w * h);
+        if w < 16 {
+            // Rows narrower than half a vector: two at a time, a row in
+            // each half, its first `w` bytes kept (the rows read whole
+            // where 16 bytes lie within the slices, else copied out).
+            let keep = {
+                let mut bytes = [0u8; 16];
+                bytes[..w].fill(0xFF);
+                // SAFETY: a 16-byte array.
+                unsafe { _mm_loadu_si128(bytes.as_ptr().cast()) }
+            };
+            let row16 = |slice: &[u8], at: usize| -> __m128i {
+                let bytes = if at + 16 <= slice.len() {
+                    // SAFETY: 16 bytes from `at` lie within the slice.
+                    unsafe { _mm_loadu_si128(slice.as_ptr().add(at).cast()) }
+                } else {
+                    let mut copy = [0u8; 16];
+                    copy[..w].copy_from_slice(&slice[at..at + w]);
+                    // SAFETY: a 16-byte array.
+                    unsafe { _mm_loadu_si128(copy.as_ptr().cast()) }
+                };
+                _mm_and_si128(bytes, keep)
+            };
+            let mut v = 0;
+            while v < h {
+                let pair = |slice: &[u8], first: usize, second: Option<usize>| {
+                    let low = row16(slice, first);
+                    let high = second.map_or(_mm_setzero_si128(), |at| row16(slice, at));
+                    _mm256_inserti128_si256::<1>(_mm256_castsi128_si256(low), high)
+                };
+                let next = (v + 1 < h).then_some(v + 1);
+                let p = pair(
+                    pixels,
+                    (y + v) * stride + x,
+                    next.map(|n| (y + n) * stride + x),
+                );
+                let t = pair(weights, v * w, next.map(|n| n * w));
+                sums = _mm256_add_epi64(sums, _mm256_sad_epu8(p, zero));
+                let (p_lo, p_hi) = (
+                    _mm256_cvtepu8_epi16(_mm256_castsi256_si128(p)),
+                    _mm256_cvtepu8_epi16(_mm256_extracti128_si256(p, 1)),
+                );
+                let (t_lo, t_hi) = (
+                    _mm256_cvtepu8_epi16(_mm256_castsi256_si128(t)),
+                    _mm256_cvtepu8_epi16(_mm256_extracti128_si256(t, 1)),
+                );
+                squares = _mm256_add_epi32(squares, _mm256_madd_epi16(p_lo, p_lo));
+                squares = _mm256_add_epi32(squares, _mm256_madd_epi16(p_hi, p_hi));
+                products = _mm256_add_epi32(products, _mm256_madd_epi16(p_lo, t_lo));
+                products = _mm256_add_epi32(products, _mm256_madd_epi16(p_hi, t_hi));
+                v += 2;
+            }
+            return (sum_u64x4(sums), sum_i32x8(squares), sum_i32x8(products));
+        }
         for v in 0..h {
             // SAFETY: within the slices, by the checks above.
             let row =
@@ -1124,6 +1328,7 @@ mod x86 {
         pairs: Vec<u32>,
         sums: Vec<u32>,
         squares: Vec<u32>,
+        vectors: Vec<__m512i>,
     }
 
     thread_local! {
@@ -1148,7 +1353,7 @@ mod x86 {
         (x0, y0): (usize, usize),
         (bw, bh): (usize, usize),
         pairs: &[u32],
-        quads: Option<(&[u32], u32)>,
+        products: BlockProducts<'_>,
         (w, h): (usize, usize),
         out: &mut Vec<(u64, u64, u64)>,
     ) {
@@ -1160,12 +1365,71 @@ mod x86 {
         out.resize(bw * bh, (0, 0, 0));
         let row_of = |r: usize| &pixels[(y0 + r) * stride + x0..][..span];
         BLOCK_SCRATCH.with_borrow_mut(|scratch| {
-            // Sums and squares: each block row's at every position along it
-            // (the first window's 32 pixels a step, then slid a pixel at a
-            // time), and those summed down each column of positions over
-            // the template's height, then slid down a row at a time.
-            // (Every value is written before it is read: the buffers are
-            // only grown, never cleared.)
+            if w * h <= super::MAX_AREA_32 && matches!(products, BlockProducts::Rows64(_)) {
+                // Every window's sums fit 32 bits, and 512-bit dot products
+                // are there: 8 positions at a time, a row's pixels 64 at a
+                // time.
+                // SAFETY: AVX-512 VNNI, as the products' path says; the
+                // block fits, as checked above.
+                unsafe {
+                    block_sums_zmm(
+                        pixels,
+                        stride,
+                        (x0, y0),
+                        (bw, bh),
+                        (w, h),
+                        &mut scratch.vectors,
+                        out,
+                    )
+                };
+            } else if w * h <= super::MAX_AREA_32 {
+                // Every window's sums fit 32 bits: 8 positions at a time.
+                // SAFETY: AVX2; the block fits, as checked above.
+                unsafe {
+                    block_sums_avx2(
+                        pixels,
+                        stride,
+                        (x0, y0),
+                        (bw, bh),
+                        (w, h),
+                        &mut scratch.sums,
+                        out,
+                    )
+                };
+            } else {
+                block_sums_scalar(&row_of, (bw, bh), (w, h), rows, scratch, out);
+            }
+            block_products(
+                pixels,
+                stride,
+                (x0, y0),
+                (bw, bh),
+                pairs,
+                products,
+                (w, h),
+                rows,
+                scratch,
+                out,
+            );
+        });
+    }
+
+    /// The sums and squares of a block's windows one position at a time:
+    /// each block row's at every position along it (the first window's 32
+    /// pixels a step, then slid a pixel at a time), and those summed down
+    /// each column of positions over the template's height, then slid
+    /// down a row at a time, in 64 bits. (Every value is written before it
+    /// is read: the buffers are only grown, never cleared.)
+    #[target_feature(enable = "avx2")]
+    fn block_sums_scalar<'a>(
+        row_of: &impl Fn(usize) -> &'a [u8],
+        (bw, bh): (usize, usize),
+        (w, h): (usize, usize),
+        rows: usize,
+        scratch: &mut BlockScratch,
+        out: &mut [(u64, u64, u64)],
+    ) {
+        {
             for buffer in [&mut scratch.sums, &mut scratch.squares] {
                 if buffer.len() < rows * bw {
                     buffer.resize(rows * bw, 0);
@@ -1203,24 +1467,303 @@ mod x86 {
                     out[j * bw + i].1 = square;
                 }
             }
+        }
+    }
 
-            if let Some((tq, bias)) = quads {
-                // SAFETY: AVX-VNNI, as `block_stats` checked; the block
-                // fits, as checked above.
+    /// The sums and squares of a block's windows, 8 positions along a row
+    /// at a time, in 32 bits (every window's fit): for each plane row of
+    /// the block, the first window's (`line_sums`) and each next one's as
+    /// that plus the pixels entering less those leaving, as running totals
+    /// within a vector; then those summed down over the template's height,
+    /// and slid down a row at a time. `scratch` holds each plane row's 8
+    /// sums and 8 squares.
+    ///
+    /// # Safety
+    ///
+    /// AVX2; every window lies within `pixels`; `w · h <= MAX_AREA_32`.
+    #[allow(clippy::too_many_arguments)]
+    #[target_feature(enable = "avx2")]
+    unsafe fn block_sums_avx2(
+        pixels: &[u8],
+        stride: usize,
+        (x0, y0): (usize, usize),
+        (bw, bh): (usize, usize),
+        (w, h): (usize, usize),
+        scratch: &mut Vec<u32>,
+        out: &mut [(u64, u64, u64)],
+    ) {
+        let rows = bh - 1 + h;
+        assert!(w * h <= super::MAX_AREA_32 && out.len() >= bw * bh);
+        assert!(pixels.len() >= (y0 + rows - 1) * stride + x0 + bw - 1 + w);
+        if scratch.len() < 16 * rows {
+            scratch.resize(16 * rows, 0);
+        }
+        // 8 pixels from `at`, as 32-bit lanes; zero past the slice.
+        let eight = |at: usize| -> __m256i {
+            let bytes = if at + 8 <= pixels.len() {
+                // SAFETY: 8 bytes from `at` lie within the slice.
+                unsafe { _mm_loadl_epi64(pixels.as_ptr().add(at).cast()) }
+            } else {
+                let mut copy = [0u8; 8];
+                let have = pixels.len().saturating_sub(at).min(8);
+                copy[..have].copy_from_slice(&pixels[at..at + have]);
+                // SAFETY: an 8-byte array.
+                unsafe { _mm_loadl_epi64(copy.as_ptr().cast()) }
+            };
+            _mm256_cvtepu8_epi32(bytes)
+        };
+        // Each lane the total of the lanes before it.
+        let before = _mm256_setr_epi32(0, 0, 1, 2, 3, 4, 5, 6);
+        let exclusive = |d: __m256i| {
+            let mut x = _mm256_blend_epi32::<1>(
+                _mm256_permutevar8x32_epi32(d, before),
+                _mm256_setzero_si256(),
+            );
+            x = _mm256_add_epi32(x, _mm256_slli_si256::<4>(x));
+            x = _mm256_add_epi32(x, _mm256_slli_si256::<8>(x));
+            let low_total = _mm256_shuffle_epi32::<0xff>(x);
+            _mm256_add_epi32(x, _mm256_permute2x128_si256::<0x08>(low_total, low_total))
+        };
+        for strip in (0..bw).step_by(8) {
+            let lanes = (bw - strip).min(8);
+            let xs = x0 + strip;
+            for r in 0..rows {
+                let start = (y0 + r) * stride + xs;
+                let (s0, q0) = line_sums(&pixels[start..start + w]);
+                let (leaving, entering) = (eight(start), eight(start + w));
+                let d = _mm256_sub_epi32(entering, leaving);
+                let d2 = _mm256_sub_epi32(
+                    _mm256_mullo_epi32(entering, entering),
+                    _mm256_mullo_epi32(leaving, leaving),
+                );
+                let sums = _mm256_add_epi32(_mm256_set1_epi32(s0 as i32), exclusive(d));
+                let squares = _mm256_add_epi32(_mm256_set1_epi32(q0 as i32), exclusive(d2));
+                // SAFETY: 16 values from `16 r` lie within `scratch`.
                 unsafe {
-                    block_products_vnni(
-                        pixels,
-                        stride,
-                        (x0, y0),
-                        (bw, bh),
-                        tq,
-                        bias,
-                        (w, h),
-                        &mut scratch.pairs,
-                        out,
-                    )
-                };
-                return;
+                    _mm256_storeu_si256(scratch.as_mut_ptr().add(16 * r).cast(), sums);
+                    _mm256_storeu_si256(scratch.as_mut_ptr().add(16 * r + 8).cast(), squares);
+                }
+            }
+            // SAFETY: rows `r < rows` of `scratch`.
+            let load = |r: usize, half: usize| unsafe {
+                _mm256_loadu_si256(scratch.as_ptr().add(16 * r + 8 * half).cast())
+            };
+            let (mut sums, mut squares) = (_mm256_setzero_si256(), _mm256_setzero_si256());
+            for r in 0..h {
+                sums = _mm256_add_epi32(sums, load(r, 0));
+                squares = _mm256_add_epi32(squares, load(r, 1));
+            }
+            for j in 0..bh {
+                if j > 0 {
+                    sums = _mm256_sub_epi32(
+                        _mm256_add_epi32(sums, load(j - 1 + h, 0)),
+                        load(j - 1, 0),
+                    );
+                    squares = _mm256_sub_epi32(
+                        _mm256_add_epi32(squares, load(j - 1 + h, 1)),
+                        load(j - 1, 1),
+                    );
+                }
+                let (mut s, mut q) = ([0u32; 8], [0u32; 8]);
+                // SAFETY: two 8-lane arrays.
+                unsafe {
+                    _mm256_storeu_si256(s.as_mut_ptr().cast(), sums);
+                    _mm256_storeu_si256(q.as_mut_ptr().cast(), squares);
+                }
+                for (i, o) in out[j * bw + strip..][..lanes].iter_mut().enumerate() {
+                    *o = (u64::from(s[i]), u64::from(q[i]), 0);
+                }
+            }
+        }
+    }
+
+    /// `block_sums_avx2` on 512-bit vectors, without a sum across a vector
+    /// for every plane row. Each plane row of the block gives, for the
+    /// first of 8 positions along it: its pixels' sum in a vector of
+    /// partial sums (byte sums of eights), and their squares' less `128 Σ
+    /// p` as another (dot products `Σ p (p - 128)`, the row 64 pixels at
+    /// a time); and for all 8, the pixels entering less those leaving
+    /// (`d[i]`: column `i + w` less column `i`), and the same of their
+    /// squares. Summed down over the template's height and slid down a row
+    /// at a time, those give each position row's first window's sums
+    /// (taken across the vectors once a position row), and each next
+    /// window's as that plus the differences before it.
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F, BW, VL and VNNI; every window lies within `pixels`; `w ·
+    /// h <= MAX_AREA_32`.
+    #[allow(clippy::too_many_arguments)]
+    #[target_feature(enable = "avx512f,avx512bw,avx512vl,avx512vnni")]
+    unsafe fn block_sums_zmm(
+        pixels: &[u8],
+        stride: usize,
+        (x0, y0): (usize, usize),
+        (bw, bh): (usize, usize),
+        (w, h): (usize, usize),
+        scratch: &mut Vec<__m512i>,
+        out: &mut [(u64, u64, u64)],
+    ) {
+        let rows = bh - 1 + h;
+        assert!(w * h <= super::MAX_AREA_32 && out.len() >= bw * bh);
+        assert!(pixels.len() >= (y0 + rows - 1) * stride + x0 + bw - 1 + w);
+        if scratch.len() < 3 * rows {
+            scratch.resize(3 * rows, _mm512_setzero_si512());
+        }
+        let chunks = w.div_ceil(64);
+        let last: u64 = if w.is_multiple_of(64) {
+            u64::MAX
+        } else {
+            (1 << (w % 64)) - 1
+        };
+        let flip = _mm512_set1_epi8(-128);
+        let zero = _mm512_setzero_si512();
+        // 8 pixels from `at`, as 32-bit lanes; zero past the slice.
+        let eight = |at: usize| -> __m256i {
+            let have = pixels.len().saturating_sub(at).min(8);
+            let mask: __mmask16 = (1 << have) - 1;
+            // SAFETY: the mask keeps the load within the slice.
+            _mm256_cvtepu8_epi32(unsafe {
+                _mm_maskz_loadu_epi8(mask, pixels.as_ptr().add(at.min(pixels.len())).cast())
+            })
+        };
+        // Each lane the total of the lanes before it.
+        let before = _mm256_setr_epi32(0, 0, 1, 2, 3, 4, 5, 6);
+        let exclusive = |d: __m256i| {
+            let mut x = _mm256_blend_epi32::<1>(
+                _mm256_permutevar8x32_epi32(d, before),
+                _mm256_setzero_si256(),
+            );
+            x = _mm256_add_epi32(x, _mm256_slli_si256::<4>(x));
+            x = _mm256_add_epi32(x, _mm256_slli_si256::<8>(x));
+            let low_total = _mm256_shuffle_epi32::<0xff>(x);
+            _mm256_add_epi32(x, _mm256_permute2x128_si256::<0x08>(low_total, low_total))
+        };
+        for strip in (0..bw).step_by(8) {
+            let lanes = (bw - strip).min(8);
+            let xs = x0 + strip;
+            for r in 0..rows {
+                let start = (y0 + r) * stride + xs;
+                let (mut sums, mut squares) = (zero, zero);
+                for k in 0..chunks {
+                    let mask = if k + 1 == chunks { last } else { u64::MAX };
+                    // SAFETY: the mask keeps the load within the window's
+                    // row, which lies within `pixels`.
+                    let p = unsafe {
+                        _mm512_maskz_loadu_epi8(mask, pixels.as_ptr().add(start + 64 * k).cast())
+                    };
+                    sums = _mm512_add_epi64(sums, _mm512_sad_epu8(p, zero));
+                    // Masked-out pixels are 0, and 0 (0 - 128) adds nothing.
+                    squares = _mm512_dpbusd_epi32(squares, p, _mm512_xor_si512(p, flip));
+                }
+                let (leaving, entering) = (eight(start), eight(start + w));
+                let d = _mm256_sub_epi32(entering, leaving);
+                let d2 = _mm256_sub_epi32(
+                    _mm256_mullo_epi32(entering, entering),
+                    _mm256_mullo_epi32(leaving, leaving),
+                );
+                scratch[3 * r] = sums;
+                scratch[3 * r + 1] = squares;
+                scratch[3 * r + 2] = _mm512_inserti64x4::<1>(_mm512_castsi256_si512(d), d2);
+            }
+            let (mut sums, mut squares, mut deltas) = (zero, zero, zero);
+            for r in 0..h {
+                sums = _mm512_add_epi64(sums, scratch[3 * r]);
+                squares = _mm512_add_epi32(squares, scratch[3 * r + 1]);
+                deltas = _mm512_add_epi32(deltas, scratch[3 * r + 2]);
+            }
+            for j in 0..bh {
+                if j > 0 {
+                    let (old, new) = (3 * (j - 1), 3 * (j - 1 + h));
+                    sums = _mm512_sub_epi64(_mm512_add_epi64(sums, scratch[new]), scratch[old]);
+                    squares = _mm512_sub_epi32(
+                        _mm512_add_epi32(squares, scratch[new + 1]),
+                        scratch[old + 1],
+                    );
+                    deltas = _mm512_sub_epi32(
+                        _mm512_add_epi32(deltas, scratch[new + 2]),
+                        scratch[old + 2],
+                    );
+                }
+                // The first window's sums (wrapping: the true ones fit).
+                let sum = _mm512_reduce_add_epi64(sums) as u32;
+                let square =
+                    (_mm512_reduce_add_epi32(squares) as u32).wrapping_add(sum.wrapping_mul(128));
+                let s = _mm256_add_epi32(
+                    _mm256_set1_epi32(sum as i32),
+                    exclusive(_mm512_castsi512_si256(deltas)),
+                );
+                let q = _mm256_add_epi32(
+                    _mm256_set1_epi32(square as i32),
+                    exclusive(_mm512_extracti64x4_epi64::<1>(deltas)),
+                );
+                let (mut s_lanes, mut q_lanes) = ([0u32; 8], [0u32; 8]);
+                // SAFETY: two 8-lane arrays.
+                unsafe {
+                    _mm256_storeu_si256(s_lanes.as_mut_ptr().cast(), s);
+                    _mm256_storeu_si256(q_lanes.as_mut_ptr().cast(), q);
+                }
+                for (i, o) in out[j * bw + strip..][..lanes].iter_mut().enumerate() {
+                    *o = (u64::from(s_lanes[i]), u64::from(q_lanes[i]), 0);
+                }
+            }
+        }
+    }
+
+    /// The products of a block's windows into `out`'s third sums, by the
+    /// path `products` names (`rows`: the block's plane rows).
+    #[allow(clippy::too_many_arguments)]
+    #[target_feature(enable = "avx2")]
+    fn block_products(
+        pixels: &[u8],
+        stride: usize,
+        (x0, y0): (usize, usize),
+        (bw, bh): (usize, usize),
+        pairs: &[u32],
+        products: BlockProducts<'_>,
+        (w, h): (usize, usize),
+        rows: usize,
+        scratch: &mut BlockScratch,
+        out: &mut [(u64, u64, u64)],
+    ) {
+        let half = w.div_ceil(2);
+        {
+            match products {
+                BlockProducts::Rows64(rows64) => {
+                    // SAFETY: AVX-512 VNNI, as `block_stats` checked; the
+                    // block fits, as checked above.
+                    unsafe {
+                        block_products_rows64(
+                            pixels,
+                            stride,
+                            (x0, y0),
+                            (bw, bh),
+                            rows64,
+                            (w, h),
+                            out,
+                        )
+                    };
+                    return;
+                }
+                BlockProducts::Quads((tq, bias)) => {
+                    // SAFETY: AVX-VNNI, as `block_stats` checked; the block
+                    // fits, as checked above.
+                    unsafe {
+                        block_products_vnni(
+                            pixels,
+                            stride,
+                            (x0, y0),
+                            (bw, bh),
+                            tq,
+                            bias,
+                            (w, h),
+                            &mut scratch.pairs,
+                            out,
+                        )
+                    };
+                    return;
+                }
+                BlockProducts::Pairs => {}
             }
             // Products, a strip of 8 position columns at a time. Every pair
             // of the strip's rows is written before it is read, so the
@@ -1273,7 +1816,168 @@ mod x86 {
                     }
                 }
             }
-        });
+        }
+    }
+
+    /// How `block_stats_avx2` takes a block's products: from the template
+    /// in neighbouring pairs (16-bit multiply-adds), in fours (AVX-VNNI),
+    /// or row by row in 64-byte vectors (AVX-512 VNNI).
+    #[derive(Clone, Copy)]
+    pub(super) enum BlockProducts<'a> {
+        Pairs,
+        Quads((&'a [u32], u32)),
+        Rows64(&'a [u8]),
+    }
+
+    /// Columns of positions `rows64_columns` takes at once: each of the
+    /// template's vectors is loaded once for all of them.
+    const ROWS64_COLUMNS: usize = 4;
+
+    /// The products of a block on AVX-512 VNNI, into `out`'s third sums
+    /// (its first, the windows' pixel sums, already there): for each
+    /// position, each row of its window multiplied with the template's,
+    /// 64 pixels a dot product straight from the plane (the last vector of
+    /// a row loaded under a mask, so nothing past the window is read):
+    /// `Σ p (t - 128)`, the template's rows as signed bytes (`rows64`, a
+    /// whole number of vectors a row), to which `128 Σ p` is added back.
+    /// The lanes wrap, and the true sums fit 32 bits.
+    ///
+    /// Positions go in groups of `ROWS64_COLUMNS` columns by up to 5 rows:
+    /// a vector of a plane row is loaded once for every position row of
+    /// the group it reaches (each with its own row of the template), and a
+    /// vector of the template once for every column.
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F, BW and VNNI; every window lies within `pixels`;
+    /// `rows64` holds `h` rows of `w.next_multiple_of(64)` bytes; `out`
+    /// holds the block's `bw · bh` positions with their sums.
+    #[allow(clippy::too_many_arguments)]
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    unsafe fn block_products_rows64(
+        pixels: &[u8],
+        stride: usize,
+        (x0, y0): (usize, usize),
+        (bw, bh): (usize, usize),
+        rows64: &[u8],
+        (w, h): (usize, usize),
+        out: &mut [(u64, u64, u64)],
+    ) {
+        let row = w.next_multiple_of(64);
+        assert!(rows64.len() >= row * h && out.len() >= bw * bh);
+        assert!(pixels.len() >= (y0 + bh - 1 + h - 1) * stride + x0 + bw - 1 + w);
+        let mut x = 0;
+        while x < bw {
+            let columns = (bw - x).min(ROWS64_COLUMNS);
+            let mut j = 0;
+            while j < bh {
+                let n = (bh - j).min(5);
+                let group = Group {
+                    pixels,
+                    stride,
+                    at: (x0 + x, y0 + j),
+                    columns,
+                    rows64,
+                    row,
+                    w,
+                    h,
+                };
+                // SAFETY: by this function's guarantees, for the group's
+                // positions (`x .. x + columns`, `j .. j + n`).
+                let dots: [[u32; ROWS64_COLUMNS]; 5] = unsafe {
+                    match n {
+                        1 => widen(rows64_columns::<1>(&group)),
+                        2 => widen(rows64_columns::<2>(&group)),
+                        3 => widen(rows64_columns::<3>(&group)),
+                        4 => widen(rows64_columns::<4>(&group)),
+                        _ => rows64_columns::<5>(&group),
+                    }
+                };
+                for (r, dots) in dots.iter().enumerate().take(n) {
+                    for (c, &dot) in dots.iter().enumerate().take(columns) {
+                        let o = &mut out[(j + r) * bw + x + c];
+                        o.2 = u64::from(dot.wrapping_add((o.0 as u32).wrapping_mul(128)));
+                    }
+                }
+                j += n;
+            }
+            x += columns;
+        }
+    }
+
+    /// `ROWS` rows of dot products, padded to 5.
+    fn widen<const ROWS: usize>(dots: [[u32; ROWS64_COLUMNS]; ROWS]) -> [[u32; ROWS64_COLUMNS]; 5] {
+        let mut out = [[0; ROWS64_COLUMNS]; 5];
+        out[..ROWS].copy_from_slice(&dots);
+        out
+    }
+
+    /// A group of positions for `rows64_columns`: the plane, the top left
+    /// position, how many of the `ROWS64_COLUMNS` columns are real (the
+    /// rest repeat the last, and what they compute is dropped), and the
+    /// template's signed rows (`row` bytes each) and size.
+    struct Group<'a> {
+        pixels: &'a [u8],
+        stride: usize,
+        at: (usize, usize),
+        columns: usize,
+        rows64: &'a [u8],
+        row: usize,
+        w: usize,
+        h: usize,
+    }
+
+    /// The dot products `Σ p (t - 128)` of a group's `ROWS64_COLUMNS` ×
+    /// `ROWS` positions, wrapping, as `block_products_rows64` takes them.
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F, BW and VNNI; the group's windows lie within `pixels`.
+    #[inline]
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    unsafe fn rows64_columns<const ROWS: usize>(g: &Group<'_>) -> [[u32; ROWS64_COLUMNS]; ROWS] {
+        let chunks = g.row / 64;
+        let last: u64 = if g.w.is_multiple_of(64) {
+            u64::MAX
+        } else {
+            (1 << (g.w % 64)) - 1
+        };
+        let mut acc = [[_mm512_setzero_si512(); ROWS64_COLUMNS]; ROWS];
+        let (x, y) = g.at;
+        // Plane rows `y + r`: position row `i` takes it with template row
+        // `r - i`, when that is one.
+        for r in 0..g.h + ROWS - 1 {
+            let line = (y + r) * g.stride + x;
+            for k in 0..chunks {
+                let mask = if k + 1 == chunks { last } else { u64::MAX };
+                let mut p = [_mm512_setzero_si512(); ROWS64_COLUMNS];
+                for (c, v) in p.iter_mut().enumerate() {
+                    let c = c.min(g.columns - 1);
+                    // SAFETY: the mask keeps the load within this window
+                    // row, which lies within `pixels`.
+                    *v = unsafe {
+                        _mm512_maskz_loadu_epi8(
+                            mask,
+                            g.pixels.as_ptr().add(line + c + 64 * k).cast(),
+                        )
+                    };
+                }
+                for (i, sums) in acc.iter_mut().enumerate() {
+                    let Some(v) = r.checked_sub(i).filter(|&v| v < g.h) else {
+                        continue;
+                    };
+                    // SAFETY: row `v < h` of `rows64` holds `chunks`
+                    // vectors.
+                    let t = unsafe {
+                        _mm512_loadu_si512(g.rows64.as_ptr().add(v * g.row + 64 * k).cast())
+                    };
+                    for (sum, &p) in sums.iter_mut().zip(&p) {
+                        *sum = _mm512_dpbusd_epi32(*sum, p, t);
+                    }
+                }
+            }
+        }
+        acc.map(|sums| sums.map(|sum| _mm512_reduce_add_epi32(sum) as u32))
     }
 
     /// The products of a block on AVX-VNNI, into `out`'s third sums: the
@@ -1394,11 +2098,6 @@ mod x86 {
     #[target_feature(enable = "avx2")]
     fn line_sums(line: &[u8]) -> (u32, u32) {
         let n = line.len();
-        if n < 32 {
-            return line.iter().fold((0, 0), |(s, q), &p| {
-                (s + u32::from(p), q + u32::from(p) * u32::from(p))
-            });
-        }
         let zero = _mm256_setzero_si256();
         let (mut sums, mut squares) = (zero, zero);
         let mut add = |p: __m256i| {
@@ -1408,6 +2107,14 @@ mod x86 {
             squares = _mm256_add_epi32(squares, _mm256_madd_epi16(lo, lo));
             squares = _mm256_add_epi32(squares, _mm256_madd_epi16(hi, hi));
         };
+        if n < 32 {
+            // Under a step: the line copied into a zeroed one.
+            let mut copy = [0u8; 32];
+            copy[..n].copy_from_slice(line);
+            // SAFETY: a 32-byte array.
+            add(unsafe { _mm256_loadu_si256(copy.as_ptr().cast()) });
+            return (sum_u64x4(sums) as u32, sum_i32x8(squares) as u32);
+        }
         for i in 0..n / 32 {
             // SAFETY: `i * 32 + 32 <= n`.
             add(unsafe { _mm256_loadu_si256(line.as_ptr().add(i * 32).cast()) });
@@ -1686,9 +2393,13 @@ mod x86 {
                 // The low half's total into every lane of the high half.
                 let low_total = _mm256_shuffle_epi32::<0xff>(x);
                 x = _mm256_add_epi32(x, _mm256_permute2x128_si256::<0x08>(low_total, low_total));
-                x = _mm256_add_epi32(x, carry);
-                _mm256_storeu_si256(totals.as_mut_ptr().add(i + 1).cast(), x);
-                carry = _mm256_permutevar8x32_epi32(x, last);
+                _mm256_storeu_si256(
+                    totals.as_mut_ptr().add(i + 1).cast(),
+                    _mm256_add_epi32(x, carry),
+                );
+                // The vector's own total joins the carry: one addition from
+                // step to step.
+                carry = _mm256_add_epi32(carry, _mm256_permutevar8x32_epi32(x, last));
             }
             i += 8;
         }
@@ -1850,6 +2561,466 @@ mod x86 {
         }
         // SAFETY: all `len` scores past `start` were written above.
         unsafe { out.set_len(start + len) };
+    }
+
+    /// `hits_everywhere` compiled for AVX2: the windows' sums as
+    /// `scores_everywhere_avx2` takes them, and each row of each template
+    /// tested by `hits_row_zmm` or `hits_row_avx2`.
+    #[allow(clippy::too_many_arguments)]
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn hits_everywhere_avx2(
+        plane: &[u8],
+        width: usize,
+        height: usize,
+        (w, h): (usize, usize),
+        templates: &[(&[u32], i64, i64)],
+        floor: f32,
+        hits: &mut [Vec<super::Hit>],
+    ) {
+        let n = (w * h) as i64;
+        let columns = width - w + 1;
+        let wide = super::zmm_scores();
+        if wide {
+            // SAFETY: `zmm_scores` reported AVX-512 F, BW, DQ and VL.
+            unsafe { hits_everywhere_zmm(plane, width, height, (w, h), templates, floor, hits) };
+            return;
+        }
+        super::window_rows(
+            &plane[..width * height],
+            width,
+            (w, h),
+            |values, totals| running_totals(values, totals),
+            |y, sums, squares| {
+                for (&(products, t_sum, t_spread), list) in templates.iter().zip(hits.iter_mut()) {
+                    let row = &products[y * columns..(y + 1) * columns];
+                    let template = (n, t_sum, t_spread);
+                    // SAFETY: AVX2, here, and AVX-512 when `zmm_scores`
+                    // says so; the rows are as long as each other.
+                    unsafe {
+                        if wide {
+                            hits_row_zmm(row, sums, squares, template, floor, y as u32, list)
+                        } else {
+                            hits_row_avx2(row, sums, squares, template, floor, y as u32, list)
+                        }
+                    }
+                }
+            },
+        );
+    }
+
+    /// `hits_everywhere` on 512-bit vectors, a row of positions in two
+    /// passes, taken in turn over stretches of `HIT_STRETCH` columns so
+    /// that what one writes the other reads from the first-level cache.
+    /// The first slides the column totals down a row and takes their
+    /// running totals along it, 16 columns a step: each vector's own prefix
+    /// in four shifted additions, and the total so far carried as a vector
+    /// of its own, so that the only chain from step to step is one
+    /// addition. The second, `w` columns behind, takes each window's sums
+    /// as the difference of two running totals, 16 positions a step, and
+    /// tests and scores the positions of every template as `hits_row_zmm`
+    /// does, the windows' terms shared.
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F, BW, DQ and VL; sizes as `hits_everywhere` checks them.
+    #[allow(clippy::too_many_arguments)]
+    #[target_feature(enable = "avx512f,avx512bw,avx512dq,avx512vl")]
+    unsafe fn hits_everywhere_zmm(
+        plane: &[u8],
+        width: usize,
+        height: usize,
+        (w, h): (usize, usize),
+        templates: &[(&[u32], i64, i64)],
+        floor: f32,
+        hits: &mut [Vec<super::Hit>],
+    ) {
+        const HIT_STRETCH: usize = 256;
+        let n = (w * h) as i64;
+        let (columns, rows) = (width - w + 1, height - h + 1);
+        assert!(plane.len() >= width * height && n <= super::MAX_AREA_32 as i64);
+        assert!(templates.iter().all(|t| t.0.len() >= columns * rows));
+        assert!(templates.iter().all(|t| (0..1 << 32).contains(&t.1)));
+        // Column totals over the window's height, a vector per 16 columns
+        // (aligned, as the vectors are); and their running totals, `run[16
+        // + x]` the total of columns `0 ..= x` and the 16 before it zero,
+        // padded so a vector read from `x + w + 15` stays within them for
+        // every `x < columns`.
+        let blocks = width.div_ceil(16);
+        let mut column_sums = vec![_mm512_setzero_si512(); blocks];
+        let mut column_squares = vec![_mm512_setzero_si512(); blocks];
+        let mut run_sums = vec![_mm512_setzero_si512(); blocks + 3];
+        let mut run_squares = vec![_mm512_setzero_si512(); blocks + 3];
+        {
+            // SAFETY: a vector is 16 lanes of 32 bits, any of them valid.
+            let (sums, squares) = unsafe {
+                (
+                    std::slice::from_raw_parts_mut(
+                        column_sums.as_mut_ptr().cast::<u32>(),
+                        16 * blocks,
+                    ),
+                    std::slice::from_raw_parts_mut(
+                        column_squares.as_mut_ptr().cast::<u32>(),
+                        16 * blocks,
+                    ),
+                )
+            };
+            for line in plane[..width * h].chunks_exact(width) {
+                for ((s, q), &p) in sums.iter_mut().zip(squares.iter_mut()).zip(line) {
+                    *s += u32::from(p);
+                    *q += u32::from(p) * u32::from(p);
+                }
+            }
+        }
+        let last = _mm512_set1_epi32(15);
+        let zero = _mm512_setzero_si512();
+        // A vector's own running totals: each lane plus every lane before it.
+        let prefix = |mut v: __m512i| {
+            v = _mm512_add_epi32(v, _mm512_alignr_epi32::<15>(v, zero));
+            v = _mm512_add_epi32(v, _mm512_alignr_epi32::<14>(v, zero));
+            v = _mm512_add_epi32(v, _mm512_alignr_epi32::<12>(v, zero));
+            _mm512_add_epi32(v, _mm512_alignr_epi32::<8>(v, zero))
+        };
+        let run_s = run_sums.as_ptr().cast::<u32>();
+        let run_q = run_squares.as_ptr().cast::<u32>();
+        for y in 0..rows {
+            let slide = (y > 0).then(|| {
+                (
+                    &plane[(y - 1) * width..y * width],
+                    &plane[(y - 1 + h) * width..(y + h) * width],
+                )
+            });
+            let mut carry_s = zero;
+            let mut carry_q = zero;
+            // Positions scored so far along the row.
+            let mut scored = 0;
+            let mut block = 0;
+            while block < blocks {
+                // Pass 1 over a stretch of columns.
+                let end = (block + HIT_STRETCH / 16).min(blocks);
+                for b in block..end {
+                    let x = 16 * b;
+                    let k = (width - x).min(16);
+                    let mask: __mmask16 = if k == 16 { u16::MAX } else { (1 << k) - 1 };
+                    let mut s = column_sums[b];
+                    let mut q = column_squares[b];
+                    if let Some((leaving, entering)) = slide {
+                        // SAFETY: the masks keep the loads within the rows.
+                        let (old, new) = unsafe {
+                            (
+                                _mm512_cvtepu8_epi32(_mm_maskz_loadu_epi8(
+                                    mask,
+                                    leaving.as_ptr().add(x).cast(),
+                                )),
+                                _mm512_cvtepu8_epi32(_mm_maskz_loadu_epi8(
+                                    mask,
+                                    entering.as_ptr().add(x).cast(),
+                                )),
+                            )
+                        };
+                        s = _mm512_sub_epi32(_mm512_add_epi32(s, new), old);
+                        // new² - old² = (new - old)(new + old).
+                        q = _mm512_add_epi32(
+                            q,
+                            _mm512_mullo_epi32(
+                                _mm512_sub_epi32(new, old),
+                                _mm512_add_epi32(new, old),
+                            ),
+                        );
+                        column_sums[b] = s;
+                        column_squares[b] = q;
+                    }
+                    let (ps, pq) = (prefix(s), prefix(q));
+                    run_sums[b + 1] = _mm512_add_epi32(ps, carry_s);
+                    run_squares[b + 1] = _mm512_add_epi32(pq, carry_q);
+                    carry_s = _mm512_add_epi32(carry_s, _mm512_permutexvar_epi32(last, ps));
+                    carry_q = _mm512_add_epi32(carry_q, _mm512_permutexvar_epi32(last, pq));
+                }
+                block = end;
+                // Pass 2 over the positions whose windows end in columns
+                // done — those before `16 block - w + 1` — a whole vector
+                // at a time; or all the rest at the end.
+                let ready = if block == blocks {
+                    columns
+                } else {
+                    (16 * block + 1).saturating_sub(w).min(columns) / 16 * 16
+                };
+                if scored < ready {
+                    let row = Row {
+                        y,
+                        columns,
+                        w,
+                        n,
+                        floor,
+                        run: (run_s, run_q),
+                    };
+                    // SAFETY: as `hits_stretch` asks: the running totals
+                    // of row `y` are done up to `16 block`, which positions
+                    // up to `ready` reach.
+                    unsafe {
+                        match (templates, &mut *hits) {
+                            ([a], [list]) => hits_stretch([*a], [list], &row, scored..ready),
+                            ([a, b], [list_a, list_b]) => {
+                                hits_stretch([*a, *b], [list_a, list_b], &row, scored..ready)
+                            }
+                            _ => {
+                                for (&t, list) in templates.iter().zip(hits.iter_mut()) {
+                                    hits_stretch([t], [list], &row, scored..ready);
+                                }
+                            }
+                        }
+                    }
+                    scored = ready.next_multiple_of(16);
+                }
+            }
+        }
+    }
+
+    /// A row of positions for `hits_stretch`: its index, how many
+    /// positions it has, the window's width and area, the floor, and the
+    /// running totals of the column sums and squares along it (`run[16 +
+    /// x]` the total of columns `0 ..= x`, the 16 before it zero).
+    struct Row {
+        y: usize,
+        columns: usize,
+        w: usize,
+        n: i64,
+        floor: f32,
+        run: (*const u32, *const u32),
+    }
+
+    /// The second pass of `hits_everywhere_zmm` over positions `range` of
+    /// a row, for `T` templates at once (each its products, pixel sum and
+    /// spread, and the list of hits it adds to): 16 positions a step, the
+    /// windows' sums and spreads taken once for all of them.
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F, BW, DQ and VL; `range` starts at a multiple of 16 and
+    /// ends by `row.columns`; the running totals hold at least `w + 31`
+    /// values past `range.end`, final for every column a position of
+    /// `range` reaches (`x + w - 1`, rounded up to a whole vector of
+    /// positions, unless the range ends the row); each template's products
+    /// hold the row.
+    #[inline]
+    #[target_feature(enable = "avx512f,avx512bw,avx512dq,avx512vl")]
+    unsafe fn hits_stretch<const T: usize>(
+        templates: [(&[u32], i64, i64); T],
+        hits: [&mut Vec<super::Hit>; T],
+        row: &Row,
+        range: std::ops::Range<usize>,
+    ) {
+        let Row {
+            y,
+            columns,
+            w,
+            n,
+            floor,
+            run: (run_s, run_q),
+        } = *row;
+        let n_v = _mm512_set1_pd(n as f64);
+        let zero_pd = _mm512_setzero_pd();
+        let t_sums = templates.map(|t| _mm512_set1_pd(t.1 as f64));
+        let thresholds = templates.map(|t| _mm512_set1_pd(super::hit_threshold(floor, t.2)));
+        let rows = templates.map(|t| t.0[y * columns..(y + 1) * columns].as_ptr());
+        let halves = |v: __m512i| {
+            (
+                _mm512_cvtepu32_pd(_mm512_castsi512_si256(v)),
+                _mm512_cvtepu32_pd(_mm512_extracti64x4_epi64::<1>(v)),
+            )
+        };
+        let mut x = range.start;
+        while x < range.end {
+            let k = (columns - x).min(16);
+            let mask: __mmask16 = if k == 16 { u16::MAX } else { (1 << k) - 1 };
+            // SAFETY: by the caller's guarantees; the masks keep the
+            // products' loads within the row.
+            unsafe {
+                let window = |run: *const u32| {
+                    _mm512_sub_epi32(
+                        _mm512_loadu_si512(run.add(x + w + 15).cast()),
+                        _mm512_loadu_si512(run.add(x + 15).cast()),
+                    )
+                };
+                let (s_lo, s_hi) = halves(window(run_s));
+                let (q_lo, q_hi) = halves(window(run_q));
+                let spread_lo = _mm512_sub_pd(_mm512_mul_pd(n_v, q_lo), _mm512_mul_pd(s_lo, s_lo));
+                let spread_hi = _mm512_sub_pd(_mm512_mul_pd(n_v, q_hi), _mm512_mul_pd(s_hi, s_hi));
+                let mut passed = [0u16; T];
+                for t in 0..T {
+                    let p = _mm512_maskz_loadu_epi32(mask, rows[t].add(x).cast());
+                    let (p_lo, p_hi) = halves(p);
+                    let test = |p: __m512d, s: __m512d, spread: __m512d| {
+                        let covariance =
+                            _mm512_sub_pd(_mm512_mul_pd(n_v, p), _mm512_mul_pd(s, t_sums[t]));
+                        let positive = _mm512_cmp_pd_mask::<_CMP_GT_OQ>(covariance, zero_pd);
+                        _mm512_mask_cmp_pd_mask::<_CMP_GE_OQ>(
+                            positive,
+                            _mm512_mul_pd(covariance, covariance),
+                            _mm512_mul_pd(thresholds[t], spread),
+                        )
+                    };
+                    passed[t] = (u16::from(test(p_lo, s_lo, spread_lo))
+                        | u16::from(test(p_hi, s_hi, spread_hi)) << 8)
+                        & mask;
+                }
+                if passed.iter().any(|&p| p != 0) {
+                    for t in 0..T {
+                        let (_, t_sum, t_spread) = templates[t];
+                        let mut bits = passed[t];
+                        while bits != 0 {
+                            let c = x + bits.trailing_zeros() as usize;
+                            // The window's sums, as the running totals give
+                            // them (wrapping: the true sums fit).
+                            let sum = (*run_s.add(c + w + 15)).wrapping_sub(*run_s.add(c + 15));
+                            let squares = (*run_q.add(c + w + 15)).wrapping_sub(*run_q.add(c + 15));
+                            let score = super::ncc(
+                                n,
+                                t_sum,
+                                t_spread,
+                                (*rows[t].add(c)).into(),
+                                sum.into(),
+                                squares.into(),
+                            );
+                            if score >= floor {
+                                hits[t].push((c as u32, y as u32, score));
+                            }
+                            bits &= bits - 1;
+                        }
+                    }
+                }
+            }
+            x += 16;
+        }
+    }
+
+    /// The positions of a row (`y`) that score at least `floor`, pushed to
+    /// `out` as `(column, y, score)`: 8 at a time, each tested on its
+    /// integer terms in double precision — all exact: the operands below
+    /// 2^32 and every product and difference below 2^51 — and only those
+    /// passing scored, by `ncc` itself.
+    #[allow(clippy::too_many_arguments)]
+    #[target_feature(enable = "avx512f,avx512dq,avx512vl")]
+    pub(super) unsafe fn hits_row_zmm(
+        products: &[u32],
+        sums: &[u32],
+        squares: &[u32],
+        (n, t_sum, t_spread): (i64, i64, i64),
+        floor: f32,
+        y: u32,
+        out: &mut Vec<super::Hit>,
+    ) {
+        let len = products.len();
+        assert!(sums.len() >= len && squares.len() >= len);
+        assert!(n > 0 && n <= super::MAX_AREA_32 as i64 && (0..1 << 32).contains(&t_sum));
+        let n_v = _mm512_set1_pd(n as f64);
+        let t_sum_v = _mm512_set1_pd(t_sum as f64);
+        let threshold = _mm512_set1_pd(super::hit_threshold(floor, t_spread));
+        let zero = _mm512_setzero_pd();
+        let score = |k: usize, out: &mut Vec<super::Hit>| {
+            let score = super::ncc(
+                n,
+                t_sum,
+                t_spread,
+                products[k].into(),
+                sums[k].into(),
+                squares[k].into(),
+            );
+            if score >= floor {
+                out.push((k as u32, y, score));
+            }
+        };
+        let mut i = 0;
+        while i + 8 <= len {
+            // SAFETY: eight values from `i` in each slice.
+            let passed = unsafe {
+                let load =
+                    |v: &[u32]| _mm512_cvtepu32_pd(_mm256_loadu_si256(v.as_ptr().add(i).cast()));
+                let (p, s, q) = (load(products), load(sums), load(squares));
+                let spread = _mm512_sub_pd(_mm512_mul_pd(n_v, q), _mm512_mul_pd(s, s));
+                let covariance = _mm512_sub_pd(_mm512_mul_pd(n_v, p), _mm512_mul_pd(s, t_sum_v));
+                let positive = _mm512_cmp_pd_mask::<_CMP_GT_OQ>(covariance, zero);
+                _mm512_mask_cmp_pd_mask::<_CMP_GE_OQ>(
+                    positive,
+                    _mm512_mul_pd(covariance, covariance),
+                    _mm512_mul_pd(threshold, spread),
+                )
+            };
+            let mut passed = passed;
+            while passed != 0 {
+                score(i + passed.trailing_zeros() as usize, out);
+                passed &= passed - 1;
+            }
+            i += 8;
+        }
+        for k in i..len {
+            score(k, out);
+        }
+    }
+
+    /// `hits_row_zmm` on 256-bit vectors, 4 positions at a time; each
+    /// 32-bit operand made a double exactly by placing it in the mantissa
+    /// of 2^52 and taking 2^52 off.
+    #[allow(clippy::too_many_arguments)]
+    #[target_feature(enable = "avx2")]
+    pub(super) unsafe fn hits_row_avx2(
+        products: &[u32],
+        sums: &[u32],
+        squares: &[u32],
+        (n, t_sum, t_spread): (i64, i64, i64),
+        floor: f32,
+        y: u32,
+        out: &mut Vec<super::Hit>,
+    ) {
+        let len = products.len();
+        assert!(sums.len() >= len && squares.len() >= len);
+        assert!(n > 0 && n <= super::MAX_AREA_32 as i64 && (0..1 << 32).contains(&t_sum));
+        let n_v = _mm256_set1_pd(n as f64);
+        let t_sum_v = _mm256_set1_pd(t_sum as f64);
+        let threshold = _mm256_set1_pd(super::hit_threshold(floor, t_spread));
+        let zero = _mm256_setzero_pd();
+        let magic_i = _mm256_set1_epi64x(0x4330_0000_0000_0000);
+        let magic_f = _mm256_set1_pd(4_503_599_627_370_496.0);
+        let score = |k: usize, out: &mut Vec<super::Hit>| {
+            let score = super::ncc(
+                n,
+                t_sum,
+                t_spread,
+                products[k].into(),
+                sums[k].into(),
+                squares[k].into(),
+            );
+            if score >= floor {
+                out.push((k as u32, y, score));
+            }
+        };
+        let mut i = 0;
+        while i + 4 <= len {
+            // SAFETY: four values from `i` in each slice.
+            let passed = unsafe {
+                let load = |v: &[u32]| {
+                    let wide = _mm256_cvtepu32_epi64(_mm_loadu_si128(v.as_ptr().add(i).cast()));
+                    _mm256_sub_pd(_mm256_castsi256_pd(_mm256_or_si256(wide, magic_i)), magic_f)
+                };
+                let (p, s, q) = (load(products), load(sums), load(squares));
+                let spread = _mm256_sub_pd(_mm256_mul_pd(n_v, q), _mm256_mul_pd(s, s));
+                let covariance = _mm256_sub_pd(_mm256_mul_pd(n_v, p), _mm256_mul_pd(s, t_sum_v));
+                let positive = _mm256_cmp_pd::<_CMP_GT_OQ>(covariance, zero);
+                let strong = _mm256_cmp_pd::<_CMP_GE_OQ>(
+                    _mm256_mul_pd(covariance, covariance),
+                    _mm256_mul_pd(threshold, spread),
+                );
+                _mm256_movemask_pd(_mm256_and_pd(positive, strong)) as u32
+            };
+            let mut passed = passed;
+            while passed != 0 {
+                score(i + passed.trailing_zeros() as usize, out);
+                passed &= passed - 1;
+            }
+            i += 4;
+        }
+        for k in i..len {
+            score(k, out);
+        }
     }
 
     /// 8 pixels a step: the channels out of each 32-bit pixel by shifts and
@@ -2047,20 +3218,58 @@ mod x86 {
         }
     }
 
-    /// Where each of a template's quads is read from, relative to a
-    /// block's first position: `v · stride + 4 k` for quad `k` of row `v`,
-    /// in the order the quads are listed.
-    fn quad_offsets(stride: usize, per_row: usize, h: usize) -> Vec<usize> {
-        (0..h * per_row)
-            .map(|j| (j / per_row) * stride + 4 * (j % per_row))
-            .collect()
+    /// The exhaustive correlation's inner loop on 512-bit vectors: `R`
+    /// position rows from `y` (and 64 positions from `x` along them) at
+    /// once. Each of the plane's quads is loaded once, for every position
+    /// row it reaches, so a load serves up to `R` dot products; and the
+    /// `4 R` accumulators are as many independent chains of them.
+    ///
+    /// # Safety
+    ///
+    /// AVX-512 F, BW and VNNI; `quads` holds rows `y .. y + R - 1 + h` of
+    /// `stride >= x + 64 + 4 per_row` quads; `tq` holds `h · per_row`.
+    #[allow(clippy::too_many_arguments)]
+    #[inline]
+    #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
+    unsafe fn quad_block_zmm<const R: usize>(
+        quads: &[u32],
+        stride: usize,
+        (x, y): (usize, usize),
+        tq: &[u32],
+        per_row: usize,
+        h: usize,
+    ) -> [[__m512i; 4]; R] {
+        debug_assert!(quads.len() >= (y + R - 1 + h) * stride && tq.len() >= per_row * h);
+        let mut acc = [[_mm512_setzero_si512(); 4]; R];
+        let base = quads.as_ptr();
+        // Plane rows `y + r` for `r` in `0 .. h + R - 1`: position row `i`
+        // takes it with template row `r - i`, when that is one.
+        for r in 0..h + R - 1 {
+            // SAFETY: row `y + r` of the quads, by the caller's guarantee.
+            let row = unsafe { base.add((y + r) * stride + x) };
+            for k in 0..per_row {
+                let mut p = [_mm512_setzero_si512(); 4];
+                for (lane, v) in p.iter_mut().enumerate() {
+                    // SAFETY: within the row, by the caller's guarantee.
+                    *v = unsafe { _mm512_loadu_si512(row.add(4 * k + 16 * lane).cast()) };
+                }
+                for (i, sums) in acc.iter_mut().enumerate() {
+                    let Some(v) = r.checked_sub(i).filter(|&v| v < h) else {
+                        continue;
+                    };
+                    // SAFETY: `v < h`, so within `tq`.
+                    let t = _mm512_set1_epi32(unsafe { *tq.get_unchecked(v * per_row + k) } as i32);
+                    for (sum, &p) in sums.iter_mut().zip(&p) {
+                        *sum = _mm512_dpbusd_epi32(*sum, t, p);
+                    }
+                }
+            }
+        }
+        acc
     }
 
-    /// 64 positions a block, 16 a vector, the template's quads broadcast
-    /// once for the four vectors. A dot-product instruction adds into its
-    /// accumulator, so each accumulator is a chain of them, one after the
-    /// other: the quads go round four sets of accumulators in turn, four
-    /// chains a vector instead of one, and the sets are added at the end.
+    /// 64 positions a block along the row, 16 a vector, and four position
+    /// rows at a time (`quad_block_zmm`).
     #[allow(clippy::too_many_arguments)]
     #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
     unsafe fn correlate_quads_zmm(
@@ -2076,63 +3285,126 @@ mod x86 {
     ) {
         assert!(quads.len() >= (rows - 1 + h) * stride && tq.len() >= per_row * h);
         assert!(stride >= columns.next_multiple_of(VNNI_BLOCK) + 4 * per_row);
-        let offsets = quad_offsets(stride, per_row, h);
-        let n = offsets.len();
+        assert!(out.len() >= columns * rows);
         let bias = _mm512_set1_epi32(bias as i32);
-        let base = quads.as_ptr();
-        for (y, out_row) in out[..columns * rows].chunks_exact_mut(columns).enumerate() {
+        let mut store = |y: usize, x: usize, sums: &[__m512i; 4]| {
+            for (lane, &sum) in sums.iter().enumerate() {
+                let at = x + 16 * lane;
+                if at >= columns {
+                    break;
+                }
+                let n = (columns - at).min(16);
+                let mask: __mmask16 = if n == 16 { u16::MAX } else { (1 << n) - 1 };
+                // SAFETY: the mask keeps the store within row `y`.
+                unsafe {
+                    _mm512_mask_storeu_epi32(
+                        out.as_mut_ptr().add(y * columns + at).cast(),
+                        mask,
+                        _mm512_add_epi32(sum, bias),
+                    )
+                };
+            }
+        };
+        let mut y = 0;
+        while y < rows {
+            let r = (rows - y).min(4);
             let mut x = 0;
             while x < columns {
-                // SAFETY: every load below is at `y · stride + x` plus an
-                // offset into row `y + v` of the quads, and ends by
-                // `x + 64 + 4 per_row <= stride` within it.
-                let start = unsafe { base.add(y * stride + x) };
-                let mut acc = [[_mm512_setzero_si512(); 4]; 4];
-                let step = |acc: &mut [__m512i; 4], j: usize| {
-                    let t = _mm512_set1_epi32(tq[j] as i32);
-                    // SAFETY: as above.
-                    let at = unsafe { start.add(offsets[j]) };
-                    for (lane, sum) in acc.iter_mut().enumerate() {
-                        // SAFETY: as above.
-                        let p = unsafe { _mm512_loadu_si512(at.add(16 * lane).cast()) };
-                        *sum = _mm512_dpbusd_epi32(*sum, t, p);
+                // SAFETY: rows `y .. y + r - 1 + h` exist, as `y + r <=
+                // rows`; every block's loads end by `x + 64 + 4 per_row <=
+                // stride`.
+                unsafe {
+                    match r {
+                        4 => {
+                            for (i, sums) in
+                                quad_block_zmm::<4>(quads, stride, (x, y), tq, per_row, h)
+                                    .iter()
+                                    .enumerate()
+                            {
+                                store(y + i, x, sums);
+                            }
+                        }
+                        3 => {
+                            for (i, sums) in
+                                quad_block_zmm::<3>(quads, stride, (x, y), tq, per_row, h)
+                                    .iter()
+                                    .enumerate()
+                            {
+                                store(y + i, x, sums);
+                            }
+                        }
+                        2 => {
+                            for (i, sums) in
+                                quad_block_zmm::<2>(quads, stride, (x, y), tq, per_row, h)
+                                    .iter()
+                                    .enumerate()
+                            {
+                                store(y + i, x, sums);
+                            }
+                        }
+                        _ => {
+                            for (i, sums) in
+                                quad_block_zmm::<1>(quads, stride, (x, y), tq, per_row, h)
+                                    .iter()
+                                    .enumerate()
+                            {
+                                store(y + i, x, sums);
+                            }
+                        }
                     }
-                };
-                let mut j = 0;
-                while j + 4 <= n {
-                    for (part, set) in acc.iter_mut().enumerate() {
-                        step(set, j + part);
-                    }
-                    j += 4;
-                }
-                for (part, set) in acc.iter_mut().enumerate().take(n - j) {
-                    step(set, j + part);
-                }
-                #[allow(clippy::needless_range_loop)] // `lane` picks one of each set
-                for lane in 0..4 {
-                    let at = x + 16 * lane;
-                    if at >= columns {
-                        break;
-                    }
-                    let total = _mm512_add_epi32(
-                        _mm512_add_epi32(acc[0][lane], acc[1][lane]),
-                        _mm512_add_epi32(_mm512_add_epi32(acc[2][lane], acc[3][lane]), bias),
-                    );
-                    let n = (columns - at).min(16);
-                    let mask: __mmask16 = if n == 16 { u16::MAX } else { (1 << n) - 1 };
-                    // SAFETY: the mask keeps the store within the row.
-                    unsafe {
-                        _mm512_mask_storeu_epi32(out_row.as_mut_ptr().add(at).cast(), mask, total)
-                    };
                 }
                 x += VNNI_BLOCK;
             }
+            y += r;
         }
     }
 
-    /// The same on 256-bit vectors: 8 positions a vector, 4 vectors a
-    /// block of 32, two sets of accumulators taking turns (16 registers
-    /// hold no more).
+    /// `quad_block_zmm` on 256-bit vectors (16 registers hold no more than
+    /// two position rows of 32 positions).
+    ///
+    /// # Safety
+    ///
+    /// AVX-VNNI; as `quad_block_zmm`, with 32 positions.
+    #[allow(clippy::too_many_arguments)]
+    #[inline]
+    #[target_feature(enable = "avx2,avxvnni")]
+    unsafe fn quad_block_ymm<const R: usize>(
+        quads: &[u32],
+        stride: usize,
+        (x, y): (usize, usize),
+        tq: &[u32],
+        per_row: usize,
+        h: usize,
+    ) -> [[__m256i; 4]; R] {
+        debug_assert!(quads.len() >= (y + R - 1 + h) * stride && tq.len() >= per_row * h);
+        let mut acc = [[_mm256_setzero_si256(); 4]; R];
+        let base = quads.as_ptr();
+        for r in 0..h + R - 1 {
+            // SAFETY: row `y + r` of the quads, by the caller's guarantee.
+            let row = unsafe { base.add((y + r) * stride + x) };
+            for k in 0..per_row {
+                let mut p = [_mm256_setzero_si256(); 4];
+                for (lane, v) in p.iter_mut().enumerate() {
+                    // SAFETY: within the row, by the caller's guarantee.
+                    *v = unsafe { _mm256_loadu_si256(row.add(4 * k + 8 * lane).cast()) };
+                }
+                for (i, sums) in acc.iter_mut().enumerate() {
+                    let Some(v) = r.checked_sub(i).filter(|&v| v < h) else {
+                        continue;
+                    };
+                    // SAFETY: `v < h`, so within `tq`.
+                    let t = _mm256_set1_epi32(unsafe { *tq.get_unchecked(v * per_row + k) } as i32);
+                    for (sum, &p) in sums.iter_mut().zip(&p) {
+                        *sum = _mm256_dpbusd_avx_epi32(*sum, t, p);
+                    }
+                }
+            }
+        }
+        acc
+    }
+
+    /// The same on 256-bit vectors: 32 positions a block, 8 a vector, two
+    /// position rows at a time.
     #[allow(clippy::too_many_arguments)]
     #[target_feature(enable = "avx2,avxvnni")]
     unsafe fn correlate_quads_ymm(
@@ -2148,48 +3420,48 @@ mod x86 {
     ) {
         assert!(quads.len() >= (rows - 1 + h) * stride && tq.len() >= per_row * h);
         assert!(stride >= columns.next_multiple_of(VNNI_BLOCK) + 4 * per_row);
-        let offsets = quad_offsets(stride, per_row, h);
-        let n = offsets.len();
+        assert!(out.len() >= columns * rows);
         let bias = _mm256_set1_epi32(bias as i32);
-        let base = quads.as_ptr();
-        for (y, out_row) in out[..columns * rows].chunks_exact_mut(columns).enumerate() {
+        let mut store = |y: usize, x: usize, sums: &[__m256i; 4]| {
+            let mut lanes = [0u32; 32];
+            for (lane, &sum) in sums.iter().enumerate() {
+                // SAFETY: 8 lanes into an array of 32.
+                unsafe {
+                    _mm256_storeu_si256(
+                        lanes.as_mut_ptr().add(8 * lane).cast(),
+                        _mm256_add_epi32(sum, bias),
+                    )
+                };
+            }
+            let n = (columns - x).min(32);
+            out[y * columns + x..y * columns + x + n].copy_from_slice(&lanes[..n]);
+        };
+        let mut y = 0;
+        while y < rows {
+            let r = (rows - y).min(2);
             let mut x = 0;
             while x < columns {
                 // SAFETY: as in `correlate_quads_zmm`, with blocks of 32.
-                let start = unsafe { base.add(y * stride + x) };
-                let mut acc = [[_mm256_setzero_si256(); 4]; 2];
-                let step = |acc: &mut [__m256i; 4], j: usize| {
-                    let t = _mm256_set1_epi32(tq[j] as i32);
-                    // SAFETY: as above.
-                    let at = unsafe { start.add(offsets[j]) };
-                    for (lane, sum) in acc.iter_mut().enumerate() {
-                        // SAFETY: as above.
-                        let p = unsafe { _mm256_loadu_si256(at.add(8 * lane).cast()) };
-                        *sum = _mm256_dpbusd_avx_epi32(*sum, t, p);
+                unsafe {
+                    if r == 2 {
+                        for (i, sums) in quad_block_ymm::<2>(quads, stride, (x, y), tq, per_row, h)
+                            .iter()
+                            .enumerate()
+                        {
+                            store(y + i, x, sums);
+                        }
+                    } else {
+                        for (i, sums) in quad_block_ymm::<1>(quads, stride, (x, y), tq, per_row, h)
+                            .iter()
+                            .enumerate()
+                        {
+                            store(y + i, x, sums);
+                        }
                     }
-                };
-                let mut j = 0;
-                while j + 2 <= n {
-                    let [first, second] = &mut acc;
-                    step(first, j);
-                    step(second, j + 1);
-                    j += 2;
                 }
-                if j < n {
-                    step(&mut acc[0], j);
-                }
-                let mut lanes = [0u32; 32];
-                #[allow(clippy::needless_range_loop)] // `lane` picks one of each set
-                for lane in 0..4 {
-                    let total =
-                        _mm256_add_epi32(_mm256_add_epi32(acc[0][lane], acc[1][lane]), bias);
-                    // SAFETY: 8 lanes into an array of 32.
-                    unsafe { _mm256_storeu_si256(lanes.as_mut_ptr().add(8 * lane).cast(), total) };
-                }
-                let n = (columns - x).min(32);
-                out_row[x..x + n].copy_from_slice(&lanes[..n]);
                 x += 32;
             }
+            y += r;
         }
     }
 
@@ -2261,26 +3533,34 @@ mod tests {
         for &(w, h) in &[
             (1usize, 1usize),
             (15, 3),
+            (13, 20),
+            (13, 1),
+            (2, 7),
+            (8, 8),
             (16, 16),
             (56, 56),
             (57, 41),
             (100, 70),
         ] {
             let weights = noise(w * h, w as u32 * 31 + h as u32);
-            let (x, y) = (stride - w - 3, rows - h - 5);
-            let expected = window_stats_scalar(&plane, stride, x, y, &weights, w, h);
-            let got = window_stats(&plane, stride, x, y, &weights, w, h);
-            assert_eq!(got, expected, "{w}x{h} on {:?}", backend());
-            #[cfg(target_arch = "x86_64")]
-            {
-                // SAFETY: SSE2 is part of x86-64.
-                let sse2 = unsafe { x86::window_stats_sse2(&plane, stride, x, y, &weights, w, h) };
-                assert_eq!(sse2, expected, "{w}x{h} on sse2");
-                if is_x86_feature_detected!("avx2") {
-                    // SAFETY: the CPU reported AVX2.
-                    let avx2 =
-                        unsafe { x86::window_stats_avx2(&plane, stride, x, y, &weights, w, h) };
-                    assert_eq!(avx2, expected, "{w}x{h} on avx2");
+            // Inside the plane, and in its last corner, where a row's
+            // vector would reach past the end.
+            for (x, y) in [(stride - w - 3, rows - h - 5), (stride - w, rows - h)] {
+                let expected = window_stats_scalar(&plane, stride, x, y, &weights, w, h);
+                let got = window_stats(&plane, stride, x, y, &weights, w, h);
+                assert_eq!(got, expected, "{w}x{h} on {:?}", backend());
+                #[cfg(target_arch = "x86_64")]
+                {
+                    // SAFETY: SSE2 is part of x86-64.
+                    let sse2 =
+                        unsafe { x86::window_stats_sse2(&plane, stride, x, y, &weights, w, h) };
+                    assert_eq!(sse2, expected, "{w}x{h} on sse2");
+                    if is_x86_feature_detected!("avx2") {
+                        // SAFETY: the CPU reported AVX2.
+                        let avx2 =
+                            unsafe { x86::window_stats_avx2(&plane, stride, x, y, &weights, w, h) };
+                        assert_eq!(avx2, expected, "{w}x{h} at {x},{y} on avx2");
+                    }
                 }
             }
         }
@@ -2497,14 +3777,19 @@ mod tests {
                 }
                 let mut got = Vec::new();
                 let quads = weight_quads(&weights, w, h);
+                let rows64 = weight_rows64(&weights, w, h);
+                let template = BlockWeights {
+                    pixels: &weights,
+                    pairs: &pairs,
+                    quads: (&quads.0, quads.1),
+                    rows64: &rows64,
+                };
                 block_stats(
                     pixels,
                     stride,
                     (x0, y0),
                     (bw, bh),
-                    &weights,
-                    &pairs,
-                    (&quads.0, quads.1),
+                    &template,
                     (w, h),
                     &mut got,
                 );
@@ -2525,7 +3810,7 @@ mod tests {
                             (x0, y0),
                             (bw, bh),
                             &pairs,
-                            None,
+                            x86::BlockProducts::Pairs,
                             (w, h),
                             &mut avx2,
                         )
@@ -2541,7 +3826,7 @@ mod tests {
                                 (x0, y0),
                                 (bw, bh),
                                 &pairs,
-                                Some((&quads.0, quads.1)),
+                                x86::BlockProducts::Quads((&quads.0, quads.1)),
                                 (w, h),
                                 &mut vnni,
                             )
@@ -2549,6 +3834,27 @@ mod tests {
                         assert_eq!(
                             vnni, expected,
                             "{name} {w}x{h}, block {bw}x{bh} on avx-vnni"
+                        );
+                    }
+                    if available_vnni().contains(&Vnni::Zmm) && w * h <= MAX_AREA_32 {
+                        let mut zmm = Vec::new();
+                        // SAFETY: the CPU reported AVX-512 VNNI; the block
+                        // fits.
+                        unsafe {
+                            x86::block_stats_avx2(
+                                pixels,
+                                stride,
+                                (x0, y0),
+                                (bw, bh),
+                                &pairs,
+                                x86::BlockProducts::Rows64(&rows64),
+                                (w, h),
+                                &mut zmm,
+                            )
+                        };
+                        assert_eq!(
+                            zmm, expected,
+                            "{name} {w}x{h}, block {bw}x{bh} on avx-512 rows"
                         );
                     }
                 }
@@ -2564,9 +3870,7 @@ mod tests {
                     stride,
                     (0, 0),
                     (bw, bh),
-                    &weights,
-                    &pairs,
-                    (&quads.0, quads.1),
+                    &template,
                     (w, h),
                     &mut got,
                 );
@@ -2707,6 +4011,186 @@ mod tests {
                 assert_eq!(got[0], 7.0, "appends");
                 for (i, (g, e)) in got[1..].iter().zip(&expected).enumerate() {
                     assert_eq!(g.to_bits(), e.to_bits(), "n {n} at {i}: {g} vs {e}");
+                }
+            }
+        }
+    }
+
+    /// Noise blurred over 3×3: structure at several scales, so a window cut
+    /// from it correlates strongly near where it was cut and across the
+    /// whole range elsewhere.
+    fn textured(width: usize, height: usize, seed: u32) -> Vec<u8> {
+        let raw = noise(width * height, seed);
+        let mut out = vec![0u8; width * height];
+        for y in 0..height {
+            for x in 0..width {
+                let mut sum = 0u32;
+                for dy in 0..3 {
+                    for dx in 0..3 {
+                        let (yy, xx) = ((y + dy).min(height - 1), (x + dx).min(width - 1));
+                        sum += u32::from(raw[yy * width + xx]);
+                    }
+                }
+                out[y * width + x] = (sum / 9) as u8;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn hits_are_the_scores_at_or_above_the_floor() {
+        // Wide enough for the vectors to take the rows in several
+        // stretches, and narrow.
+        for (width, height, sizes) in [
+            (157, 61, &[(13, 20), (8, 8), (31, 9), (1, 2)][..]),
+            (1201, 27, &[(13, 20), (40, 3), (300, 5), (1201, 2)][..]),
+        ] {
+            hits_agree(width, height, sizes);
+        }
+    }
+
+    fn hits_agree(width: usize, height: usize, sizes: &[(usize, usize)]) {
+        let plane = textured(width, height, 5);
+        for &(w, h) in sizes {
+            let columns = width - w + 1;
+            // A window of the plane and its mirror image.
+            let (cx, cy) = ((width - w).min(40), (height - h).min(17));
+            let cut: Vec<u8> = (0..h)
+                .flat_map(|y| plane[(y + cy) * width + cx..][..w].to_vec())
+                .collect();
+            let mirror: Vec<u8> = cut
+                .chunks_exact(w)
+                .flat_map(|row| row.iter().rev().copied().collect::<Vec<_>>())
+                .collect();
+            let templates: Vec<(Vec<u32>, i64, i64)> = [&cut, &mirror]
+                .iter()
+                .map(|t| {
+                    let n = t.len() as i64;
+                    let sum: i64 = t.iter().map(|&v| i64::from(v)).sum();
+                    let squares: i64 = t.iter().map(|&v| i64::from(v).pow(2)).sum();
+                    let products = correlate_everywhere(&plane, width, height, t, w, h);
+                    (products, sum, n * squares - sum * sum)
+                })
+                .collect();
+            let refs: Vec<(&[u32], i64, i64)> = templates
+                .iter()
+                .map(|(p, sum, spread)| (p.as_slice(), *sum, *spread))
+                .collect();
+            let scores: Vec<Vec<f32>> = refs
+                .iter()
+                .map(|&(products, sum, spread)| {
+                    let mut out = Vec::new();
+                    scores_everywhere(
+                        &plane,
+                        width,
+                        height,
+                        (w, h),
+                        products,
+                        (sum, spread),
+                        &mut out,
+                    );
+                    out
+                })
+                .collect();
+            // Floors across the range, and at, just above and just below
+            // scores that occur.
+            let mut floors = vec![0.05f32, 0.3, 0.58, 0.9, 1.0];
+            let mut by_score: Vec<f32> = scores[0].iter().copied().filter(|&s| s > 0.0).collect();
+            by_score.sort_by(f32::total_cmp);
+            for k in [
+                0,
+                by_score.len() / 3,
+                by_score.len() / 2,
+                by_score.len() - 2,
+                by_score.len() - 1,
+            ] {
+                let s = by_score[k];
+                floors.extend([s, s.next_up(), s.next_down()]);
+            }
+            let wanted = |t: usize, floor: f32| -> Vec<(u32, u32, u32)> {
+                scores[t]
+                    .iter()
+                    .enumerate()
+                    .filter(|&(_, &s)| s >= floor)
+                    .map(|(i, &s)| ((i % columns) as u32, (i / columns) as u32, s.to_bits()))
+                    .collect()
+            };
+            let bits = |hits: &[Hit]| -> Vec<(u32, u32, u32)> {
+                hits.iter().map(|&(x, y, s)| (x, y, s.to_bits())).collect()
+            };
+            for &floor in &floors {
+                let mut hits = vec![vec![(9, 9, 9.0)], Vec::new()];
+                hits_everywhere(&plane, width, height, (w, h), &refs, floor, &mut hits);
+                for (t, got) in hits.iter().enumerate() {
+                    assert_eq!(
+                        bits(got),
+                        wanted(t, floor),
+                        "{w}x{h}, template {t}, floor {floor}"
+                    );
+                }
+                // One template alone finds what it finds beside another.
+                let mut alone = vec![Vec::new()];
+                hits_everywhere(&plane, width, height, (w, h), &refs[1..], floor, &mut alone);
+                assert_eq!(
+                    bits(&alone[0]),
+                    wanted(1, floor),
+                    "{w}x{h} alone, floor {floor}"
+                );
+                // Each kernel, row by row, on the windows' sums.
+                #[cfg(target_arch = "x86_64")]
+                for (t, &(products, sum, spread)) in refs.iter().enumerate() {
+                    let n = (w * h) as i64;
+                    let mut ymm = Vec::new();
+                    let mut zmm = Vec::new();
+                    let zmm_ok = is_x86_feature_detected!("avx512f")
+                        && is_x86_feature_detected!("avx512dq")
+                        && is_x86_feature_detected!("avx512vl");
+                    window_rows(
+                        &plane,
+                        width,
+                        (w, h),
+                        |values, totals| {
+                            let mut total = 0u32;
+                            for (t, &v) in totals[1..].iter_mut().zip(values) {
+                                total = total.wrapping_add(v);
+                                *t = total;
+                            }
+                        },
+                        |y, sums, squares| {
+                            let row = &products[y * columns..(y + 1) * columns];
+                            // SAFETY: each only when the CPU reported it.
+                            unsafe {
+                                if is_x86_feature_detected!("avx2") {
+                                    x86::hits_row_avx2(
+                                        row,
+                                        sums,
+                                        squares,
+                                        (n, sum, spread),
+                                        floor,
+                                        y as u32,
+                                        &mut ymm,
+                                    );
+                                }
+                                if zmm_ok {
+                                    x86::hits_row_zmm(
+                                        row,
+                                        sums,
+                                        squares,
+                                        (n, sum, spread),
+                                        floor,
+                                        y as u32,
+                                        &mut zmm,
+                                    );
+                                }
+                            }
+                        },
+                    );
+                    if is_x86_feature_detected!("avx2") {
+                        assert_eq!(bits(&ymm), wanted(t, floor), "avx2 {w}x{h} {t} {floor}");
+                    }
+                    if zmm_ok {
+                        assert_eq!(bits(&zmm), wanted(t, floor), "zmm {w}x{h} {t} {floor}");
+                    }
                 }
             }
         }
@@ -2879,5 +4363,104 @@ mod tests {
     #[test]
     fn the_backend_is_named() {
         assert!(!backend().name().is_empty());
+    }
+}
+
+/// The kernels behind template matching, for timing them on their own
+/// (feature `bench-internals`). Not a stable API.
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub mod bench {
+    /// [`super::correlate_everywhere`].
+    pub fn correlate_everywhere(
+        plane: &[u8],
+        width: usize,
+        height: usize,
+        weights: &[u8],
+        w: usize,
+        h: usize,
+    ) -> Vec<u32> {
+        super::correlate_everywhere(plane, width, height, weights, w, h)
+    }
+
+    /// [`super::scores_everywhere`], for a template whose pixels sum to
+    /// `t_sum` with spread `t_spread`.
+    pub fn scores_everywhere(
+        plane: &[u8],
+        width: usize,
+        height: usize,
+        (w, h): (usize, usize),
+        products: &[u32],
+        (t_sum, t_spread): (i64, i64),
+    ) -> Vec<f32> {
+        let mut out = Vec::new();
+        super::scores_everywhere(
+            plane,
+            width,
+            height,
+            (w, h),
+            products,
+            (t_sum, t_spread),
+            &mut out,
+        );
+        out
+    }
+
+    /// [`super::block_stats`] of a template given by its pixels.
+    pub fn block_stats(
+        pixels: &[u8],
+        stride: usize,
+        at: (usize, usize),
+        block: (usize, usize),
+        weights: &[u8],
+        (w, h): (usize, usize),
+    ) -> Vec<(u64, u64, u64)> {
+        let pairs = super::weight_pairs(weights, w, h);
+        let quads = super::weight_quads(weights, w, h);
+        let rows64 = super::weight_rows64(weights, w, h);
+        let template = super::BlockWeights {
+            pixels: weights,
+            pairs: &pairs,
+            quads: (&quads.0, quads.1),
+            rows64: &rows64,
+        };
+        let mut out = Vec::new();
+        super::block_stats(pixels, stride, at, block, &template, (w, h), &mut out);
+        out
+    }
+
+    /// The same with the template's forms made once: call the returned
+    /// closure to take the block's sums.
+    pub fn block_stats_prepared<'a>(
+        weights: &'a [u8],
+        (w, h): (usize, usize),
+    ) -> impl Fn(&[u8], usize, (usize, usize), (usize, usize), &mut Vec<(u64, u64, u64)>) + 'a {
+        let pairs = super::weight_pairs(weights, w, h);
+        let quads = super::weight_quads(weights, w, h);
+        let rows64 = super::weight_rows64(weights, w, h);
+        move |pixels, stride, at, block, out| {
+            let template = super::BlockWeights {
+                pixels: weights,
+                pairs: &pairs,
+                quads: (&quads.0, quads.1),
+                rows64: &rows64,
+            };
+            super::block_stats(pixels, stride, at, block, &template, (w, h), out);
+        }
+    }
+
+    /// [`super::hits_everywhere`]: for each template (its products, pixel
+    /// sum and spread), the positions scoring at least `floor`.
+    pub fn hits_everywhere(
+        plane: &[u8],
+        width: usize,
+        height: usize,
+        (w, h): (usize, usize),
+        templates: &[(&[u32], i64, i64)],
+        floor: f32,
+    ) -> Vec<Vec<(u32, u32, f32)>> {
+        let mut hits = vec![Vec::new(); templates.len()];
+        super::hits_everywhere(plane, width, height, (w, h), templates, floor, &mut hits);
+        hits
     }
 }
