@@ -889,6 +889,8 @@ struct TemplateLevel {
     spread: i64,
     /// `inner`'s pixels in neighbouring pairs, for `kernels::block_stats`.
     pairs: Vec<u32>,
+    /// `inner`'s pixels widened to 16 bits, for `kernels::window_stats_wide`.
+    wide: Vec<i16>,
 }
 
 impl TemplateLevel {
@@ -909,6 +911,7 @@ impl TemplateLevel {
             return None;
         }
         let pairs = crate::kernels::weight_pairs(&inner.pixels, inner.width, inner.height);
+        let wide = inner.pixels.iter().map(|&v| i16::from(v)).collect();
         Some(Self {
             plane,
             inner,
@@ -916,6 +919,7 @@ impl TemplateLevel {
             sum,
             spread,
             pairs,
+            wide,
         })
     }
 
@@ -982,15 +986,16 @@ fn dot(a: &[u8], b: &[u8]) -> u32 {
 
 /// The correlation of `template` with the window at `(x, y)`, computing
 /// the window's sums, sum of squares and products in one pass over it
-/// (`kernels::window_stats`, at the CPU's vector width).
+/// (`kernels::window_stats_wide`, at the CPU's vector width).
 fn score_at(plane: &Plane, template: &TemplateLevel, x: usize, y: usize) -> f32 {
     let (w, h) = (template.inner.width, template.inner.height);
-    let (sum, squares, products) = crate::kernels::window_stats(
+    let (sum, squares, products) = crate::kernels::window_stats_wide(
         &plane.pixels,
         plane.width,
         x,
         y,
         &template.inner.pixels,
+        &template.wide,
         w,
         h,
     );
@@ -1210,30 +1215,40 @@ fn refine(
         cy.saturating_sub(radius).min(max_y)..=(cy + radius).min(max_y),
     );
     let mut best = (cx.min(max_x), cy.min(max_y), f32::NEG_INFINITY);
-    // Every position of the window in one pass (`kernels::block_stats`),
-    // in the order the window is scanned: the first of equal scores wins.
+    // Every position of the window in one pass (`kernels::block_stats`).
+    // The pass scores 8 positions along a row at once, so a narrower
+    // window is widened to 8 for nothing, a column or two either side: the
+    // positions a climb sideways would score next.
     let (x0, y0) = (*xs.start(), *ys.start());
     let (bw, bh) = (xs.end() - x0 + 1, ys.end() - y0 + 1);
-    let mut window = Vec::with_capacity(bw * bh);
+    let spare = 8usize.saturating_sub(bw);
+    let right = (spare - (spare / 2).min(x0)).min(max_x - xs.end());
+    let left = (spare - right).min(x0);
+    let (bx, bwide) = (x0 - left, bw + left + right);
+    let mut window = Vec::with_capacity(bwide * bh);
     crate::kernels::block_stats(
         &plane.pixels,
         plane.width,
-        (x0, y0),
-        (bw, bh),
+        (bx, y0),
+        (bwide, bh),
         &template.inner.pixels,
         &template.pairs,
         (w, h),
         &mut window,
     );
+    // Positions scored outside the window, so the climb does not score
+    // them again (nor one a step before it did).
+    let mut climbed: Vec<(usize, usize, f32)> = Vec::with_capacity(bwide * bh);
+    // In the order the window is scanned: the first of equal scores wins.
     for (n, &(sum, squares, products)) in window.iter().enumerate() {
+        let (x, y) = (bx + n % bwide, y0 + n / bwide);
         let score = score_from(template, products, sum, squares);
-        if score > best.2 {
-            best = (x0 + n % bw, y0 + n / bw, score);
+        if !xs.contains(&x) {
+            climbed.push((x, y, score));
+        } else if score > best.2 {
+            best = (x, y, score);
         }
     }
-    // Positions scored while climbing, so a step does not score again the
-    // ones the step before it did.
-    let mut climbed: Vec<(usize, usize, f32)> = Vec::new();
     for _ in 0..MAX_CLIMB {
         let (bx, by, _) = best;
         let mut next = best;

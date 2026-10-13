@@ -64,8 +64,9 @@ fn channel_image_plain(image: &RgbaImage, region: Rect, channel: Channel) -> Gra
     let row_len = width as usize;
     let stride = image.width() as usize * 4;
     let raw = image.as_raw();
-    let mut out = vec![0u8; row_len * height as usize];
-    for (y, out_row) in (region.y..y_end).zip(out.chunks_exact_mut(row_len)) {
+    // Filled row by row as it is computed, never cleared first.
+    let mut out = Vec::with_capacity(row_len * height as usize);
+    for y in region.y..y_end {
         let start = y as usize * stride + region.x as usize * 4;
         // Pixels as arrays rather than slices: no bounds checks, so each
         // per-channel loop below is a plain map the compiler vectorises.
@@ -75,21 +76,9 @@ fn channel_image_plain(image: &RgbaImage, region: Rect, channel: Channel) -> Gra
             .iter()
             .copied();
         match channel {
-            Channel::Luma => {
-                for (value, p) in out_row.iter_mut().zip(pixels) {
-                    *value = luma(u32::from_le_bytes(p));
-                }
-            }
-            Channel::Min => {
-                for (value, p) in out_row.iter_mut().zip(pixels) {
-                    *value = p[0].min(p[1]).min(p[2]);
-                }
-            }
-            Channel::Max => {
-                for (value, p) in out_row.iter_mut().zip(pixels) {
-                    *value = p[0].max(p[1]).max(p[2]);
-                }
-            }
+            Channel::Luma => out.extend(pixels.map(|p| luma(u32::from_le_bytes(p)))),
+            Channel::Min => out.extend(pixels.map(|p| p[0].min(p[1]).min(p[2]))),
+            Channel::Max => out.extend(pixels.map(|p| p[0].max(p[1]).max(p[2]))),
         }
     }
     GrayImage::from_raw(width, height, out).expect("buffer sized to the region")
