@@ -960,18 +960,14 @@ fn correlation(
 /// which floating point would round away on flat windows.
 #[inline]
 fn score_from(template: &TemplateLevel, products: u64, sum: u64, squares: u64) -> f32 {
-    // Products reach 255² per pixel, so n * products stays within i64 for
-    // any template up to ~11 million pixels, far beyond a screen.
-    let n = template.area() as i64;
-    let (products, sum, squares) = (products as i64, sum as i64, squares as i64);
-    let spread = n * squares - sum * sum;
-    if 4 * spread <= n * n {
-        // A flat window correlates with nothing.
-        return 0.0;
-    }
-    let covariance = n * products - sum * template.sum;
-    let denominator = (spread as f32 * template.spread as f32).sqrt();
-    (covariance as f32 / denominator).clamp(-1.0, 1.0)
+    crate::kernels::ncc(
+        template.area() as i64,
+        template.sum,
+        template.spread,
+        products,
+        sum,
+        squares,
+    )
 }
 
 /// Integer dot product of two rows. Integer sums can be reordered freely,
@@ -1010,6 +1006,21 @@ const MAX_AREA_32: usize = (u32::MAX / (255 * 255)) as usize;
 fn score_everywhere(plane: &Plane, template: &TemplateLevel) -> Vec<f32> {
     let (w, h) = (template.inner.width, template.inner.height);
     let mut scores = Vec::with_capacity((plane.width - w + 1) * (plane.height - h + 1));
+    if template.area() <= MAX_AREA_32 {
+        // Every position's products at once, then every score from them
+        // (`kernels::scores_everywhere`, 8 a step): the same numbers as one
+        // at a time.
+        crate::kernels::scores_everywhere(
+            &plane.pixels,
+            plane.width,
+            plane.height,
+            (w, h),
+            &products_everywhere(plane, template),
+            (template.sum, template.spread),
+            &mut scores,
+        );
+        return scores;
+    }
     for_each_score(plane, template, |_, _, score| scores.push(score));
     scores
 }
