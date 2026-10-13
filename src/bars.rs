@@ -281,15 +281,14 @@ impl BarModel {
     }
 
     /// Where row `y`'s fill ends: the run that starts at the track's start
-    /// (`x0`, give or take `slack`), bridging gaps up to `gap`.
+    /// (`x0`, give or take `slack`), bridging gaps up to `gap`. `mask` is
+    /// room for the row's bits, kept between rows.
     fn row_end(
         &self,
         frame: &RgbaImage,
         y: u32,
-        x0: u32,
-        to: u32,
-        slack: u32,
-        gap: u32,
+        (x0, to): (u32, u32),
+        (slack, gap): (u32, u32),
         mask: &mut Vec<u64>,
     ) -> Option<u32> {
         // The row's pixels tested together (`kernels::fill_mask`), then
@@ -386,7 +385,7 @@ impl BarModel {
         let gap = (w / 8).min(3 * h).max(3);
         let mut mask = Vec::new();
         let mut ends: Vec<u32> = (y0..(y0 + h).min(fh))
-            .filter_map(|y| self.row_end(frame, y, x0, to, slack, gap, &mut mask))
+            .filter_map(|y| self.row_end(frame, y, (x0, to), (slack, gap), &mut mask))
             .collect();
         if ends.is_empty() || ends.len() * 10 < h as usize * 4 {
             return None;
@@ -595,7 +594,7 @@ pub(crate) mod tests {
                 let to = (x0 + 1 + next(fw)).min(fw);
                 let (slack, gap) = (next(12), 1 + next(25));
                 let want = model.row_end_one_by_one(&frame, y, x0, to, slack, gap);
-                let got = model.row_end(&frame, y, x0, to, slack, gap, &mut mask);
+                let got = model.row_end(&frame, y, (x0, to), (slack, gap), &mut mask);
                 found += usize::from(want.is_some());
                 assert_eq!(
                     got, want,
