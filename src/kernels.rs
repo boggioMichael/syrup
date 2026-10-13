@@ -774,7 +774,10 @@ pub(crate) fn color_mask(
     out.resize(count.div_ceil(64), 0);
     let mut from = 0;
     #[cfg(target_arch = "x86_64")]
-    if backend() == Backend::Avx2 {
+    if zmm_scores() {
+        // SAFETY: `zmm_scores()` reported AVX-512 F, BW, DQ and VL.
+        from = unsafe { x86::color_mask_zmm(pixels, hue_range, min_saturation, min_value, out) };
+    } else if backend() == Backend::Avx2 {
         // SAFETY: `backend()` reported AVX2 on this CPU.
         from = unsafe { x86::color_mask_avx2(pixels, hue_range, min_saturation, min_value, out) };
     }
@@ -3125,6 +3128,116 @@ mod x86 {
         i
     }
 
+    /// `color_mask_avx2` on 512-bit vectors, 16 pixels a step, and the
+    /// work in the order `is_color_pixel` does it, a step dropping out as
+    /// soon as none of its pixels is left: the alpha and the value tested
+    /// on the channels' integers (`c / 255` only grows with `c`, so the
+    /// value is at least `min_value` exactly when the largest channel is
+    /// at least the least integer whose quotient is), then the saturation
+    /// with one division, then the hue with one more (the numerator of
+    /// the pixel's case chosen first). Each `c / 255` is the double
+    /// product `c · (1 / 255)` rounded once to single precision, the very
+    /// quotient a division gives for every `c` (checked for all 256 in the
+    /// tests). Sets the bits of the whole steps in `out` (zeroed, a word
+    /// per 64 pixels) and returns how many pixels it did.
+    #[target_feature(enable = "avx512f,avx512bw,avx512dq,avx512vl")]
+    pub(super) unsafe fn color_mask_zmm(
+        pixels: &[u8],
+        (hue_min, hue_max): (f32, f32),
+        min_saturation: f32,
+        min_value: f32,
+        out: &mut [u64],
+    ) -> usize {
+        let count = pixels.len() / 4;
+        assert!(out.len() >= count.div_ceil(64));
+        // The least channel value bright enough (256: none is): from a
+        // guess a step below, up (the quotients only grow).
+        let bright = |c: u32| (c as f32 / 255.0).clamp(0.0, 1.0) >= min_value;
+        let guess = if min_value.is_nan() {
+            256
+        } else {
+            ((min_value.clamp(0.0, 1.0) * 255.0) as u32).saturating_sub(1)
+        };
+        let least = (guess..=255).find(|&c| bright(c)).unwrap_or(256);
+        let least = _mm512_set1_epi32(least as i32);
+        let byte = _mm512_set1_epi32(0xff);
+        let half_alpha = _mm512_set1_epi32(128);
+        let inverse = _mm512_set1_pd(1.0 / 255.0);
+        let quotient = |c: __m512i| -> __m512 {
+            let low = _mm512_cvtpd_ps(_mm512_mul_pd(
+                _mm512_cvtepu32_pd(_mm512_castsi512_si256(c)),
+                inverse,
+            ));
+            let high = _mm512_cvtpd_ps(_mm512_mul_pd(
+                _mm512_cvtepu32_pd(_mm512_extracti64x4_epi64::<1>(c)),
+                inverse,
+            ));
+            _mm512_insertf32x8::<1>(_mm512_castps256_ps512(low), high)
+        };
+        let zero = _mm512_setzero_ps();
+        let saturation_v = _mm512_set1_ps(min_saturation);
+        let (lo, hi) = (_mm512_set1_ps(hue_min), _mm512_set1_ps(hue_max));
+        let (sixty, two, four, full) = (
+            _mm512_set1_ps(60.0),
+            _mm512_set1_ps(2.0),
+            _mm512_set1_ps(4.0),
+            _mm512_set1_ps(360.0),
+        );
+        let mut i = 0;
+        while i + 16 <= count {
+            // SAFETY: 16 pixels from `i` within `pixels`.
+            let px = unsafe { _mm512_loadu_si512(pixels.as_ptr().add(4 * i).cast()) };
+            let r = _mm512_and_si512(px, byte);
+            let g = _mm512_and_si512(_mm512_srli_epi32::<8>(px), byte);
+            let b = _mm512_and_si512(_mm512_srli_epi32::<16>(px), byte);
+            let high = _mm512_max_epu32(_mm512_max_epu32(r, g), b);
+            // Alpha at least 128 is `alpha / 255 >= 0.5`.
+            let mut left = _mm512_cmpge_epu32_mask(_mm512_srli_epi32::<24>(px), half_alpha)
+                & _mm512_cmpge_epu32_mask(high, least);
+            if left != 0 {
+                let low = _mm512_min_epu32(_mm512_min_epu32(r, g), b);
+                let (max, min) = (quotient(high), quotient(low));
+                let delta = _mm512_sub_ps(max, min);
+                // A black pixel's saturation is 0.
+                let saturation = _mm512_maskz_div_ps(_mm512_cmpneq_ps_mask(max, zero), delta, max);
+                left &= _mm512_cmp_ps_mask::<_CMP_GE_OQ>(saturation, saturation_v);
+            }
+            if left != 0 {
+                let (rf, gf, bf) = (quotient(r), quotient(g), quotient(b));
+                let (red, green) = (
+                    _mm512_cmpeq_epi32_mask(high, r),
+                    _mm512_cmpeq_epi32_mask(high, g),
+                );
+                let delta = _mm512_sub_ps(
+                    quotient(high),
+                    quotient(_mm512_min_epu32(_mm512_min_epu32(r, g), b)),
+                );
+                // The numerator of the pixel's case, red over green over blue.
+                let mut top = _mm512_sub_ps(rf, gf);
+                top = _mm512_mask_mov_ps(top, green, _mm512_sub_ps(bf, rf));
+                top = _mm512_mask_mov_ps(top, red, _mm512_sub_ps(gf, bf));
+                let q = _mm512_div_ps(top, delta);
+                let mut turn = _mm512_add_ps(q, four);
+                turn = _mm512_mask_mov_ps(turn, green, _mm512_add_ps(q, two));
+                turn = _mm512_mask_mov_ps(turn, red, q);
+                let mut hue = _mm512_mul_ps(sixty, turn);
+                hue = _mm512_maskz_mov_ps(_mm512_cmpneq_ps_mask(delta, zero), hue);
+                hue =
+                    _mm512_mask_add_ps(hue, _mm512_cmp_ps_mask::<_CMP_LT_OQ>(hue, zero), hue, full);
+                let above = _mm512_cmp_ps_mask::<_CMP_GE_OQ>(hue, lo);
+                let below = _mm512_cmp_ps_mask::<_CMP_LE_OQ>(hue, hi);
+                left &= if hue_min <= hue_max {
+                    above & below
+                } else {
+                    above | below
+                };
+            }
+            out[i / 64] |= u64::from(left) << (i % 64);
+            i += 16;
+        }
+        i
+    }
+
     /// 8 values a step: a comparison, its signs as bits, and the set bits'
     /// positions. Returns how many values it did.
     #[target_feature(enable = "avx2")]
@@ -4247,6 +4360,16 @@ mod tests {
         colour_masks_agree(1);
     }
 
+    /// The vector colour test takes each channel's `c / 255` as the double
+    /// product `c · (1 / 255)` rounded once: the same as the division for
+    /// every channel value.
+    #[test]
+    fn a_channel_over_255_by_a_double_product_is_the_quotient() {
+        for c in 0..=255u32 {
+            assert_eq!(((c as f64) * (1.0 / 255.0)) as f32, c as f32 / 255.0, "{c}");
+        }
+    }
+
     fn colour_masks_agree(step: usize) {
         let mut pixels = Vec::new();
         for r in (0..256).step_by(step).chain([254, 255]) {
@@ -4283,6 +4406,40 @@ mod tests {
             let mut got = vec![u64::MAX; 3];
             color_mask(&pixels, hue, saturation, value, &mut got);
             assert_eq!(got.len(), expected.len().div_ceil(64));
+            // Each vector path on its own, over the whole steps it takes.
+            #[cfg(target_arch = "x86_64")]
+            {
+                let words = expected.len().div_ceil(64);
+                let check = |name: &str, did: usize, words_got: &[u64]| {
+                    for (i, &e) in expected.iter().enumerate().take(did) {
+                        assert_eq!(
+                            words_got[i / 64] & (1 << (i % 64)) != 0,
+                            e,
+                            "{name} {hue:?} {saturation} {value} at {i}"
+                        );
+                    }
+                };
+                if is_x86_feature_detected!("avx2") {
+                    let mut words_got = vec![0u64; words];
+                    // SAFETY: the CPU reported AVX2.
+                    let did = unsafe {
+                        x86::color_mask_avx2(&pixels, hue, saturation, value, &mut words_got)
+                    };
+                    check("avx2", did, &words_got);
+                }
+                if is_x86_feature_detected!("avx512f")
+                    && is_x86_feature_detected!("avx512bw")
+                    && is_x86_feature_detected!("avx512dq")
+                    && is_x86_feature_detected!("avx512vl")
+                {
+                    let mut words_got = vec![0u64; words];
+                    // SAFETY: the CPU reported AVX-512 F, BW, DQ and VL.
+                    let did = unsafe {
+                        x86::color_mask_zmm(&pixels, hue, saturation, value, &mut words_got)
+                    };
+                    check("zmm", did, &words_got);
+                }
+            }
             assert_eq!(
                 bits(&got),
                 expected,

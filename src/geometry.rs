@@ -732,10 +732,20 @@ pub fn find_color_bar(
         .max_by_key(|rect| rect.area())
 }
 
+thread_local! {
+    /// The pixels `color_runs` samples along a row, kept between rows.
+    static SAMPLES: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
 /// [`segment_row`] with [`crate::color::is_color_pixel`] as the test: the
-/// same runs, from the row's pixels tested together into bits
-/// (`kernels::color_mask`, in `mask`) and the runs of set bits found a
-/// word at a time.
+/// same runs, from pixels tested together into bits
+/// (`kernels::color_mask`, in `mask`).
+///
+/// A run at least `min_width` long holds one of every `min_width`-th pixel
+/// along the row, so only those are tested at first, and each that
+/// matches is followed out to both ends of its run, 64 pixels a test; the
+/// rest of the row is never looked at. (For runs of one or two pixels,
+/// the whole row is tested.)
 fn color_runs(
     image: &RgbaImage,
     y: u32,
@@ -755,37 +765,101 @@ fn color_runs(
     let width = image.width() as usize;
     let start = (y as usize * width + x0 as usize) * 4;
     let end = (y as usize * width + x1 as usize + 1) * 4;
-    crate::kernels::color_mask(
-        &image.as_raw()[start..end],
-        hue_range,
-        min_saturation,
-        min_value,
-        mask,
-    );
+    let row = &image.as_raw()[start..end];
     let count = (x1 - x0 + 1) as usize;
-    // From bit `i`, where the run of ones (or of zeros) it starts ends.
-    let run_end = |i: usize, ones: bool| -> usize {
-        let mut i = i;
-        while i < count {
-            let word = (if ones { !mask[i / 64] } else { mask[i / 64] }) >> (i % 64);
-            if word != 0 {
-                return (i + word.trailing_zeros() as usize).min(count);
+    let test = |from: usize, to: usize, mask: &mut Vec<u64>| {
+        crate::kernels::color_mask(
+            &row[4 * from..4 * to],
+            hue_range,
+            min_saturation,
+            min_value,
+            mask,
+        );
+    };
+    let step = min_width as usize;
+    if step <= 2 {
+        test(0, count, mask);
+        // From bit `i`, where the run of ones (or of zeros) it starts ends.
+        let run_end = |i: usize, ones: bool| -> usize {
+            let mut i = i;
+            while i < count {
+                let word = (if ones { !mask[i / 64] } else { mask[i / 64] }) >> (i % 64);
+                if word != 0 {
+                    return (i + word.trailing_zeros() as usize).min(count);
+                }
+                i = (i / 64 + 1) * 64;
             }
-            i = (i / 64 + 1) * 64;
+            count
+        };
+        let mut i = 0;
+        while i < count {
+            let begin = run_end(i, false);
+            if begin >= count {
+                break;
+            }
+            let end = run_end(begin, true);
+            if (end - begin) as u32 >= min_width {
+                result.push((x0 + begin as u32, x0 + end as u32 - 1));
+            }
+            i = end;
+        }
+        return result;
+    }
+    // The pixels `step - 1`, `2 step - 1`, … of the row, together.
+    let hits: Vec<usize> = SAMPLES.with_borrow_mut(|samples| {
+        samples.clear();
+        for i in (step - 1..count).step_by(step) {
+            samples.extend_from_slice(&row[4 * i..4 * i + 4]);
+        }
+        crate::kernels::color_mask(samples, hue_range, min_saturation, min_value, mask);
+        let found = mask.iter().map(|w| w.count_ones() as usize).sum();
+        let mut hits = Vec::with_capacity(found);
+        for (w, &word) in mask.iter().enumerate() {
+            let mut bits = word;
+            while bits != 0 {
+                hits.push((64 * w + bits.trailing_zeros() as usize) * step + step - 1);
+                bits &= bits - 1;
+            }
+        }
+        hits
+    });
+    // Where the run of matching pixels through `at` ends, to the right (one
+    // past its last) and to the left (its first).
+    let run_right = |at: usize, mask: &mut Vec<u64>| -> usize {
+        let mut i = at + 1;
+        while i < count {
+            let n = (count - i).min(64);
+            test(i, i + n, mask);
+            let misses = !mask[0] & if n == 64 { u64::MAX } else { (1 << n) - 1 };
+            if misses != 0 {
+                return i + misses.trailing_zeros() as usize;
+            }
+            i += n;
         }
         count
     };
-    let mut i = 0;
-    while i < count {
-        let begin = run_end(i, false);
-        if begin >= count {
-            break;
+    let mut done = 0;
+    for at in hits {
+        if at < done {
+            continue; // within the run just found
         }
-        let end = run_end(begin, true);
-        if (end - begin) as u32 >= min_width {
+        let mut begin = at;
+        while begin > 0 {
+            let n = begin.min(64);
+            test(begin - n, begin, mask);
+            let misses = !mask[0] & if n == 64 { u64::MAX } else { (1 << n) - 1 };
+            if misses != 0 {
+                // One past the last miss.
+                begin = begin - n + (63 - misses.leading_zeros() as usize) + 1;
+                break;
+            }
+            begin -= n;
+        }
+        let end = run_right(at, mask);
+        if end - begin >= step {
             result.push((x0 + begin as u32, x0 + end as u32 - 1));
         }
-        i = end;
+        done = end;
     }
     result
 }
@@ -942,7 +1016,15 @@ mod tests {
             state ^= state << 13;
             state ^= state >> 17;
             state ^= state << 5;
-            // Long stretches of red, of blue, and of noise.
+            // Long stretches of red, of blue, and of noise; every fifth
+            // row red from end to end but for a few gaps.
+            if y % 5 == 0 {
+                return if x % 97 == 13 || x % 151 == 0 {
+                    Rgba([20, 40, 230, 255])
+                } else {
+                    Rgba([220, 20, 30, 255])
+                };
+            }
             match (x / 23 + y) % 4 {
                 0 => Rgba([220, 20, 30, 255]),
                 1 => Rgba([20, 40, 230, 255]),
@@ -963,7 +1045,7 @@ mod tests {
                     (299, 299),
                     (10, 9),
                 ] {
-                    for min_width in [1, 2, 8, 20, 64] {
+                    for min_width in [1, 2, 3, 7, 8, 20, 23, 24, 64, 144] {
                         let expected = segment_row(&image, y, x0, x1, min_width, |p| {
                             is_color_pixel(p, hue, saturation, value)
                         });
