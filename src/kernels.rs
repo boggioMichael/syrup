@@ -1956,6 +1956,7 @@ mod x86 {
                 for (part, set) in acc.iter_mut().enumerate().take(n - j) {
                     step(set, j + part);
                 }
+                #[allow(clippy::needless_range_loop)] // `lane` picks one of each set
                 for lane in 0..4 {
                     let at = x + 16 * lane;
                     if at >= columns {
@@ -2026,6 +2027,7 @@ mod x86 {
                     step(&mut acc[0], j);
                 }
                 let mut lanes = [0u32; 32];
+                #[allow(clippy::needless_range_loop)] // `lane` picks one of each set
                 for lane in 0..4 {
                     let total =
                         _mm256_add_epi32(_mm256_add_epi32(acc[0][lane], acc[1][lane]), bias);
