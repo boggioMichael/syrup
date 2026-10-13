@@ -344,6 +344,11 @@ pub fn group_segments(rows: Vec<(u32, u32, u32)>, min_height: u32, max_gap: u32)
     let mut active = Vec::<Rect>::new();
     let mut completed = Vec::<Rect>::new();
     let mut prev_y: Option<u32> = None;
+    let (mut by_left, mut reach) = (Vec::<usize>::new(), Vec::<u32>::new());
+    // The next row's rectangles, and which each of this row's continues
+    // into: kept from row to row rather than allocated anew.
+    let mut next_active: Vec<Rect> = Vec::new();
+    let mut continuation: Vec<Option<usize>> = Vec::new();
 
     let mut index = 0;
     while index < rows.len() {
@@ -364,16 +369,43 @@ pub fn group_segments(rows: Vec<(u32, u32, u32)>, min_height: u32, max_gap: u32)
         }
         prev_y = Some(y);
 
-        let mut next_active: Vec<Rect> = Vec::new();
         // Index into `next_active` for each already-matched active rect, so
         // a region that splits into several segments extends one rectangle.
-        let mut continuation: Vec<Option<usize>> = vec![None; active.len()];
+        next_active.clear();
+        continuation.clear();
+        continuation.resize(active.len(), None);
+        // The active rectangles by left edge, with the furthest right edge
+        // of each and all before it: the ones a segment can overlap are
+        // among those starting at or before its end, and the search for them
+        // goes leftwards from there only while one further left could still
+        // reach its start.
+        by_left.clear();
+        by_left.extend(0..active.len());
+        by_left.sort_by_key(|&idx| active[idx].x);
+        reach.clear();
+        let mut furthest = 0;
+        reach.extend(by_left.iter().map(|&idx| {
+            furthest = furthest.max(active[idx].x2());
+            furthest
+        }));
         for &(_, segment_x0, segment_x1) in segments {
+            // The most overlap, and of equal overlaps the earliest active
+            // rectangle: what trying each in turn finds.
             let mut best_match = None;
             let mut best_overlap = 0;
-            for (idx, rect) in active.iter().enumerate() {
+            let candidates = by_left.partition_point(|&idx| active[idx].x <= segment_x1);
+            for k in (0..candidates).rev() {
+                if reach[k] < segment_x0 {
+                    break;
+                }
+                let idx = by_left[k];
+                let rect = &active[idx];
                 let overlap = overlap((rect.x, rect.x2()), (segment_x0, segment_x1));
-                if overlap > best_overlap {
+                if overlap > best_overlap
+                    || (overlap == best_overlap
+                        && overlap > 0
+                        && best_match.is_some_and(|b| idx < b))
+                {
                     best_overlap = overlap;
                     best_match = Some(idx);
                 }
@@ -407,12 +439,12 @@ pub fn group_segments(rows: Vec<(u32, u32, u32)>, min_height: u32, max_gap: u32)
             });
         }
 
-        for (idx, rect) in active.into_iter().enumerate() {
-            if continuation[idx].is_none() && rect.h >= min_height {
-                completed.push(rect);
+        for (rect, continued) in active.iter().zip(&continuation) {
+            if continued.is_none() && rect.h >= min_height {
+                completed.push(*rect);
             }
         }
-        active = next_active;
+        std::mem::swap(&mut active, &mut next_active);
     }
 
     completed.extend(active.into_iter().filter(|rect| rect.h >= min_height));
@@ -2014,6 +2046,134 @@ mod tests {
     /// side by side) used to be processed one segment at a time, so the
     /// side-by-side regions evicted each other from the active set and *no*
     /// rectangle ever reached `min_height`.
+    /// [`group_segments`] trying every active rectangle for each segment,
+    /// as it did before it searched only the reachable ones.
+    fn group_segments_one_by_one(
+        rows: Vec<(u32, u32, u32)>,
+        min_height: u32,
+        max_gap: u32,
+    ) -> Vec<Rect> {
+        let mut active = Vec::<Rect>::new();
+        let mut completed = Vec::<Rect>::new();
+        let mut prev_y: Option<u32> = None;
+
+        let mut index = 0;
+        while index < rows.len() {
+            // Collect every segment that belongs to this row.
+            let y = rows[index].0;
+            let row_end = rows[index..]
+                .iter()
+                .position(|&(row_y, _, _)| row_y != y)
+                .map(|offset| index + offset)
+                .unwrap_or(rows.len());
+            let segments = &rows[index..row_end];
+            index = row_end;
+
+            if let Some(prev_y) = prev_y
+                && y > prev_y.saturating_add(max_gap).saturating_add(1)
+            {
+                completed.extend(active.drain(..).filter(|rect| rect.h >= min_height));
+            }
+            prev_y = Some(y);
+
+            let mut next_active: Vec<Rect> = Vec::new();
+            // Index into `next_active` for each already-matched active rect, so
+            // a region that splits into several segments extends one rectangle.
+            let mut continuation: Vec<Option<usize>> = vec![None; active.len()];
+            for &(_, segment_x0, segment_x1) in segments {
+                let mut best_match = None;
+                let mut best_overlap = 0;
+                for (idx, rect) in active.iter().enumerate() {
+                    let overlap = overlap((rect.x, rect.x2()), (segment_x0, segment_x1));
+                    if overlap > best_overlap {
+                        best_overlap = overlap;
+                        best_match = Some(idx);
+                    }
+                }
+                if let Some(idx) = best_match
+                    && best_overlap * 3 >= (segment_x1 - segment_x0 + 1).max(active[idx].w)
+                {
+                    let target = match continuation[idx] {
+                        Some(position) => position,
+                        None => {
+                            next_active.push(active[idx]);
+                            continuation[idx] = Some(next_active.len() - 1);
+                            next_active.len() - 1
+                        }
+                    };
+                    let rect = &mut next_active[target];
+                    rect.x = rect.x.min(segment_x0);
+                    rect.w = rect
+                        .x2()
+                        .max(segment_x1)
+                        .saturating_sub(rect.x)
+                        .saturating_add(1);
+                    rect.h = y.saturating_sub(rect.y).saturating_add(1);
+                    continue;
+                }
+                next_active.push(Rect {
+                    x: segment_x0,
+                    y,
+                    w: segment_x1.saturating_sub(segment_x0).saturating_add(1),
+                    h: 1,
+                });
+            }
+
+            for (idx, rect) in active.into_iter().enumerate() {
+                if continuation[idx].is_none() && rect.h >= min_height {
+                    completed.push(rect);
+                }
+            }
+            active = next_active;
+        }
+
+        completed.extend(active.into_iter().filter(|rect| rect.h >= min_height));
+        completed
+    }
+
+    #[test]
+    fn segments_grouped_by_reach_are_grouped_as_trying_every_rectangle() {
+        let mut state = 99u32;
+        let mut next = move |n: u32| {
+            state = state.wrapping_mul(1_103_515_245).wrapping_add(12345);
+            (state >> 8) % n
+        };
+        // Two rectangles overlapping a segment equally: the earlier one
+        // continues, whichever is further right.
+        for rows in [
+            vec![(0, 0, 9), (0, 12, 21), (1, 5, 16), (2, 5, 16)],
+            vec![(0, 12, 21), (0, 0, 9), (1, 5, 16), (2, 5, 16)],
+        ] {
+            assert_eq!(
+                group_segments(rows.clone(), 1, 0),
+                group_segments_one_by_one(rows, 1, 0)
+            );
+        }
+        for trial in 0..300 {
+            let (width, height) = (8 + next(300), 1 + next(60));
+            let busy = 1 + next(12);
+            let mut rows = Vec::new();
+            for y in 0..height {
+                if next(9) == 0 {
+                    continue; // a gap
+                }
+                let mut x = next(20);
+                while x < width {
+                    let w = 1 + next(if trial % 3 == 0 { 40 } else { 6 });
+                    rows.push((y, x, (x + w - 1).min(width - 1)));
+                    x += w + 1 + next(busy);
+                }
+            }
+            for (min_height, max_gap) in [(1, 0), (2, 2), (4, 1), (12, 2)] {
+                assert_eq!(
+                    group_segments(rows.clone(), min_height, max_gap),
+                    group_segments_one_by_one(rows.clone(), min_height, max_gap),
+                    "trial {trial}, {min_height}, {max_gap}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn group_segments_keeps_side_by_side_regions_apart() {
         let mut rows = Vec::new();
