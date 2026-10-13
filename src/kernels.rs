@@ -132,6 +132,7 @@ fn vnni_support() -> (bool, bool) {
 /// Whether a refinement's products run on AVX-VNNI's 256-bit dot products
 /// (8 positions a vector, as the AVX2 path has them): when dot products are
 /// in use at all and the CPU has that form of them. Decided once.
+#[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
 fn block_vnni() -> bool {
     static CHOSEN: OnceLock<bool> = OnceLock::new();
     *CHOSEN.get_or_init(|| vnni().is_some() && vnni_support().1)
@@ -140,6 +141,7 @@ fn block_vnni() -> bool {
 /// Whether the scores are computed on 512-bit vectors too: with AVX-512
 /// in use for the dot products, and its double-word and 64-bit integer
 /// conversions (DQ) and 256-bit forms (VL) there as well. Decided once.
+#[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
 fn zmm_scores() -> bool {
     static CHOSEN: OnceLock<bool> = OnceLock::new();
     *CHOSEN.get_or_init(|| {
@@ -205,6 +207,7 @@ pub fn window_stats(
 /// [`weight_rows64`]), however narrow: the same three sums, in a fraction
 /// of the instructions of either 256-bit path (a 13×20 window: about 160
 /// against 1000).
+#[cfg_attr(not(target_arch = "x86_64"), allow(unused_variables))]
 pub(crate) fn window_stats_wide(
     pixels: &[u8],
     stride: usize,
@@ -284,6 +287,7 @@ pub(crate) fn weight_rows64(weights: &[u8], w: usize, h: usize) -> Vec<u8> {
 /// first, which costs more than the part of each 64-byte vector a row
 /// leaves unused. (On Zen 5, an 8×5 block of a 28×105 template: 1.6 µs
 /// against 2.5; of a 13×20 one, 0.58 against 0.42.)
+#[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
 const ROWS64_MIN_WIDTH: usize = 20;
 
 /// [`window_stats`] at every position of a block: for the `bw`×`bh`
@@ -669,11 +673,13 @@ pub(crate) type Hit = (u32, u32, f32);
 /// double precision, and still be scored: far more than the single
 /// precision of the score itself can move it (a few parts in 10⁷), so the
 /// test drops no position that scores at least the floor.
+#[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
 const HIT_MARGIN: f64 = 1e-5;
 
 /// The squared covariance a position needs, as a multiple of its spread,
 /// to be scored against `floor` (positive) with a template of spread
 /// `t_spread`: `floor² (1 - HIT_MARGIN) t_spread`.
+#[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
 fn hit_threshold(floor: f32, t_spread: i64) -> f64 {
     f64::from(floor) * f64::from(floor) * (1.0 - HIT_MARGIN) * t_spread as f64
 }
@@ -816,6 +822,7 @@ pub(crate) fn color_mask(
     let count = pixels.len() / 4;
     out.clear();
     out.resize(count.div_ceil(64), 0);
+    #[cfg_attr(not(target_arch = "x86_64"), allow(unused_mut))]
     let mut from = 0;
     #[cfg(target_arch = "x86_64")]
     if zmm_scores() {
@@ -835,6 +842,7 @@ pub(crate) fn color_mask(
 /// How a colour test takes a pixel's hue: within a range (`min > max`
 /// wraps past 360, as [`crate::color::is_color_pixel`] has it), or at most
 /// a distance round the circle from a hue ([`crate::bars::hue_distance`]).
+#[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum HueTest {
     Within(f32, f32),
@@ -856,6 +864,7 @@ pub(crate) fn fill_mask(
     let count = pixels.len() / 4;
     out.clear();
     out.resize(count.div_ceil(64), 0);
+    #[cfg_attr(not(target_arch = "x86_64"), allow(unused_mut))]
     let mut from = 0;
     #[cfg(target_arch = "x86_64")]
     if zmm_scores() && (0.0..360.0).contains(&centre) {
@@ -881,6 +890,7 @@ pub(crate) fn fill_mask(
 /// `out` (replacing what it held): 8 compared at once on AVX2.
 pub(crate) fn at_least(values: &[f32], floor: f32, out: &mut Vec<usize>) {
     out.clear();
+    #[cfg_attr(not(target_arch = "x86_64"), allow(unused_mut))]
     let mut from = 0;
     #[cfg(target_arch = "x86_64")]
     if backend() == Backend::Avx2 {
@@ -922,6 +932,7 @@ pub(crate) fn weight_quads(weights: &[u8], w: usize, h: usize) -> (Vec<u32>, u32
 /// dot-product correlation takes them: `out[j·w + c]` holds the pixels of
 /// column `c` in rows `4j .. 4j + 4` (`t(c, 4j) | t(c, 4j + 1) << 8 | …`,
 /// zero past the last row), `h.div_ceil(4)` rows of `w`; and `128 Σt`.
+#[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
 pub(crate) fn weight_vquads(weights: &[u8], w: usize, h: usize) -> (Vec<u32>, u32) {
     let rows = h.div_ceil(4);
     let mut out = vec![0u32; rows * w];
@@ -939,6 +950,7 @@ pub(crate) fn weight_vquads(weights: &[u8], w: usize, h: usize) -> (Vec<u32>, u3
 /// dot products than the horizontal one for a `w`×`h` template: fours of
 /// a column (`h.div_ceil(4) · w` a position) against fours of a row
 /// (`h · w.div_ceil(4)`); a 13×20 template, 65 against 80.
+#[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
 pub(crate) fn vertical_quads_pay(w: usize, h: usize) -> bool {
     h.div_ceil(4) * w < h * w.div_ceil(4)
 }
@@ -1027,6 +1039,7 @@ fn correlate_everywhere_rows(
 pub(crate) fn bgra_to_rgba(src: &[u8], dst: &mut [u8]) {
     assert_eq!(src.len(), dst.len());
     assert!(src.len().is_multiple_of(4));
+    #[cfg_attr(not(target_arch = "x86_64"), allow(unused_mut))]
     let mut done = 0;
     #[cfg(target_arch = "x86_64")]
     if backend() == Backend::Avx2 {
@@ -1055,6 +1068,7 @@ pub(crate) fn bgra_to_rgba(src: &[u8], dst: &mut [u8]) {
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn bgra_to_rgba_in_place(pixels: &mut [u8]) {
     assert!(pixels.len().is_multiple_of(4));
+    #[cfg_attr(not(target_arch = "x86_64"), allow(unused_mut))]
     let mut done = 0;
     #[cfg(target_arch = "x86_64")]
     if backend() == Backend::Avx2 {
@@ -4908,6 +4922,8 @@ mod tests {
                     )
                 })
                 .collect();
+            // (Compared with on x86-64 only.)
+            let _ = &expected;
             #[cfg(target_arch = "x86_64")]
             if is_x86_feature_detected!("avx512f")
                 && is_x86_feature_detected!("avx512dq")
