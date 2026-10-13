@@ -129,6 +129,25 @@ fn vnni_support() -> (bool, bool) {
     (false, false)
 }
 
+/// Whether the scores are computed on 512-bit vectors too: with AVX-512
+/// in use for the dot products, and its double-word and 64-bit integer
+/// conversions (DQ) and 256-bit forms (VL) there as well. Decided once.
+fn zmm_scores() -> bool {
+    static CHOSEN: OnceLock<bool> = OnceLock::new();
+    *CHOSEN.get_or_init(|| {
+        #[cfg(target_arch = "x86_64")]
+        {
+            vnni() == Some(Vnni::Zmm)
+                && is_x86_feature_detected!("avx512dq")
+                && is_x86_feature_detected!("avx512vl")
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            false
+        }
+    })
+}
+
 /// Largest window, in pixels, whose sums the vector paths accumulate in
 /// 32-bit lanes without overflow: each lane gathers two products of at
 /// most 255² per 16-pixel step, over `area / 16` steps.
@@ -1473,6 +1492,7 @@ mod x86 {
         out: &mut Vec<f32>,
     ) {
         let n = (w * h) as i64;
+        let wide = super::zmm_scores();
         super::scores_everywhere_body(
             &plane[..width * height],
             width,
@@ -1480,9 +1500,14 @@ mod x86 {
             products,
             (t_sum, t_spread),
             out,
-            // SAFETY: AVX2, here; the rows are as long as each other.
+            // SAFETY: AVX2, here, and AVX-512 when `zmm_scores` says so;
+            // the rows are as long as each other.
             |row, sums, squares, out| unsafe {
-                scores_row_avx2(row, sums, squares, (n, t_sum, t_spread), out)
+                if wide {
+                    scores_row_zmm(row, sums, squares, (n, t_sum, t_spread), out)
+                } else {
+                    scores_row_avx2(row, sums, squares, (n, t_sum, t_spread), out)
+                }
             },
             |values, totals| running_totals(values, totals),
         );
@@ -1520,6 +1545,73 @@ mod x86 {
             total = total.wrapping_add(v);
             *t = total;
         }
+    }
+
+    /// `scores_row_avx2` on 512-bit vectors, 8 positions at a time: the
+    /// integer terms in 64-bit lanes, converted straight to single
+    /// precision (rounded once, as `as f32` rounds), then the same
+    /// single-precision product, square root, division and clamp.
+    #[target_feature(enable = "avx512f,avx512dq,avx512vl")]
+    pub(super) unsafe fn scores_row_zmm(
+        products: &[u32],
+        sums: &[u32],
+        squares: &[u32],
+        (n, t_sum, t_spread): (i64, i64, i64),
+        out: &mut Vec<f32>,
+    ) {
+        let len = products.len();
+        assert!(sums.len() >= len && squares.len() >= len);
+        assert!(n > 0 && n <= super::MAX_AREA_32 as i64 && (0..1 << 32).contains(&t_sum));
+        out.reserve(len);
+        let start = out.len();
+        let n_v = _mm512_set1_epi64(n);
+        let nn = _mm512_set1_epi64(n * n);
+        let t_sum_v = _mm512_set1_epi64(t_sum);
+        let t_spread_v = _mm256_set1_ps(t_spread as f32);
+        let (low, high) = (_mm256_set1_ps(-1.0), _mm256_set1_ps(1.0));
+        // SAFETY: `reserve` made room for `len` more scores past `start`.
+        let target = unsafe { out.as_mut_ptr().add(start) };
+        let mut i = 0;
+        while i + 8 <= len {
+            // SAFETY: eight values from `i` in each slice, eight into
+            // `target`.
+            unsafe {
+                let load =
+                    |v: &[u32]| _mm512_cvtepu32_epi64(_mm256_loadu_si256(v.as_ptr().add(i).cast()));
+                let (p, s, q) = (load(products), load(sums), load(squares));
+                let spread = _mm512_sub_epi64(_mm512_mul_epu32(n_v, q), _mm512_mul_epu32(s, s));
+                let covariance =
+                    _mm512_sub_epi64(_mm512_mul_epu32(n_v, p), _mm512_mul_epu32(s, t_sum_v));
+                // `4 spread > n²`: not flat.
+                let varied = _mm512_cmpgt_epi64_mask(_mm512_slli_epi64::<2>(spread), nn);
+                let denominator =
+                    _mm256_sqrt_ps(_mm256_mul_ps(_mm512_cvtepi64_ps(spread), t_spread_v));
+                let score = _mm256_min_ps(
+                    _mm256_max_ps(
+                        _mm256_div_ps(_mm512_cvtepi64_ps(covariance), denominator),
+                        low,
+                    ),
+                    high,
+                );
+                // A flat window scores 0 (its quotient, whatever it was, dropped).
+                _mm256_storeu_ps(target.add(i), _mm256_maskz_mov_ps(varied, score));
+            }
+            i += 8;
+        }
+        for k in i..len {
+            let score = super::ncc(
+                n,
+                t_sum,
+                t_spread,
+                products[k].into(),
+                sums[k].into(),
+                squares[k].into(),
+            );
+            // SAFETY: `k < len`, within the room reserved.
+            unsafe { target.add(k).write(score) };
+        }
+        // SAFETY: all `len` scores past `start` were written above.
+        unsafe { out.set_len(start + len) };
     }
 
     /// `ncc` for a row of positions, 4 at a time: the integer terms in
@@ -1803,8 +1895,20 @@ mod x86 {
         }
     }
 
+    /// Where each of a template's quads is read from, relative to a
+    /// block's first position: `v · stride + 4 k` for quad `k` of row `v`,
+    /// in the order the quads are listed.
+    fn quad_offsets(stride: usize, per_row: usize, h: usize) -> Vec<usize> {
+        (0..h * per_row)
+            .map(|j| (j / per_row) * stride + 4 * (j % per_row))
+            .collect()
+    }
+
     /// 64 positions a block, 16 a vector, the template's quads broadcast
-    /// once for the four vectors.
+    /// once for the four vectors. A dot-product instruction adds into its
+    /// accumulator, so each accumulator is a chain of them, one after the
+    /// other: the quads go round four sets of accumulators in turn, four
+    /// chains a vector instead of one, and the sets are added at the end.
     #[allow(clippy::too_many_arguments)]
     #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
     unsafe fn correlate_quads_zmm(
@@ -1820,40 +1924,52 @@ mod x86 {
     ) {
         assert!(quads.len() >= (rows - 1 + h) * stride && tq.len() >= per_row * h);
         assert!(stride >= columns.next_multiple_of(VNNI_BLOCK) + 4 * per_row);
+        let offsets = quad_offsets(stride, per_row, h);
+        let n = offsets.len();
         let bias = _mm512_set1_epi32(bias as i32);
         let base = quads.as_ptr();
         for (y, out_row) in out[..columns * rows].chunks_exact_mut(columns).enumerate() {
             let mut x = 0;
             while x < columns {
-                let mut acc = [_mm512_setzero_si512(); 4];
-                for v in 0..h {
-                    // SAFETY: row `y + v` of the quads; the loads below end
-                    // by `x + 64 + 4 per_row <= stride`.
-                    let row = unsafe { base.add((y + v) * stride + x) };
-                    for (k, &quad) in tq[v * per_row..(v + 1) * per_row].iter().enumerate() {
-                        let t = _mm512_set1_epi32(quad as i32);
-                        for (lane, sum) in acc.iter_mut().enumerate() {
-                            // SAFETY: as above.
-                            let p =
-                                unsafe { _mm512_loadu_si512(row.add(4 * k + 16 * lane).cast()) };
-                            *sum = _mm512_dpbusd_epi32(*sum, t, p);
-                        }
+                // SAFETY: every load below is at `y · stride + x` plus an
+                // offset into row `y + v` of the quads, and ends by
+                // `x + 64 + 4 per_row <= stride` within it.
+                let start = unsafe { base.add(y * stride + x) };
+                let mut acc = [[_mm512_setzero_si512(); 4]; 4];
+                let step = |acc: &mut [__m512i; 4], j: usize| {
+                    let t = _mm512_set1_epi32(tq[j] as i32);
+                    // SAFETY: as above.
+                    let at = unsafe { start.add(offsets[j]) };
+                    for (lane, sum) in acc.iter_mut().enumerate() {
+                        // SAFETY: as above.
+                        let p = unsafe { _mm512_loadu_si512(at.add(16 * lane).cast()) };
+                        *sum = _mm512_dpbusd_epi32(*sum, t, p);
                     }
+                };
+                let mut j = 0;
+                while j + 4 <= n {
+                    for (part, set) in acc.iter_mut().enumerate() {
+                        step(set, j + part);
+                    }
+                    j += 4;
                 }
-                for (lane, sum) in acc.iter().enumerate() {
+                for (part, set) in acc.iter_mut().enumerate().take(n - j) {
+                    step(set, j + part);
+                }
+                for lane in 0..4 {
                     let at = x + 16 * lane;
                     if at >= columns {
                         break;
                     }
+                    let total = _mm512_add_epi32(
+                        _mm512_add_epi32(acc[0][lane], acc[1][lane]),
+                        _mm512_add_epi32(_mm512_add_epi32(acc[2][lane], acc[3][lane]), bias),
+                    );
                     let n = (columns - at).min(16);
                     let mask: __mmask16 = if n == 16 { u16::MAX } else { (1 << n) - 1 };
                     // SAFETY: the mask keeps the store within the row.
                     unsafe {
-                        _mm512_mask_storeu_epi32(
-                            out_row.as_mut_ptr().add(at).cast(),
-                            mask,
-                            _mm512_add_epi32(*sum, bias),
-                        )
+                        _mm512_mask_storeu_epi32(out_row.as_mut_ptr().add(at).cast(), mask, total)
                     };
                 }
                 x += VNNI_BLOCK;
@@ -1862,7 +1978,8 @@ mod x86 {
     }
 
     /// The same on 256-bit vectors: 8 positions a vector, 4 vectors a
-    /// block of 32, twice per block of 64.
+    /// block of 32, two sets of accumulators taking turns (16 registers
+    /// hold no more).
     #[allow(clippy::too_many_arguments)]
     #[target_feature(enable = "avx2,avxvnni")]
     unsafe fn correlate_quads_ymm(
@@ -1878,34 +1995,42 @@ mod x86 {
     ) {
         assert!(quads.len() >= (rows - 1 + h) * stride && tq.len() >= per_row * h);
         assert!(stride >= columns.next_multiple_of(VNNI_BLOCK) + 4 * per_row);
+        let offsets = quad_offsets(stride, per_row, h);
+        let n = offsets.len();
         let bias = _mm256_set1_epi32(bias as i32);
         let base = quads.as_ptr();
         for (y, out_row) in out[..columns * rows].chunks_exact_mut(columns).enumerate() {
             let mut x = 0;
             while x < columns {
-                let mut acc = [_mm256_setzero_si256(); 4];
-                for v in 0..h {
-                    // SAFETY: row `y + v` of the quads; the loads below end
-                    // by `x + 32 + 4 per_row <= stride`.
-                    let row = unsafe { base.add((y + v) * stride + x) };
-                    for (k, &quad) in tq[v * per_row..(v + 1) * per_row].iter().enumerate() {
-                        let t = _mm256_set1_epi32(quad as i32);
-                        for (lane, sum) in acc.iter_mut().enumerate() {
-                            // SAFETY: as above.
-                            let p = unsafe { _mm256_loadu_si256(row.add(4 * k + 8 * lane).cast()) };
-                            *sum = _mm256_dpbusd_avx_epi32(*sum, t, p);
-                        }
+                // SAFETY: as in `correlate_quads_zmm`, with blocks of 32.
+                let start = unsafe { base.add(y * stride + x) };
+                let mut acc = [[_mm256_setzero_si256(); 4]; 2];
+                let step = |acc: &mut [__m256i; 4], j: usize| {
+                    let t = _mm256_set1_epi32(tq[j] as i32);
+                    // SAFETY: as above.
+                    let at = unsafe { start.add(offsets[j]) };
+                    for (lane, sum) in acc.iter_mut().enumerate() {
+                        // SAFETY: as above.
+                        let p = unsafe { _mm256_loadu_si256(at.add(8 * lane).cast()) };
+                        *sum = _mm256_dpbusd_avx_epi32(*sum, t, p);
                     }
+                };
+                let mut j = 0;
+                while j + 2 <= n {
+                    let [first, second] = &mut acc;
+                    step(first, j);
+                    step(second, j + 1);
+                    j += 2;
+                }
+                if j < n {
+                    step(&mut acc[0], j);
                 }
                 let mut lanes = [0u32; 32];
-                for (lane, sum) in acc.iter().enumerate() {
+                for lane in 0..4 {
+                    let total =
+                        _mm256_add_epi32(_mm256_add_epi32(acc[0][lane], acc[1][lane]), bias);
                     // SAFETY: 8 lanes into an array of 32.
-                    unsafe {
-                        _mm256_storeu_si256(
-                            lanes.as_mut_ptr().add(8 * lane).cast(),
-                            _mm256_add_epi32(*sum, bias),
-                        )
-                    };
+                    unsafe { _mm256_storeu_si256(lanes.as_mut_ptr().add(8 * lane).cast(), total) };
                 }
                 let n = (columns - x).min(32);
                 out_row[x..x + n].copy_from_slice(&lanes[..n]);
@@ -2368,6 +2493,26 @@ mod tests {
                     )
                 })
                 .collect();
+            #[cfg(target_arch = "x86_64")]
+            if is_x86_feature_detected!("avx512f")
+                && is_x86_feature_detected!("avx512dq")
+                && is_x86_feature_detected!("avx512vl")
+            {
+                let mut got = Vec::new();
+                // SAFETY: the CPU reported AVX-512 F, DQ and VL.
+                unsafe {
+                    x86::scores_row_zmm(
+                        &products,
+                        &sums,
+                        &squares,
+                        (n as i64, t_sum, t_spread),
+                        &mut got,
+                    )
+                };
+                for (i, (g, e)) in got.iter().zip(&expected).enumerate() {
+                    assert_eq!(g.to_bits(), e.to_bits(), "zmm, n {n} at {i}: {g} vs {e}");
+                }
+            }
             #[cfg(target_arch = "x86_64")]
             if is_x86_feature_detected!("avx2") {
                 let mut got = vec![7.0f32];
