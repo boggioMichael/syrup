@@ -593,6 +593,15 @@ struct Line {
     ink_threshold: u8,
     /// See [`GlyphOptions::min_gap`].
     min_gap: u32,
+    /// Ink pixels per column within the band, for every column: counted
+    /// once for the band, where each glyph tried used to count its own.
+    ink: Vec<u32>,
+    /// A cell's rows as taps of the band's rows: the same for every glyph
+    /// of the line.
+    rows: BoxTaps,
+    /// The band's evidence as floats, column by column (`height` values a
+    /// column): what every glyph tried resamples, converted once.
+    columns: Vec<f32>,
 }
 
 impl Line {
@@ -622,7 +631,11 @@ impl Line {
             height: bottom - top,
             ink_threshold: threshold,
             min_gap: options.min_gap.max(1),
+            ink: Vec::new(),
+            rows: BoxTaps::new(0, 0, 0),
+            columns: Vec::new(),
         };
+        line.set_band(top, bottom - top);
         // That band took every inked row, and a bar's end or the empty track
         // beside its fill stands taller than the writing on it. Narrow the
         // band to the rows of the writing itself — the spans that survive,
@@ -636,10 +649,49 @@ impl Line {
             if (top, bottom) == (line.top, line.top + line.height) {
                 break;
             }
-            line.top = top;
-            line.height = bottom - top;
+            line.set_band(top, bottom - top);
         }
         Some(line)
+    }
+
+    /// The band becomes rows `top .. top + height`: its ink per column
+    /// counted and its cell rows' taps made.
+    fn set_band(&mut self, top: u32, height: u32) {
+        self.top = top;
+        self.height = height;
+        let width = self.evidence.width() as usize;
+        let mut ink = vec![0u32; width];
+        if width > 0 {
+            for row in self
+                .evidence
+                .as_raw()
+                .chunks_exact(width)
+                .skip(top as usize)
+                .take(height as usize)
+            {
+                for (count, &value) in ink.iter_mut().zip(row) {
+                    *count += u32::from(value >= self.ink_threshold);
+                }
+            }
+        }
+        self.ink = ink;
+        self.rows = BoxTaps::new(height, CELL_H, height);
+        let (h, mut columns) = (height as usize, vec![0.0f32; width * height as usize]);
+        if width > 0 {
+            for (sy, row) in self
+                .evidence
+                .as_raw()
+                .chunks_exact(width)
+                .skip(top as usize)
+                .take(h)
+                .enumerate()
+            {
+                for (x, &value) in row.iter().enumerate() {
+                    columns[x * h + sy] = f32::from(value);
+                }
+            }
+        }
+        self.columns = columns;
     }
 
     fn is_ink(&self, x: u32, y: u32) -> bool {
@@ -647,14 +699,8 @@ impl Line {
     }
 
     /// Ink pixels per column over `x0..x1`, within the band.
-    fn column_ink(&self, x0: u32, x1: u32) -> Vec<u32> {
-        (x0..x1)
-            .map(|x| {
-                (self.top..self.top + self.height)
-                    .filter(|&y| self.is_ink(x, y))
-                    .count() as u32
-            })
-            .collect()
+    fn column_ink(&self, x0: u32, x1: u32) -> &[u32] {
+        &self.ink[x0 as usize..x1 as usize]
     }
 
     /// Runs of inked columns within the band, as half-open `(x0, x1)`.
@@ -686,7 +732,7 @@ impl Line {
         // A block of ink is not writing: the empty track of a bar beside its
         // fill, lighter than the fill the text sits on, or a panel's edge.
         merged.retain(|&(a, b)| !self.holds_block(a, b));
-        self.main_cluster(merged, &ink)
+        self.main_cluster(merged, ink)
     }
 
     /// Whether columns `a..b` of the band hold a filled square of ink
@@ -787,38 +833,93 @@ impl Line {
         let out_w = (glyph_w as f32 * scale).round().clamp(1.0, CELL_W as f32) as usize;
         let left = (CELL_W - out_w) / 2;
         let available = self.evidence.width().saturating_sub(x0);
-        let columns = BoxTaps::new(glyph_w, out_w, available);
-        let rows = BoxTaps::new(self.height, CELL_H, self.height);
+        let columns = BoxTaps::cached(glyph_w, out_w, available);
 
-        let evidence = self.evidence.as_raw();
-        let stride = self.evidence.width() as usize;
-        let mut horizontal = vec![0.0f32; self.height as usize * out_w];
-        for sy in 0..self.height as usize {
-            let row = (self.top as usize + sy) * stride + x0 as usize;
-            for cx in 0..out_w {
-                horizontal[sy * out_w + cx] = columns
-                    .of(cx)
-                    .iter()
-                    .map(|&(sx, w)| w * f32::from(evidence[row + sx]))
-                    .sum();
-            }
-        }
-        for cy in 0..CELL_H {
-            for cx in 0..out_w {
-                let weight = rows.weight(cy) * columns.weight(cx);
-                if weight <= 0.0 {
-                    continue;
+        let height = self.height as usize;
+        // Each sum adds its taps in order onto -0.0 (as a float `sum()`
+        // does), whichever loop runs innermost: the horizontal pass a cell
+        // column at a time over every band row at once, from the line's
+        // columns as floats (`Line::columns`); the vertical pass a cell row
+        // at a time over every cell column at once.
+        let band = &self.columns[x0 as usize * height..];
+        CELL_SCRATCH.with_borrow_mut(|(horizontal, column)| {
+            // Every value of each is written before it is read.
+            let grow = |v: &mut Vec<f32>, n: usize| {
+                if v.len() < n {
+                    v.resize(n, 0.0);
                 }
-                let total: f32 = rows
-                    .of(cy)
-                    .iter()
-                    .map(|&(sy, w)| w * horizontal[sy * out_w + cx])
-                    .sum();
-                cell[cy * CELL_W + left + cx] = total / weight / 255.0;
+            };
+            grow(horizontal, height * CELL_W);
+            grow(column, height);
+            let column = &mut column[..height];
+            for cx in 0..out_w {
+                column.fill(-0.0);
+                for &(sx, w) in columns.of(cx) {
+                    for (total, &value) in column.iter_mut().zip(&band[sx * height..][..height]) {
+                        *total += w * value;
+                    }
+                }
+                for (sy, &total) in column.iter().enumerate() {
+                    horizontal[sy * CELL_W + cx] = total;
+                }
             }
-        }
+            self.vertical(&mut cell, horizontal, &columns, out_w, left);
+        });
         cell
     }
+
+    /// The vertical pass of [`Line::cell`]: the cell's rows from the
+    /// horizontal pass's (`out_w` values a band row), into `cell` from
+    /// column `left`.
+    ///
+    /// The horizontal pass's rows are `CELL_W` apart, every cell column
+    /// computed and those past `out_w` dropped, so each step is a whole
+    /// row of the cell.
+    fn vertical(
+        &self,
+        cell: &mut [f32],
+        horizontal: &[f32],
+        columns: &BoxTaps,
+        out_w: usize,
+        left: usize,
+    ) {
+        let rows = &self.rows;
+        let mut column_weights = [0.0f32; CELL_W];
+        for (cx, weight) in column_weights.iter_mut().enumerate().take(out_w) {
+            *weight = columns.weight(cx);
+        }
+        for cy in 0..CELL_H {
+            let mut totals = [-0.0f32; CELL_W];
+            for &(sy, w) in rows.of(cy) {
+                let row: &[f32; CELL_W] = horizontal[sy * CELL_W..][..CELL_W]
+                    .try_into()
+                    .expect("a whole row");
+                for (total, &value) in totals.iter_mut().zip(row) {
+                    *total += w * value;
+                }
+            }
+            let row_weight = rows.weight(cy);
+            let mut values = [0.0f32; CELL_W];
+            for ((value, &total), &column_weight) in
+                values.iter_mut().zip(&totals).zip(&column_weights)
+            {
+                let weight = row_weight * column_weight;
+                *value = if weight <= 0.0 {
+                    0.0
+                } else {
+                    total / weight / 255.0
+                };
+            }
+            cell[cy * CELL_W + left..][..out_w].copy_from_slice(&values[..out_w]);
+        }
+    }
+}
+
+thread_local! {
+    /// [`Line::cell`]'s working rows: the horizontal pass, and one cell
+    /// column of it.
+    static CELL_SCRATCH: std::cell::RefCell<(Vec<f32>, Vec<f32>)> =
+        const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
 }
 
 /// Box-filter taps resampling `len` source pixels to `out` pixels: for each
@@ -859,6 +960,28 @@ impl BoxTaps {
             taps,
             weights,
         }
+    }
+
+    /// [`BoxTaps::new`], kept for the next time the same taps are asked
+    /// for. A limit past `len` changes nothing (no tap reaches past the
+    /// source pixel at `len`, which a rounding of `out` steps of `len /
+    /// out` can just touch), so the taps are kept by `len`, `out` and the
+    /// limit up to `len + 1`.
+    fn cached(len: u32, out: usize, limit: u32) -> std::rc::Rc<BoxTaps> {
+        thread_local! {
+            static KEPT: std::cell::RefCell<HashMap<(u32, usize, u32), std::rc::Rc<BoxTaps>>> =
+                std::cell::RefCell::new(HashMap::new());
+        }
+        let key = (len, out, limit.min(len.saturating_add(1)));
+        KEPT.with_borrow_mut(|kept| {
+            if kept.len() > 4096 {
+                kept.clear();
+            }
+            std::rc::Rc::clone(
+                kept.entry(key)
+                    .or_insert_with(|| std::rc::Rc::new(BoxTaps::new(len, out, limit))),
+            )
+        })
     }
 
     fn of(&self, i: usize) -> &[(usize, f32)] {
@@ -902,7 +1025,7 @@ fn fit_span_count(line: &Line, mut spans: Vec<(u32, u32)>, count: usize) -> Vec<
         if b - a < 2 {
             break;
         }
-        let cut = a + cut_points(&line.column_ink(a, b), 2)[0];
+        let cut = a + cut_points(line.column_ink(a, b), 2)[0];
         let pieces: Vec<(u32, u32)> = [(a, cut), (cut, b)]
             .into_iter()
             .filter_map(|(p, q)| line.trim_columns(p, q))
@@ -1445,6 +1568,102 @@ mod tests {
                     "the {shown} bar's glyphs: {:?}",
                     glyphs.iter().map(|g| g.bounds).collect::<Vec<_>>()
                 );
+            }
+        }
+    }
+
+    /// [`Line::cell`] as it was written first: a cell value at a time,
+    /// each tap's sum from the evidence directly.
+    fn cell_one_by_one(line: &Line, x0: u32, x1: u32) -> Vec<f32> {
+        let mut cell = vec![0.0f32; CELL_W * CELL_H];
+        let glyph_w = x1 - x0;
+        let scale = CELL_H as f32 / line.height as f32;
+        let out_w = (glyph_w as f32 * scale).round().clamp(1.0, CELL_W as f32) as usize;
+        let left = (CELL_W - out_w) / 2;
+        let available = line.evidence.width().saturating_sub(x0);
+        let columns = BoxTaps::new(glyph_w, out_w, available);
+        let rows = BoxTaps::new(line.height, CELL_H, line.height);
+        let evidence = line.evidence.as_raw();
+        let stride = line.evidence.width() as usize;
+        let mut horizontal = vec![0.0f32; line.height as usize * out_w];
+        for sy in 0..line.height as usize {
+            let row = (line.top as usize + sy) * stride + x0 as usize;
+            for cx in 0..out_w {
+                horizontal[sy * out_w + cx] = columns
+                    .of(cx)
+                    .iter()
+                    .map(|&(sx, w)| w * f32::from(evidence[row + sx]))
+                    .sum();
+            }
+        }
+        for cy in 0..CELL_H {
+            for cx in 0..out_w {
+                let weight = rows.weight(cy) * columns.weight(cx);
+                if weight <= 0.0 {
+                    continue;
+                }
+                let total: f32 = rows
+                    .of(cy)
+                    .iter()
+                    .map(|&(sy, w)| w * horizontal[sy * out_w + cx])
+                    .sum();
+                cell[cy * CELL_W + left + cx] = total / weight / 255.0;
+            }
+        }
+        cell
+    }
+
+    #[test]
+    fn a_cell_is_the_one_made_a_value_at_a_time() {
+        // Every band height a line takes, every glyph width a split tries
+        // (up to past the region's edge, where the taps stop short), on
+        // evidence of every level and of zeros.
+        let mut state = 0x2545_f491u32;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+        for height in 1..48u32 {
+            let width = 3 * height + 7;
+            let mut evidence = GrayImage::new(width, height + 4);
+            for p in evidence.pixels_mut() {
+                p.0[0] = match next() % 4 {
+                    0 => 0,
+                    1 => 255,
+                    _ => (next() % 256) as u8,
+                };
+            }
+            let mut line = Line {
+                origin: (0, 0),
+                evidence,
+                top: 0,
+                height: 0,
+                ink_threshold: 100,
+                min_gap: 1,
+                ink: Vec::new(),
+                rows: BoxTaps::new(0, 0, 0),
+                columns: Vec::new(),
+            };
+            line.set_band(2, height);
+            for x0 in [
+                0,
+                1,
+                width / 3,
+                width - 2 * height.min(width / 2),
+                width - 2,
+                width - 1,
+            ] {
+                for x1 in x0 + 1..=width.min(x0 + 2 * height + 2) {
+                    let (got, want) = (line.cell(x0, x1), cell_one_by_one(&line, x0, x1));
+                    assert!(
+                        got.iter()
+                            .map(|v| v.to_bits())
+                            .eq(want.iter().map(|v| v.to_bits())),
+                        "height {height}, columns {x0}..{x1}"
+                    );
+                }
             }
         }
     }
