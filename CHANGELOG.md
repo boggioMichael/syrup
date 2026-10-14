@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Lines whose glyphs are not pixel-exact: `lines`
+- `lines::LineFont` learns a font from labelled lines, with no model, and
+  reads a line whole: the cheapest cover of its columns by the band and
+  the characters' pictures (dynamic programming, so touching glyphs need
+  no cut and a glyph in two pieces is one picture), each placed glyph read
+  again by linear templates over the window round it, and a reading
+  refused when its least sure glyph leads by less than a level fitted on
+  held-out lines, or when it is not of the form the caller gives
+  (`LineFont::learn_checked`). On the EXP lines of a compressed MapleStory
+  video, where the glyph reader refused every line: 812 of 872 frames
+  read right, 12 wrong, 48 refused. It is the explicit reader of the
+  extraction research (`bench/extract`).
+- Its loops run on AVX2 where the CPU has it (`kernels::backend`, so
+  `SYRUP_SIMD` too), with the same readings to the bit as on SSE2: 17–20
+  µs a line on a Ryzen 7 9800X3D, 24–28 µs on SSE2 alone.
+
 ### Speed: the same answers, several times faster
 Every change below computes the same integers (or the same floats in the
 same order) as the code it replaces, on every instruction set: each is
