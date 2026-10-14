@@ -1,0 +1,11 @@
+[1m[92m   Compiling[0m syrup v0.1.0 (D:\a\syrup\syrup)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 8.77s
+[1m[92m     Running[0m unittests src\lib.rs (target\debug\deps\syrup-98ce6b89faa51ad0.exe)
+
+running 1 test
+capture of "Untitled - Notepad": 752x460, frames from the GPU
+  the CPU path's frame agrees on 100% of the 1160 marked pixels
+test capture::tests::a_window_is_captured_whole_and_a_region_at_a_time ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 237 filtered out; finished in 0.23s
+
