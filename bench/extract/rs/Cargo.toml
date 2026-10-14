@@ -1,0 +1,17 @@
+[package]
+name = "extract-port"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "Pilot A's readers in Rust, for their cost: the teacher network and the explicit readers built from it"
+
+# Its own workspace: a bench beside syrup, not a member of syrup's.
+[workspace]
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = true
