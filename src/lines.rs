@@ -22,9 +22,10 @@
 //!
 //! [`LineFont::learn`] makes the pictures and templates from labelled lines,
 //! with no model: the lines whose ink falls into as many runs as their label
-//! has characters start the pictures; every line is then placed against its
-//! own label by the same dynamic programming, and the pictures made again,
-//! until they settle. The templates are a logistic regression on the windows
+//! has characters start the pictures (a character none of them shows is
+//! started from lines a run or two off, fitted to their labels); every line
+//! is then placed against its own label by the same dynamic programming, and
+//! the pictures made again, until they settle. The templates are a logistic regression on the windows
 //! round the placed glyphs, and on the same windows a column to either side.
 //! Every fifth line is held out to fit the margin under which a reading is
 //! refused. It is the explicit reader of the extraction pilot
@@ -266,6 +267,31 @@ impl LineFont {
                     .collect();
                 for (&k, &(_, w)) in labels[i].iter().zip(&runs) {
                     seen[k].push(w);
+                }
+            }
+        }
+        // A character none of those lines shows: lines whose runs are one
+        // or two off their labels, fitted to them (the closest runs
+        // joined, the widest cut at its faintest column), start it.
+        let missing: Vec<bool> = seen.iter().map(Vec::is_empty).collect();
+        if missing.iter().any(|&m| m) {
+            for &i in &learn {
+                if !placed[i].is_empty() || !labels[i].iter().any(|&k| missing[k]) {
+                    continue;
+                }
+                let (runs, d) = ink_columns(&greys[i], &band, options.ink);
+                let Some(runs) = fit_runs(runs, &d, labels[i].len()) else {
+                    continue;
+                };
+                placed[i] = labels[i]
+                    .iter()
+                    .zip(&runs)
+                    .map(|(&k, &(a, _))| (k, a))
+                    .collect();
+                for (&k, &(_, w)) in labels[i].iter().zip(&runs) {
+                    if missing[k] {
+                        seen[k].push(w);
+                    }
                 }
             }
         }
@@ -914,27 +940,92 @@ fn resize(src: &[f32], w: usize, h: usize, w2: usize, h2: usize) -> Vec<f32> {
     out
 }
 
-/// The band's colour, row by row: the median of every column of the lines.
+/// How finely the band's values are counted: a twentieth of a line's
+/// spread.
+const BAND_BUCKET: f32 = 0.05;
+
+/// The band's colour, row by row: the most common value of the row over
+/// the lines (counted in [`BAND_BUCKET`]s, each with its two neighbours;
+/// the mean of the values in the three). Not the median: on a line cut
+/// tight round a thin font, the strokes along the tops and the feet of the
+/// digits fill most of their rows, and the median moves onto them, where
+/// the band's own value is still the most common one.
 fn band<'a>(greys: impl Iterator<Item = &'a Grey>) -> [f32; ROWS] {
     let greys: Vec<&Grey> = greys.collect();
     let mut out = [0f32; ROWS];
     for (r, o) in out.iter_mut().enumerate() {
-        let mut values: Vec<f32> = greys
-            .iter()
-            .flat_map(|g| g.px[r * g.w..][..g.w].iter().copied())
-            .collect();
-        if values.is_empty() {
+        let values = || {
+            greys
+                .iter()
+                .flat_map(move |g| g.px[r * g.w..][..g.w].iter().copied())
+                .filter(|v| v.is_finite())
+        };
+        let (lo, hi) = values().fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), v| {
+            (lo.min(v), hi.max(v))
+        });
+        if lo > hi {
             continue;
         }
-        let mid = values.len() / 2;
-        let (_, m, _) = values.select_nth_unstable_by(mid, f32::total_cmp);
-        *o = *m;
+        let bucket = |v: f32| ((v - lo) / BAND_BUCKET) as usize;
+        let mut counts = vec![0usize; bucket(hi) + 1];
+        for v in values() {
+            counts[bucket(v)] += 1;
+        }
+        let near = |k: usize| k.saturating_sub(1)..(k + 2).min(counts.len());
+        let best = (0..counts.len())
+            .max_by_key(|&k| (counts[near(k)].iter().sum::<usize>(), std::cmp::Reverse(k)))
+            .unwrap_or(0);
+        let (mut sum, mut n) = (0f64, 0usize);
+        for v in values().filter(|&v| near(best).contains(&bucket(v))) {
+            sum += f64::from(v);
+            n += 1;
+        }
+        *o = (sum / n.max(1) as f64) as f32;
     }
     out
 }
 
 /// The runs of columns that stand out from the band: [(first, width)].
 fn ink_runs(g: &Grey, band: &[f32; ROWS], level: f32) -> Vec<(usize, usize)> {
+    ink_columns(g, band, level).0
+}
+
+/// How far a run may be from its label's length and still start a
+/// character's picture, in joins and cuts.
+const MAX_FIT: usize = 2;
+
+/// `runs` made `n` long: the two with the narrowest gap between them
+/// joined, or the widest cut at its faintest inner column (by `d`, each
+/// column's distance from the band), at most [`MAX_FIT`] times.
+fn fit_runs(mut runs: Vec<(usize, usize)>, d: &[f32], n: usize) -> Option<Vec<(usize, usize)>> {
+    for step in 0..=MAX_FIT {
+        if runs.len() == n {
+            return Some(runs);
+        }
+        if step == MAX_FIT || runs.is_empty() {
+            break;
+        }
+        if runs.len() > n {
+            let i = (0..runs.len() - 1).min_by_key(|&i| runs[i + 1].0 - (runs[i].0 + runs[i].1))?;
+            let (a, _) = runs[i];
+            let (b, wb) = runs.remove(i + 1);
+            runs[i] = (a, b + wb - a);
+        } else {
+            let i = (0..runs.len()).max_by_key(|&i| (runs[i].1, std::cmp::Reverse(i)))?;
+            let (a, w) = runs[i];
+            if w < 2 {
+                break;
+            }
+            let s = (a + 1..a + w).min_by(|&x, &y| d[x].total_cmp(&d[y]))?;
+            runs[i] = (a, s - a);
+            runs.insert(i + 1, (s, a + w - s));
+        }
+    }
+    None
+}
+
+/// [`ink_runs`], and each column's distance from the band.
+fn ink_columns(g: &Grey, band: &[f32; ROWS], level: f32) -> (Vec<(usize, usize)>, Vec<f32>) {
     let d: Vec<f32> = (0..g.w)
         .map(|x| {
             let s: f32 = (0..ROWS)
@@ -948,7 +1039,7 @@ fn ink_runs(g: &Grey, band: &[f32; ROWS], level: f32) -> Vec<(usize, usize)> {
         .collect();
     let top = d.iter().cloned().fold(0.0f32, f32::max);
     if top <= 0.0 {
-        return Vec::new();
+        return (Vec::new(), d);
     }
     let mut runs = Vec::new();
     let mut x = 0;
@@ -963,7 +1054,7 @@ fn ink_runs(g: &Grey, band: &[f32; ROWS], level: f32) -> Vec<(usize, usize)> {
             x += 1;
         }
     }
-    runs
+    (runs, d)
 }
 
 fn mode(values: &[usize]) -> usize {
@@ -1225,6 +1316,44 @@ mod tests {
             LineFont::learn(&wrong, LineOptions::default()).unwrap_err(),
             LineLearnError::NoStart
         );
+    }
+
+    #[test]
+    fn the_band_is_its_most_common_value_even_where_ink_fills_most_of_a_row() {
+        // a row three fifths ink of every brightness, two fifths flat band:
+        // its median is ink, its most common value the band
+        let w = 100;
+        let mut px = vec![-0.5f32; ROWS * w];
+        for (x, v) in px[..60].iter_mut().enumerate() {
+            *v = 0.5 + 1.5 * x as f32 / 60.0;
+        }
+        let g = Grey {
+            w,
+            px,
+            x0: 0,
+            y0: 0,
+            sx: 1.0,
+            sy: 1.0,
+        };
+        let b = band([&g].into_iter());
+        assert!((b[0] + 0.5).abs() < 0.03, "{}", b[0]);
+        assert!(b[1..].iter().all(|v| (v + 0.5).abs() < 1e-6));
+    }
+
+    #[test]
+    fn runs_one_or_two_off_their_label_are_joined_or_cut() {
+        // column 13 is the faintest of the wide run
+        let mut d = vec![1.0f32; 20];
+        d[13] = 0.1;
+        let runs = vec![(0, 3), (4, 3), (10, 8)];
+        assert_eq!(
+            fit_runs(runs.clone(), &d, 4),
+            Some(vec![(0, 3), (4, 3), (10, 3), (13, 5)])
+        );
+        assert_eq!(fit_runs(runs.clone(), &d, 2), Some(vec![(0, 7), (10, 8)]));
+        assert_eq!(fit_runs(runs.clone(), &d, 3), Some(runs.clone()));
+        // three off: not a start
+        assert_eq!(fit_runs(runs, &d, 6), None);
     }
 
     #[test]
