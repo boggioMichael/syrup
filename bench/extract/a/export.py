@@ -9,6 +9,9 @@ Writes into OUT (outside the repository: the lines are game graphics):
   teacher's layers (one `key values...` per line, for a parser in std alone);
 - lines.u8: the test lines, (n, 15, 210, 3) RGB; kind.txt (made or real)
   and truth.txt, one per line;
+- train-lines.u8, train-truth.txt, train-kind.txt: the lines the explicit
+  readers learned from (pilot.py's training lines), for the readers they are
+  compared with (Syrup's glyph reader, OpenCV) to learn from the same;
 - teacher.f32: each convolution's weights, (kh*kw*cin, cout), then its bias;
 - <reader>.f32: the band's colour (15), each class's picture (15 x width,
   in meta.txt's order), the reading templates ((15*9 + 1) x 17);
@@ -27,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import expsynth  # noqa: E402
 import extract  # noqa: E402
 import linenet  # noqa: E402
+import pilot  # noqa: E402
 import teach  # noqa: E402
 
 READERS = ("white-box", "black-box")
@@ -55,6 +59,20 @@ def main():
     open(os.path.join(args.out, "truth.txt"), "w").write("\n".join(truth) + "\n")
     open(os.path.join(args.out, "kind.txt"), "w").write("\n".join(kinds) + "\n")
     meta = [f"lines {len(lines)} {lines.shape[1]} {lines.shape[2]}", f"made {len(mt)}"]
+
+    # the training lines, as pilot.py makes them
+    tb = expsynth.Bank(args.bank, "train")
+    tx, tt = expsynth.make(tb, pilot.SIZES["train"][0], np.random.default_rng(1), places=[])
+    trx, trt, _ = teach.real_frames(args.lines, args.labels, "train")
+    real_n = pilot.SIZES["train"][1]
+    if len(trx) > real_n:
+        pick = np.sort(np.random.default_rng(4).choice(len(trx), real_n, replace=False))
+        trx, trt = trx[pick], [trt[i] for i in pick]
+    train = np.concatenate([tx, trx]).astype(np.uint8)
+    train.tofile(os.path.join(args.out, "train-lines.u8"))
+    open(os.path.join(args.out, "train-truth.txt"), "w").write("\n".join(tt + trt) + "\n")
+    open(os.path.join(args.out, "train-kind.txt"), "w").write("\n".join(["made"] * len(tt) + ["real"] * len(trt)) + "\n")
+    meta.append(f"train {len(train)}")
 
     net = linenet.LineNet.load(args.teacher)
     convs = [l for l in net.layers if isinstance(l, linenet.Conv)]

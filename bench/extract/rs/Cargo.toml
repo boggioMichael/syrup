@@ -10,8 +10,15 @@ description = "Pilot A's readers in Rust, for their cost: the teacher network an
 [workspace]
 
 [dependencies]
+# Syrup's glyph reader (pilot A's reader 4), from this checkout, and the
+# image type it reads.
+syrup = { path = "../../.." }
+image = { version = "0.24", default-features = false }
 
 [profile.release]
 opt-level = 3
+
+# The readers' own code in one unit, as it was timed first; the
+# dependencies (Syrup's, x11rb and zbus among them on Linux) as usual.
+[profile.release.package.extract-port]
 codegen-units = 1
-lto = true

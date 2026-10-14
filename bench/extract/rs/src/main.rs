@@ -4,7 +4,8 @@
 //! extract-port check DIR            the port reads what the Python code read
 //! extract-port time DIR READER [WARMUP CALLS [pre]]
 //!                                   per-line times: READER is teacher,
-//!                                   white-box or black-box; `pre`: the
+//!                                   white-box, black-box or syrup (Syrup's
+//!                                   glyph reader, `glyphs.rs`); `pre`: the
 //!                                   line normalised before the clock starts
 //! ```
 //!
@@ -26,6 +27,8 @@ use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
+mod glyphs;
+
 const ALPHABET: &[u8] = b"0123456789,./[]%";
 const ROWS: usize = 15; // the line's rows
 const H: usize = 16; // the teacher's input: the 15 rows and the last one again
@@ -36,13 +39,14 @@ const NCLASS: usize = 17;
 
 struct Meta {
     lines: usize,
+    train: usize,
     line_w: usize,
     layers: Vec<[usize; 6]>,
     readers: Vec<(String, f64, usize, Vec<(usize, usize)>)>, // name, penalty, hw, (class, width)
 }
 
 fn parse_meta(text: &str) -> Meta {
-    let mut m = Meta { lines: 0, line_w: 0, layers: vec![], readers: vec![] };
+    let mut m = Meta { lines: 0, train: 0, line_w: 0, layers: vec![], readers: vec![] };
     for line in text.lines() {
         let f: Vec<&str> = line.split_whitespace().collect();
         match f.first().copied() {
@@ -51,6 +55,7 @@ fn parse_meta(text: &str) -> Meta {
                 assert_eq!(f[2], "15");
                 m.line_w = f[3].parse().unwrap();
             }
+            Some("train") => m.train = f[1].parse().unwrap(),
             Some("layer") => {
                 let v: Vec<usize> = f[1..7].iter().map(|s| s.parse().unwrap()).collect();
                 m.layers.push([v[0], v[1], v[2], v[3], v[4], v[5]]);
@@ -427,6 +432,16 @@ impl Data {
         let n = ROWS * self.meta.line_w * 3;
         &self.px[i * n..][..n]
     }
+
+    /// Syrup's glyph reader, the font learned from the training lines.
+    fn glyphs(&self, dir: &Path, min_score: f32) -> glyphs::Glyphs {
+        let px = fs::read(dir.join("train-lines.u8")).unwrap();
+        let n = ROWS * self.meta.line_w * 3;
+        assert_eq!(px.len(), self.meta.train * n);
+        let truth = fs::read_to_string(dir.join("train-truth.txt")).unwrap();
+        let labels: Vec<&str> = truth.lines().collect();
+        glyphs::Glyphs::learn(px.chunks_exact(n).zip(labels.iter().copied()), self.meta.line_w, ROWS, min_score)
+    }
 }
 
 fn check(dir: &Path) {
@@ -469,6 +484,47 @@ fn check(dir: &Path) {
             d.meta.lines, right[0], right[1]
         );
     }
+    // Syrup today: right, wrong and refused, made and real; with
+    // MapleSyrup's options, and with the general default's looser score
+    for (label, min_score) in [("syrup glyphs (MapleSyrup's options)", glyphs::MIN_SCORE), ("syrup glyphs (default options)", 0.72)] {
+    let g = d.glyphs(dir, min_score);
+    println!(
+        "{label}: learned from {} of {} training lines (refused: no text {}, glyph count {}, inconsistent {}, does not read back {}); {} characters",
+        g.learned,
+        d.meta.train,
+        g.refused[0],
+        g.refused[1],
+        g.refused[2],
+        g.refused[3],
+        g.set.chars().count()
+    );
+    let region = glyphs::whole(d.meta.line_w, ROWS);
+    let mut tally = [[0usize; 3]; 2];
+    for i in 0..d.meta.lines {
+        let img = glyphs::rgba(d.line(i), d.meta.line_w, ROWS);
+        let k = (d.kind[i] == "real") as usize;
+        match g.read(&img, region) {
+            Some(t) if t == d.truth[i] => tally[k][0] += 1,
+            Some(_) => tally[k][1] += 1,
+            None => tally[k][2] += 1,
+        }
+    }
+    println!(
+        "{label}: made right/wrong/refused {}/{}/{}, real {}/{}/{}",
+        tally[0][0], tally[0][1], tally[0][2], tally[1][0], tally[1][1], tally[1][2]
+    );
+    // what it makes of a few lines, whatever its confidence
+    if std::env::var_os("SHOW").is_some() {
+        for i in [0usize, 1, d.meta.lines - 1] {
+            let img = glyphs::rgba(d.line(i), d.meta.line_w, ROWS);
+            if let Some(r) = g.set.read_all(&img, region) {
+                let worst = r.glyphs.iter().map(|m| m.score).fold(f32::INFINITY, f32::min);
+                let widths: Vec<u32> = r.glyphs.iter().map(|m| m.bounds.w).collect();
+                println!("  {:?} read {:?}, weakest score {worst:.2}, glyph widths {widths:?}", d.truth[i], r.text);
+            }
+        }
+    }
+    }
 }
 
 /// Each line read `warmup` times, then `calls` times timed one by one; the
@@ -478,6 +534,9 @@ fn check(dir: &Path) {
 fn time(dir: &Path, which: &str, warmup: usize, calls: usize, pre: bool) {
     let d = load(dir);
     let mut x = vec![0f32; H * W * 3];
+    if which == "syrup" {
+        return time_glyphs(&d, dir, warmup, calls);
+    }
     let mut teacher = (which == "teacher").then(|| Teacher::load(dir, &d.meta));
     let mut reader = (which != "teacher").then(|| Reader::load(dir, &d.meta, which));
     let mut sink = 0usize;
@@ -512,6 +571,31 @@ fn time(dir: &Path, which: &str, warmup: usize, calls: usize, pre: bool) {
     eprintln!("({sink})");
 }
 
+/// `time` for Syrup's glyph reader: the font learned first, each line made
+/// the RGBA image MapleSyrup would hand it before the clock starts.
+fn time_glyphs(d: &Data, dir: &Path, warmup: usize, calls: usize) {
+    let g = d.glyphs(dir, glyphs::MIN_SCORE);
+    let region = glyphs::whole(d.meta.line_w, ROWS);
+    let mut sink = 0usize;
+    let mut out = String::new();
+    for i in 0..d.meta.lines {
+        let img = glyphs::rgba(d.line(i), d.meta.line_w, ROWS);
+        for _ in 0..warmup {
+            sink += g.read(&img, region).map_or(0, |t| t.len());
+        }
+        let mut ns = vec![];
+        for _ in 0..calls {
+            let t0 = Instant::now();
+            sink += g.read(&img, region).map_or(0, |t| t.len());
+            ns.push(t0.elapsed().as_nanos() as u64);
+        }
+        ns.sort_unstable();
+        out.push_str(&format!("{} {}\n", d.kind[i], ns[ns.len() / 2]));
+    }
+    print!("{out}");
+    eprintln!("({sink})");
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
@@ -522,6 +606,6 @@ fn main() {
             let pre = args.get(6).is_some_and(|s| s == "pre");
             time(Path::new(&args[2]), &args[3], warmup, calls, pre)
         }
-        _ => eprintln!("usage: extract-port check DIR | time DIR teacher|white-box|black-box [WARMUP CALLS [pre]]"),
+        _ => eprintln!("usage: extract-port check DIR | time DIR teacher|white-box|black-box|syrup [WARMUP CALLS [pre]]"),
     }
 }
