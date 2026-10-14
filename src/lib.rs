@@ -51,6 +51,9 @@
 //! - [`tracking`]: a minimal centroid multi-object tracker.
 //! - [`glyphs`]: reading pixel-font text (counters, HUD values) by template
 //!   matching against glyphs learned from labelled examples.
+//! - [`lines`]: reading a line whose glyphs are not pixel-exact (a video's,
+//!   a stream's, a HUD scaled by a fraction) whole, by covering it with
+//!   learned character pictures, nothing cut first.
 //! - [`template`]: finding a known picture (an icon, a marker) anywhere in a
 //!   frame by normalised cross-correlation, coarse to fine; several
 //!   pictures of one thing, mirrored too, in one search.
@@ -84,6 +87,7 @@ pub mod geometry;
 pub mod glyphs;
 pub mod intent;
 pub mod kernels;
+pub mod lines;
 pub mod motion;
 pub mod ocr;
 pub mod quality;
