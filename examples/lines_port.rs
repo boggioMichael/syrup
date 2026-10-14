@@ -55,7 +55,13 @@ fn lines(dir: &Path, prefix: &str, count: usize, w: usize) -> Vec<RgbaImage> {
     px.chunks_exact(n)
         .map(|line| {
             let mut img = RgbaImage::new(w as u32, ROWS as u32);
-            for (to, p) in img.as_mut().chunks_exact_mut(4).zip(line.chunks_exact(3)) {
+            for (to, p) in img
+                .as_mut()
+                .as_chunks_mut::<4>()
+                .0
+                .iter_mut()
+                .zip(line.as_chunks::<3>().0)
+            {
                 to.copy_from_slice(&[p[0], p[1], p[2], 255]);
             }
             img

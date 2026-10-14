@@ -729,7 +729,7 @@ fn grey(image: &RgbaImage, region: Rect) -> Option<Grey> {
         // (integers), then the grey line straight from the pixels.
         let (mut sum, mut squares) = ([0u64; 3], [0u64; 3]);
         for row in rows() {
-            for p in row.chunks_exact(4) {
+            for p in row.as_chunks::<4>().0 {
                 for c in 0..3 {
                     let v = u64::from(p[c]);
                     sum[c] += v;
@@ -749,7 +749,7 @@ fn grey(image: &RgbaImage, region: Rect) -> Option<Grey> {
         let mut px = Vec::with_capacity(w * h);
         for row in rows() {
             px.extend(
-                row.chunks_exact(4).map(|p| {
+                row.as_chunks::<4>().0.iter().map(|p| {
                     (f32::from(p[0]) + f32::from(p[1]) + f32::from(p[2]) - offset) * scale
                 }),
             );
@@ -767,7 +767,7 @@ fn grey(image: &RgbaImage, region: Rect) -> Option<Grey> {
     // width in proportion), then the same.
     let mut planes = [vec![0f32; w * h], vec![0f32; w * h], vec![0f32; w * h]];
     for (y, row) in rows().enumerate() {
-        for (x, p) in row.chunks_exact(4).enumerate() {
+        for (x, p) in row.as_chunks::<4>().0.iter().enumerate() {
             for c in 0..3 {
                 planes[c][y * w + x] = p[c] as f32 / 255.0;
             }
