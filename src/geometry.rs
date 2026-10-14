@@ -318,6 +318,8 @@ pub fn group_segments(rows: Vec<(u32, u32, u32)>, min_height: u32, max_gap: u32)
     let mut completed = Vec::<Rect>::new();
     let mut prev_y: Option<u32> = None;
     let (mut by_left, mut reach) = (Vec::<usize>::new(), Vec::<u32>::new());
+    // The left edges of the active rectangles, in `by_left`'s order.
+    let mut lefts = Vec::<u32>::new();
     // The next row's rectangles, and which each of this row's continues
     // into: kept from row to row rather than allocated anew.
     let mut next_active: Vec<Rect> = Vec::new();
@@ -351,22 +353,40 @@ pub fn group_segments(rows: Vec<(u32, u32, u32)>, min_height: u32, max_gap: u32)
         // of each and all before it: the ones a segment can overlap are
         // among those starting at or before its end, and the search for them
         // goes leftwards from there only while one further left could still
-        // reach its start.
+        // reach its start. The rectangles are usually in that order already
+        // (they come in the order of the segments that continued them), and
+        // then the sort, which keeps equals in order, would leave them so.
         by_left.clear();
         by_left.extend(0..active.len());
-        by_left.sort_by_key(|&idx| active[idx].x);
+        if !active.is_sorted_by_key(|rect| rect.x) {
+            by_left.sort_by_key(|&idx| active[idx].x);
+        }
         reach.clear();
+        lefts.clear();
         let mut furthest = 0;
-        reach.extend(by_left.iter().map(|&idx| {
+        for &idx in &by_left {
             furthest = furthest.max(active[idx].x2());
-            furthest
-        }));
+            reach.push(furthest);
+            lefts.push(active[idx].x);
+        }
+        // How many start at or before the segment's end: found anew for the
+        // row's first segment, then moved on from the last segment's while
+        // the segments' ends increase (as they do along a row scanned left
+        // to right), else found anew.
+        let (mut candidates, mut last_end) = (0, None);
         for &(_, segment_x0, segment_x1) in segments {
             // The most overlap, and of equal overlaps the earliest active
             // rectangle: what trying each in turn finds.
             let mut best_match = None;
             let mut best_overlap = 0;
-            let candidates = by_left.partition_point(|&idx| active[idx].x <= segment_x1);
+            if last_end.is_some_and(|end| segment_x1 >= end) {
+                while candidates < lefts.len() && lefts[candidates] <= segment_x1 {
+                    candidates += 1;
+                }
+            } else {
+                candidates = lefts.partition_point(|&x| x <= segment_x1);
+            }
+            last_end = Some(segment_x1);
             for k in (0..candidates).rev() {
                 if reach[k] < segment_x0 {
                     break;
@@ -2170,12 +2190,25 @@ mod tests {
                 if next(9) == 0 {
                     continue; // a gap
                 }
+                let mut row = Vec::new();
                 let mut x = next(20);
                 while x < width {
                     let w = 1 + next(if trial % 3 == 0 { 40 } else { 6 });
-                    rows.push((y, x, (x + w - 1).min(width - 1)));
+                    row.push((y, x, (x + w - 1).min(width - 1)));
                     x += w + 1 + next(busy);
                 }
+                // Rows given out of order too: right to left, or with a wide
+                // segment among the others, overlapping them.
+                match trial % 5 {
+                    1 => row.reverse(),
+                    2 if !row.is_empty() => {
+                        let at = next(row.len() as u32) as usize;
+                        let x0 = next(width);
+                        row.insert(at, (y, x0, x0 + next(width)));
+                    }
+                    _ => {}
+                }
+                rows.extend(row);
             }
             for (min_height, max_gap) in [(1, 0), (2, 2), (4, 1), (12, 2)] {
                 assert_eq!(
