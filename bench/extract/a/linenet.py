@@ -298,12 +298,17 @@ def augment(x, rng):
     return out * gain + bias + noise
 
 
-def train(net, x, texts, epochs, rng, batch=32, lr=2e-3, log=None, val=None):
-    opt = Adam(net.params(), lr=lr)
+def train(net, x, texts, epochs, rng, batch=32, lr=2e-3, log=None, val=None, schedule=None, opt=None):
+    """`epochs` passes over (x, texts). With `schedule=(epoch, of)` this call is
+    epoch `epoch` of `of` (data drawn anew each epoch): the learning rate
+    follows the whole run, and the optimiser `opt` (returned) carries over."""
+    opt = opt or Adam(net.params(), lr=lr)
     labels = [encode(t) for t in texts]
     n = len(x)
-    steps = epochs * ((n + batch - 1) // batch)
-    step = 0
+    per_epoch = (n + batch - 1) // batch
+    first, of = schedule if schedule else (0, epochs)
+    steps = of * per_epoch
+    step = first * per_epoch
     for epoch in range(epochs):
         order = rng.permutation(n)
         t0, total = time.time(), 0.0
@@ -318,7 +323,7 @@ def train(net, x, texts, epochs, rng, batch=32, lr=2e-3, log=None, val=None):
             opt.step(net.grads())
             total += loss * len(idx)
             step += 1
-        msg = {"epoch": epoch + 1, "loss": round(total / n, 4), "seconds": round(time.time() - t0, 1)}
+        msg = {"epoch": first + epoch + 1, "loss": round(total / n, 4), "seconds": round(time.time() - t0, 1)}
         if val is not None:
             vx, vt = val
             got = predict(net, vx)
@@ -327,6 +332,7 @@ def train(net, x, texts, epochs, rng, batch=32, lr=2e-3, log=None, val=None):
         if log:
             log.write(json.dumps(msg) + "\n")
             log.flush()
+    return opt
 
 
 def predict(net, x, batch=128):
