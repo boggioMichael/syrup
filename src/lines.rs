@@ -363,8 +363,34 @@ impl LineFont {
     }
 
     /// Read `region`, whatever the confidence.
+    ///
+    /// The loops run eight columns at a time where the CPU has AVX2 (as
+    /// [`crate::kernels::backend`] decides, `SYRUP_SIMD` included), four
+    /// otherwise; each column's sums are added up in the same order either
+    /// way, so the reading is the same to the bit.
     pub fn read_all(&self, image: &RgbaImage, region: Rect) -> Option<LineReading> {
+        #[cfg(target_arch = "x86_64")]
+        if crate::kernels::backend() == crate::kernels::Backend::Avx2 {
+            // SAFETY: `backend` chose AVX2, so the CPU has it.
+            return unsafe { self.read_all_avx2(image, region) };
+        }
+        self.read_all_here(image, region)
+    }
+
+    #[inline(always)]
+    fn read_all_here(&self, image: &RgbaImage, region: Rect) -> Option<LineReading> {
         self.read_grey(&grey(image, region)?)
+    }
+
+    /// [`LineFont::read_all`] compiled for AVX2: the same code, inlined.
+    ///
+    /// # Safety
+    ///
+    /// The CPU has AVX2.
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2")]
+    unsafe fn read_all_avx2(&self, image: &RgbaImage, region: Rect) -> Option<LineReading> {
+        self.read_all_here(image, region)
     }
 
     /// Read `region`, or say why not: no glyph in it, a reading the form
@@ -402,6 +428,7 @@ impl LineFont {
         )
     }
 
+    #[inline(always)]
     fn read_grey(&self, g: &Grey) -> Option<LineReading> {
         let placed = self.cover(g, None);
         if placed.is_empty() {
@@ -469,6 +496,7 @@ impl LineFont {
     /// The cheapest cover of the line's columns by the band and the
     /// characters' pictures: [(character, first column)]. With `label`, the
     /// cover must place exactly those characters in that order.
+    #[inline(always)]
     fn cover(&self, g: &Grey, label: Option<&[usize]>) -> Vec<(usize, usize)> {
         let w = g.w;
         let mut bg = vec![0f32; w];
@@ -478,30 +506,16 @@ impl LineFont {
                 *b += d * d;
             }
         }
-        // each picture against every stretch of the line
-        let cost: Vec<Vec<f32>> = self
-            .pictures
-            .iter()
-            .zip(&self.widths)
-            .map(|(pic, &pw)| {
-                if pic.is_empty() || pw > w {
-                    return Vec::new();
-                }
-                let n = w - pw + 1;
-                let mut cost = vec![0f32; n];
-                for r in 0..ROWS {
-                    for j in 0..pw {
-                        let t = pic[r * pw + j];
-                        let row = &g.px[r * w + j..][..n];
-                        for (c, &v) in cost.iter_mut().zip(row) {
-                            let d = v - t;
-                            *c += d * d;
-                        }
-                    }
-                }
-                cost
-            })
-            .collect();
+        // each picture against every stretch of the line (a loop, not a
+        // closure, so that it is compiled inside `read_all_avx2` too)
+        let mut cost: Vec<Vec<f32>> = Vec::with_capacity(self.pictures.len());
+        for (pic, &pw) in self.pictures.iter().zip(&self.widths) {
+            if pic.is_empty() || pw > w {
+                cost.push(Vec::new());
+                continue;
+            }
+            cost.push(distances(&g.px, w, pic, pw));
+        }
         let penalty = self.options.penalty;
         match label {
             None => {
@@ -708,7 +722,52 @@ impl LineFont {
     }
 }
 
+/// Columns whose distances are summed together, in registers.
+const BLOCK: usize = 32;
+
+/// A picture `pw` columns wide against the line `px` (`ROWS` rows of `w`)
+/// at every column it fits from: the sum over its pixels of the squared
+/// difference. Each start's sum is added up row by row, column by column;
+/// a block of [`BLOCK`] starts is summed at once, so the sums stay in
+/// registers while the picture's pixels go by, and the pixel each start
+/// needs is read straight into the subtraction.
+#[inline(always)]
+fn distances(px: &[f32], w: usize, pic: &[f32], pw: usize) -> Vec<f32> {
+    let n = w - pw + 1;
+    let mut out = vec![0f32; n];
+    let blocks = n / BLOCK * BLOCK;
+    for c0 in (0..blocks).step_by(BLOCK) {
+        let mut sum = [0f32; BLOCK];
+        for (r, ts) in pic.chunks_exact(pw).enumerate() {
+            let line = &px[r * w + c0..][..pw - 1 + BLOCK];
+            for (row, &t) in line.windows(BLOCK).zip(ts) {
+                let row: &[f32; BLOCK] = row.try_into().unwrap();
+                for (s, &v) in sum.iter_mut().zip(row) {
+                    // (t - v)² is (v - t)², to the bit
+                    let d = t - v;
+                    *s += d * d;
+                }
+            }
+        }
+        out[c0..c0 + BLOCK].copy_from_slice(&sum);
+    }
+    // the last starts, fewer than a block
+    let rest = &mut out[blocks..];
+    for r in 0..ROWS {
+        for j in 0..pw {
+            let t = pic[r * pw + j];
+            let row = &px[r * w + blocks + j..][..rest.len()];
+            for (s, &v) in rest.iter_mut().zip(row) {
+                let d = t - v;
+                *s += d * d;
+            }
+        }
+    }
+    out
+}
+
 /// The region as the reader sees it (see [`Grey`]), or None for an empty one.
+#[inline(always)]
 fn grey(image: &RgbaImage, region: Rect) -> Option<Grey> {
     let (iw, ih) = image.dimensions();
     let (x0, y0) = (region.x.min(iw), region.y.min(ih));
@@ -1097,6 +1156,41 @@ mod tests {
                 s.bounds.x
             );
             assert_eq!(b.bounds.h, 30);
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn reads_the_same_on_avx2_as_on_the_baseline() {
+        if !is_x86_feature_detected!("avx2") {
+            return;
+        }
+        let images: Vec<(RgbaImage, String)> =
+            (0..40).map(|i| (line(&text(i), i), text(i))).collect();
+        let labelled: Vec<LabelledLine> = images
+            .iter()
+            .map(|(img, t)| LabelledLine {
+                image: img,
+                region: whole(img),
+                label: t,
+            })
+            .collect();
+        let font = LineFont::learn(&labelled, LineOptions::default()).expect("learns");
+        for i in 2000..2030 {
+            let img = line(&text(i), i);
+            // a region at the reader's height, and one it resamples
+            let big = image::imageops::resize(
+                &img,
+                img.width() * 3 / 2,
+                img.height() * 3 / 2,
+                image::imageops::FilterType::Triangle,
+            );
+            for img in [&img, &big] {
+                let here = font.read_all_here(img, whole(img));
+                // SAFETY: the CPU has AVX2 (asked above).
+                let wide = unsafe { font.read_all_avx2(img, whole(img)) };
+                assert_eq!(here, wide, "line {i}, {} wide", img.width());
+            }
         }
     }
 
