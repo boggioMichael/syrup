@@ -10,9 +10,15 @@
      (`extract.align_black`);
    - oracle: the renderer's own places, for made lines (a bound, not a reader
      anyone could build).
-3. Each reader's refusal level is fitted on the validation lines (real frames
-   of the validation runs and made lines from the validation glyphs): the
-   lowest confidence above all its wrong reads there.
+3. A reader refuses a line whose reading is not an EXP value (`EXP`: digits
+   in threes with commas, a bracket, a percentage with two or three decimals,
+   the closing bracket), and one whose confidence is under its level, fitted
+   on the validation lines (real frames of the validation runs and made lines
+   from the validation glyphs): the lowest level at which at most 1% of the
+   lines it answers there are wrong. (The first pilot took the level above
+   every wrong read and had no format rule: one confident mistake — a dropped
+   '.', say, read with every glyph clear — set it so high that the readers
+   answered almost nothing.) The teacher is shown with the same format rule.
 4. Everything is measured on the test lines (real frames of the test runs and
    made lines from the test glyphs, which no reader saw), with the time each
    reader takes per line.
@@ -22,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 
@@ -55,18 +62,35 @@ def reads(reader, lines):
     return [reader.read(gl) for gl in g]
 
 
-def fit_level(found, truths):
-    wrong = [c for (t, c), truth in zip(found, truths) if t != truth]
-    return (max(wrong) + 1e-6) if wrong else -np.inf
+MAX_WRONG = 0.01  # of the lines a reader answers, on validation
+EXP = re.compile(r"^\d{1,3}(,\d{3})*\[\d{1,3}\.\d{2,3}%\]$")
+
+
+def answerable(found):
+    """Each reading's confidence, or -inf for one that is not an EXP value."""
+    return [(t, c if EXP.match(t) else -np.inf) for t, c in found]
+
+
+def fit_level(found, truths, max_wrong=MAX_WRONG):
+    """The lowest confidence level at which, of the validation lines it
+    answers, at most `max_wrong` are wrong (inf: none)."""
+    pairs = sorted(((c, t == x) for (t, c), x in zip(found, truths)), key=lambda p: -p[0])
+    level, wrong = np.inf, 0
+    for i, (c, ok) in enumerate(pairs, 1):
+        wrong += not ok
+        if wrong <= max_wrong * i:
+            level = c
+    return level
 
 
 def score(found, truths, level, teacher):
-    kept = [c >= level for _, c in found]
+    kept = [bool(np.isfinite(c) and c >= level) for _, c in answerable(found)]
     correct = sum(k and t == x for k, (t, _), x in zip(kept, found, truths))
     wrong = sum(k and t != x for k, (t, _), x in zip(kept, found, truths))
     agree = sum(k and t == r for k, (t, _), r in zip(kept, found, teacher))
     n = len(truths)
-    return {"lines": n, "correct": correct, "wrong": wrong, "refused": n - sum(kept),
+    exact = sum(t == x for (t, _), x in zip(found, truths))
+    return {"lines": n, "exact before refusing": round(exact / n, 4), "correct": correct, "wrong": wrong, "refused": n - sum(kept),
             "coverage": round(sum(kept) / n, 4), "agrees with the teacher where it answers": round(agree / max(1, sum(kept)), 4)}
 
 
@@ -99,7 +123,7 @@ def main():
     t0 = time.time()
     white_places, info = extract.align_white_refined(net, tr_lines)
     readers["white box"] = extract.build(tr_lines, white_places)
-    built["white box"] = {"seconds": round(time.time() - t0, 1), "rounds": info["rounds"]}
+    built["white box"] = {"seconds": round(time.time() - t0, 1), **{k: v for k, v in info.items()}}
     t0 = time.time()
     black_places, info = extract.align_black(tr_lines, tr_teacher)
     readers["black box"] = extract.build(tr_lines, black_places)
@@ -115,7 +139,7 @@ def main():
     levels = {}
     for name, r in readers.items():
         found = reads(r, vlines)
-        levels[name] = fit_level(found, vtruth)
+        levels[name] = fit_level(answerable(found), vtruth)
         report[f"validation: {name}"] = {"exact before refusing": round(float(np.mean([t == x for (t, _), x in zip(found, vtruth)])), 4),
                                          "refusal level": None if not np.isfinite(levels[name]) else round(float(levels[name]), 4)}
     # 4. the test lines
@@ -123,7 +147,8 @@ def main():
         lines, truths = d["test"][kind][0], d["test"][kind][1]
         teacher = linenet.predict(net, linenet.to_input(lines))
         report[f"test {kind}: teacher"] = {"lines": len(truths), "correct": int(sum(a == b for a, b in zip(teacher, truths))),
-                                           "wrong": int(sum(a != b for a, b in zip(teacher, truths)))}
+                                           "wrong": int(sum(a != b for a, b in zip(teacher, truths))),
+                                           "with the format rule": score([(t, 0.0) for t in teacher], truths, -np.inf, teacher)}
         for name, r in readers.items():
             report[f"test {kind}: {name}"] = score(reads(r, lines), truths, levels[name], teacher)
     # 5. time per line (this container, one thread, Python for the explicit readers)

@@ -74,21 +74,44 @@ def spikes(logits):
     return out
 
 
-def align_white(net, lines, per_class=60, seed=0):
+READ_SHARE = 0.15  # below this share of its pull on ink, a class is written, not read
+
+
+def align_white(net, lines, per_class=60, seed=0, level=0.2):
     """Where the teacher reads each character, and which columns it looks at.
 
-    For each class, the gradient of the teacher's score at its peak with
-    respect to the line (over up to `per_class` peaks) gives the columns that
-    move the score: the glyph's columns, as an offset and a width from the
-    peak's column."""
+    For each class, the gradient of the teacher's score where it emits the
+    class (up to `per_class` emissions), with respect to the line, says which
+    pixels move that score. Its pull on the line's ink picks the glyph: the
+    run of ink columns with the most pull, as an offset from the emission's
+    column and a width: the run it pulls on hardest per column. (The pull
+    alone spans the network's whole receptive field, about 14 columns, so its
+    extent is not the glyph's: the first version took it for the glyph and
+    made every glyph 6-9 columns wide.)
+
+    A class whose emissions pull on almost no ink (`READ_SHARE`) is one the
+    teacher writes without reading it: CTC lets it emit a character late, and
+    this teacher emits '%' and ']' at the line's right edge, where the padding
+    starts, ~50 columns past their glyphs and outside what it sees there.
+    Such characters are placed on the ink the read ones leave, in the
+    string's order, and `refine` takes it from there.
+
+    Returns the placements, the teacher's logits, each class's (offset,
+    width), and the share of each class's pull that falls on ink."""
     x = linenet.to_input(lines)
     logits = linenet.logits_of(net, x)
     sp = [spikes(l) for l in logits]
+    g = gray(lines)
+    background = band(g)
+    ink = np.sqrt(((g - background[None, :, None]) ** 2).mean(1))  # (n, 216)
+    on = ink > level * ink.max(1, keepdims=True)
+    runs = [ink_runs(gl, background, level) for gl in g]
     rng = np.random.default_rng(seed)
-    weight, lines_of = {}, {}
+    lines_of = {}
     for i, s in enumerate(sp):
         for j, (k, t) in enumerate(s):
             lines_of.setdefault(k, []).append((i, j))
+    shape, share = {}, {}
     for k, items in lines_of.items():
         pick = [items[q] for q in rng.permutation(len(items))[:per_class]]
         idx = np.array([i for i, _ in pick])
@@ -96,22 +119,50 @@ def align_white(net, lines, per_class=60, seed=0):
         d = np.zeros_like(lg)
         for b, (i, j) in enumerate(pick):
             d[b, sp[i][j][1], k] = 1.0
-        grad = np.abs(net.backward(d))[:, :ROWS].sum((1, 3))  # (n, 216)
-        # centred on each peak's column (step t covers columns 2t, 2t+1)
-        cols = np.stack([np.roll(gr, -2 * sp[i][j][1] + 12)[:26] for gr, (i, j) in zip(grad, pick)])
-        weight[k] = cols.mean(0)  # columns 2t-12 .. 2t+13
-    shape = {}
-    for k, w in weight.items():
-        peak = int(np.argmax(w))
-        on = w > 0.35 * w[peak]
-        a = b = peak
-        while a > 0 and on[a - 1]:
-            a -= 1
-        while b < len(w) - 1 and on[b + 1]:
-            b += 1
-        shape[k] = (a - 12, b - a + 1)  # offset from column 2t, and width
-    placed = [[(k, 2 * t + shape[k][0], shape[k][1]) for k, t in s] for s in sp]
-    return placed, logits, shape
+        grad = np.abs(net.backward(d))[:, :ROWS].sum((1, 3))  # (m, 216)
+        offs, widths, shares = [], [], []
+        for b, (i, j) in enumerate(pick):
+            pull = grad[b] * on[i]
+            shares.append(pull.sum() / (grad[b].sum() + 1e-12))
+            if not runs[i] or pull.sum() == 0:
+                continue
+            # the run it pulls on hardest per column (a sum would favour a
+            # digit beside a one-column '.' over the '.' itself)
+            a, w = max(runs[i], key=lambda r: pull[r[0]:r[0] + r[1]].mean())
+            offs.append(a - 2 * sp[i][j][1])
+            widths.append(w)
+        share[k] = float(np.median(shares))
+        if offs:
+            shape[k] = (int(np.median(offs)), int(np.bincount(widths).argmax()))
+    read = {k for k in shape if share[k] >= READ_SHARE}
+    placed = []
+    for i, s in enumerate(sp):
+        pl = [(k, 2 * t + shape[k][0], shape[k][1]) if k in read else (k, None, None) for k, t in s]
+        placed.append(_fill_unread(pl, runs[i]))
+    return placed, logits, shape, share
+
+
+def _fill_unread(pl, runs):
+    """Characters not read (no place yet) on the ink runs the placed ones
+    leave, in order: [] when they don't fit."""
+    if all(x is not None for _, x, _ in pl):
+        return pl
+    taken = [(x, x + w) for _, x, w in pl if x is not None]
+    free = [(a, w) for a, w in runs if not any(a < e and s < a + w for s, e in taken)]
+    out, after = [], -1
+    for j, (k, x, w) in enumerate(pl):
+        if x is not None:
+            out.append((k, x, w))
+            after = x + w
+            continue
+        nxt = next((p[1] for p in pl[j + 1:] if p[1] is not None), 10 ** 9)
+        spot = next(((a, rw) for a, rw in free if a >= after and a + rw <= nxt), None)
+        if spot is None:
+            return []
+        free.remove(spot)
+        out.append((k, spot[0], spot[1]))
+        after = spot[0] + spot[1]
+    return out
 
 
 def cover(gline, templates, background, penalty=2.0, forced=None):
@@ -228,7 +279,10 @@ def refine(lines, labels, placed, rounds=6, widths=None):
     rounds_run = 0
     for _ in range(rounds):
         rounds_run += 1
-        templates = mean_pictures(g, [p for p in placed if p], widths)
+        # (every line, placed or not: the pictures are cut from each line by
+        # its own placements — a list of the placed lines alone would cut them
+        # from the wrong lines)
+        templates = mean_pictures(g, placed, widths)
         moved = 0
         for i, (gl, lab) in enumerate(zip(g, labels)):
             if not lab or any(k not in templates for k in lab):
@@ -271,10 +325,24 @@ def align_black(lines, texts, rounds=6):
 
 def align_white_refined(net, lines, rounds=6):
     """The white box's start (the teacher's own places), then `refine`."""
-    placed, logits, shape = align_white(net, lines)
+    placed, logits, shape, share = align_white(net, lines)
     labels = [[k for k, _ in spikes(l)] for l in logits]
-    placed, rounds_run = refine(lines, labels, placed, rounds, {k: w for k, (_, w) in shape.items()})
-    return placed, {"rounds": rounds_run, "teacher_strings": ["".join(linenet.ALPHABET[k - 1] for k in lab) for lab in labels]}
+    # each class's width: what the read ones showed, the most common piece
+    # for the ones it writes without reading
+    widths = {k: w for k, (_, w) in shape.items() if share[k] >= READ_SHARE}
+    seen = {}
+    for p in placed:
+        for k, _, w in p:
+            if k not in widths:
+                seen.setdefault(k, []).append(w)
+    widths.update({k: int(np.bincount(v).argmax()) for k, v in seen.items()})
+    started = sum(1 for p in placed if p)
+    placed, rounds_run = refine(lines, labels, placed, rounds, widths)
+    A = linenet.ALPHABET
+    return placed, {"rounds": rounds_run, "lines it could start from": started,
+                    "read (share of pull on ink)": {A[k - 1]: round(v, 3) for k, v in sorted(share.items())},
+                    "written without reading": [A[k - 1] for k in sorted(share) if share[k] < READ_SHARE],
+                    "widths": {A[k - 1]: w for k, w in sorted(widths.items())}}
 
 
 # ------------------------------------------------------------- the reader
@@ -302,14 +370,23 @@ def windows(gline, centres):
     return np.stack([pad[:, c:c + 2 * HW + 1].ravel() for c in centres])
 
 
-def train_templates(g, placed, steps=400, lr=0.05, decay=1e-3):
+def train_templates(g, placed, steps=400, lr=0.05, decay=1e-3, jitter=1):
     """Step 2's linear templates: multinomial logistic regression on the
-    windows round the placed glyphs' centres."""
+    windows round the placed glyphs' centres, and on the same windows moved
+    by up to `jitter` columns either way.
+
+    (Without the moved windows the templates learn each class at the column
+    its placements put it, and a glyph the cover places as a neighbouring
+    class — a 9 placed as an 8, whose pictures sit a column apart — is read
+    in a window the templates never saw: the white box read 9 as 8 on a
+    quarter of the made test lines, and 56% of them right; with the moved
+    windows, 83%, and 98.6% of the real frames.)"""
     xs, ys = [], []
     for gl, pl in zip(g, placed):
-        ok = [(k, x, w) for k, x, w in pl if 0 <= x + w // 2 < gl.shape[1]]
-        xs.append(windows(gl, [x + w // 2 for _, x, w in ok]))
-        ys += [k for k, _, _ in ok]
+        for dx in range(-jitter, jitter + 1):
+            ok = [(k, x, w) for k, x, w in pl if 0 <= x + w // 2 + dx < gl.shape[1]]
+            xs.append(windows(gl, [x + w // 2 + dx for _, x, w in ok]))
+            ys += [k for k, _, _ in ok]
     x = np.concatenate(xs).astype(np.float32)
     x = np.concatenate([x, np.ones((len(x), 1), np.float32)], 1)
     y = np.array(ys)
