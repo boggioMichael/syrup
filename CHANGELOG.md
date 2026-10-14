@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+### Speed: the same answers, several times faster
+Every change below computes the same integers (or the same floats in the
+same order) as the code it replaces, on every instruction set: each is
+tested against the old code or a pixel-at-a-time reference, and
+MapleSyrup's `vision_bench` gives byte-identical outputs — the HUD, every
+taught thing's reading, the near misses and, with `--all`, every
+detector's result — against the build it shipped with.
+- `kernels`: the instruction set is chosen once at run time — AVX-512 VNNI,
+  AVX-VNNI, AVX2, SSE2 or plain loops — and `SYRUP_SIMD` (`avx2`,
+  `avx-vnni`, `sse2`, `scalar`) asks for a narrower one. Exhaustive
+  correlation on dot-product instructions (four pixels a 32-bit lane,
+  packed along the rows or down the columns, whichever takes fewer; a
+  picture and its mirror on one rearranged plane); a refinement's window
+  and a window scored alone on 512-bit dot products; window sums slid in
+  vectors.
+- `template`: a sweep scores only the positions whose exact integer terms
+  can reach the floor (`hits_everywhere`); pyramids of one frame share
+  their grey rows, and products and planes are kept from frame to frame;
+  a refinement's neighbourhood is scored in one pass; a picture added to a
+  set twice is searched once (`TemplateSet::same_as`).
+- `threshold`: the pyramid's luminance 16 pixels at a time (AVX-512, AVX2),
+  halving 16 outputs a vector.
+- `geometry`, `color`, `bars`: colour runs and bar fills from samples and
+  row masks; `segment_row` samples every `min_width`-th pixel and follows
+  the matches; the dominant colour counted a run of one bucket at a time,
+  the buckets 16 pixels at a time; uniform panels, text pixels and
+  saturation-and-value tests from tables (`color::SaturationValueTest`,
+  `color::saturation_and_value`); a text block found from its extremes;
+  `group_segments` tries only the rectangles a segment can reach, found
+  by moving on along the row (and sorted only when they are not in order
+  already: a third less time on a busy frame's motion);
+  `horizontal_edges` marks two rows of luminance at a time as bits.
+- `motion`: each row compared and copied at once (the frame read once),
+  its verdicts 16 pixels at a time as bits, the runs read a word at a time.
+- `glyphs`: a line's glyphs tried with its ink and evidence taken once.
+- `ocr`: where Tesseract is, looked up once every ten seconds rather than
+  on every frame (3.6 ms a frame on a Windows runner).
+- `capture`: Windows frames turned from BGRA to RGBA 64 bytes a step.
+- MapleSyrup's per-frame vision on two of its owner's 4K frames (Zen 5):
+  46.4 → 4.2 ms and 25.5 → 3.4 ms (7.5–11×); with every detector, 83 → 11
+  ms. On the repository's still and recording on Windows runners: 4.4–10.7×
+  on a Zen 5 (4.2–7.7× as while Claude listens), 2.5–5.4× on a Zen 3 (AVX2
+  only): how much depends most on the CPU's dot-product instructions.
+
 ### Measured against OpenCV (`bench/vs-opencv`)
 - A shared harness runs Syrup and OpenCV 5.0 over the same held-out
   inputs (Haar faces, YuNet, template matching, motion regions, glyph
