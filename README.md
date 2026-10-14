@@ -155,6 +155,14 @@ and is available directly.
   crops. It is fast, needs no external tools, and refuses to answer when
   any glyph is ambiguous: an unreadable value comes back as *unknown*,
   never as a wrong number.
+- **Line reading** — `lines::LineFont` reads a line whose glyphs are not
+  pixel-exact (a video of a HUD, a stream, a HUD stretched by a fraction),
+  where cutting at blank columns fails: the line is covered whole by the
+  characters' pictures (dynamic programming over its columns), each glyph
+  is read again by linear templates, and a reading is refused when its
+  least sure glyph leads by too little, or when it is not of the form the
+  caller says the text has. Learned from labelled lines, with no model;
+  under 20 µs a line on a desktop CPU.
 - **Motion** — single-pass frame differencing plus a tracker that gives
   moving regions stable IDs, velocity, and occlusion grace. Detections are
   matched to tracks optimally, so nearby objects do not swap identities.
@@ -358,6 +366,7 @@ RgbaImage (any source)                                                      │ 
     ├─ kernels                       the inner sums, at the CPU's vector width
     ├─ face / sequence               a face's parts and what they do over time
     ├─ glyphs / ocr / quality        what text says, and whether it is readable at all
+    ├─ lines                         a line read whole when its glyphs are not pixel-exact
     │
     ▼
 Detection<T> — value + confidence + reliability + failure reason
@@ -492,6 +501,11 @@ faster at the 95th percentile, with the same outputs.
   Learn from whole lines as they appear on screen: glyphs are measured
   against their line's height, so a slash or a dot learned on its own will
   not match.
+- The line reader needs labelled lines to learn from (10 at least, 20 or
+  more to fit its refusal level on the fifth it holds out), and a line's
+  form to check (`LineFont::learn_checked`): without one, a glyph the
+  cover leaves out can leave every other glyph sure, and on the pilot's
+  video the margin alone refused every line to stay under 1% wrong.
 - The in-process intents' face detector is OpenCV's frontal cascade:
   roughly upright, roughly front-on faces of 20 px or more. The compiled
   operations use YuNet, a learned detector, which scales the frame so its
